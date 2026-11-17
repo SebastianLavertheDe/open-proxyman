@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE charles-session SYSTEM "https://www.charlesproxy.com/dtd/charles-session-1_0.dtd">
+<charles-session>
+  <transaction method="POST" protocolVersion="HTTP/1.1" protocol="https" host="example.test" port="443" actualPort="8443" path="/v1/example" query="page=2&amp;id=3" remoteAddress="/127.0.0.1" clientAddress="/127.0.0.1" startTimeMillis="1735689600000" responseTimeMillis="1735689600030" endTimeMillis="1735689600100">
+    <request headers="75" body="3">
+      <headers>
+        <first-line>POST /v1/example?page=2&amp;id=3 HTTP/1.1</first-line>
+        <header><name>X-Foo</name><value>one</value></header>
+        <header><name>X-Foo</name><value>two</value></header>
+      </headers>
+      <body encoding="base64">AP+A</body>
+    </request>
+    <response status="201" headers="82" body="18" mime-type="text/plain" charset="UTF-8">
+      <headers>
+        <first-line>HTTP/1.1 201 Created</first-line>
+        <header><name>Content-Type</name><value>text/plain; charset=UTF-8</value></header>
+      </headers>
+      <body><![CDATA[ test <a>& test  ]]></body>
+    </response>
+  </transaction>
+  <transaction method="GET" protocol="ftp" host="example.test" path="/">
+    <request headers="0" body="0"/>
+    <response headers="0" body="0"/>
+  </transaction>
+</charles-session>

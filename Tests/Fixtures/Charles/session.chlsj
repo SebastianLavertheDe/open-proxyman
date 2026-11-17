@@ -1,0 +1,37 @@
+[
+  {
+    "method": "GET",
+    "scheme": "http",
+    "host": "127.0.0.1",
+    "port": 80,
+    "actualPort": 80,
+    "path": "/sample",
+    "query": "id=1",
+    "status": "COMPLETE",
+    "protocolVersion": "HTTP/1.1",
+    "times": {
+      "start": "2025-01-01T00:00:00.000Z",
+      "responseBegin": "2025-01-01T00:00:00.020Z",
+      "end": "2025-01-01T00:00:00.080Z"
+    },
+    "request": {"header": {"firstLine": "GET /sample?id=1 HTTP/1.1", "headers": [{"name": "Host", "value": "127.0.0.1"}]}},
+    "response": {
+      "status": 200,
+      "header": {
+        "firstLine": "HTTP/1.1 200 OK",
+        "headers": [{"name": "Content-Type", "value": "application/octet-stream"}]
+      },
+      "body": {"encoded": "AP+A", "encoding": "base64"},
+      "sizes": {"body": 3}
+    }
+  },
+  {
+    "method": "GET",
+    "scheme": "http",
+    "host": "127.0.0.1",
+    "path": "/failure",
+    "status": "FAILED",
+    "errorMessage": "Fixture request failed",
+    "request": {}
+  }
+]

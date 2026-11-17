@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh-Hans</string>
+	<key>CFBundleDisplayName</key>
+	<string>ProxyMirror 透明代理</string>
+	<key>CFBundleExecutable</key>
+	<string>ProxyMirrorTransparentExtension</string>
+	<key>CFBundleName</key>
+	<string>ProxyMirrorTransparentExtension</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>SYSX</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array><string>MacOSX</string></array>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>ProxyMirror 使用此扩展接收 TCP 网页连接，以便在你开启透明代理时抓包。</string>
+	<key>NetworkExtension</key>
+	<dict>
+		<key>NEProviderClasses</key>
+		<dict>
+			<key>com.apple.networkextension.app-proxy</key>
+			<string>ProxyMirrorTransparentExtension.TransparentProxyProvider</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

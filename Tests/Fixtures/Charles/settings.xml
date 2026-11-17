@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?charles serialisation-version="2.0"?>
+<charles-export>
+  <toolConfiguration>
+    <configs>
+      <entry>
+        <string>Rewrite</string>
+        <rewrite>
+          <toolEnabled>true</toolEnabled>
+          <sets>
+            <rewriteSet>
+              <active>true</active>
+              <name>Fixture Headers</name>
+              <hosts><locationPatterns>
+                <locationMatch>
+                  <location><protocol>http</protocol><host>example.test</host><port>8080</port><path>/v1/inspect</path><query>id=*</query></location>
+                  <enabled>true</enabled>
+                </locationMatch>
+                <locationMatch>
+                  <location><host>disabled.test</host></location>
+                  <enabled>false</enabled>
+                </locationMatch>
+              </locationPatterns></hosts>
+              <rules>
+                <rewriteRule><active>true</active><ruleType>1</ruleType><matchRequest>true</matchRequest><matchResponse>true</matchResponse><newHeader>X-Migrated</newHeader><newValue> migrated </newValue></rewriteRule>
+                <rewriteRule><active>true</active><ruleType>2</ruleType><matchResponse>true</matchResponse><matchHeader>X-Remove</matchHeader></rewriteRule>
+                <rewriteRule><active>true</active><ruleType>3</ruleType><matchResponse>true</matchResponse><matchHeader>X-Existing</matchHeader><newValue>replaced</newValue></rewriteRule>
+                <rewriteRule><active>true</active><ruleType>3</ruleType><matchResponse>true</matchResponse><matchHeader>X-Conditional</matchHeader><matchValueRegex>true</matchValueRegex><matchValue>secret.*</matchValue><newValue>replacement</newValue></rewriteRule>
+              </rules>
+            </rewriteSet>
+          </sets>
+        </rewrite>
+      </entry>
+      <entry>
+        <string>Map Local</string>
+        <mapLocal>
+          <toolEnabled>true</toolEnabled>
+          <mappings>
+            <mapLocalMapping><sourceLocation><protocol>http</protocol><host>example.test</host><path>/mapped</path></sourceLocation><dest>/__FIXTURE_FILE__</dest><enabled>true</enabled><caseSensitive>true</caseSensitive></mapLocalMapping>
+            <mapLocalMapping><sourceLocation><host>example.test</host><path>/missing</path></sourceLocation><dest>/__MISSING_FILE__</dest><enabled>true</enabled></mapLocalMapping>
+          </mappings>
+        </mapLocal>
+      </entry>
+      <entry>
+        <string>Block List</string>
+        <blockList>
+          <toolEnabled>true</toolEnabled>
+          <locations><locationPatterns>
+            <locationMatch><location><host>*.blocked.test</host><port>443</port></location><enabled>true</enabled></locationMatch>
+          </locationPatterns></locations>
+          <action>0</action>
+        </blockList>
+      </entry>
+      <entry><string>DNS Spoofing</string><dnsSpoofing><toolEnabled>true</toolEnabled></dnsSpoofing></entry>
+    </configs>
+  </toolConfiguration>
+</charles-export>

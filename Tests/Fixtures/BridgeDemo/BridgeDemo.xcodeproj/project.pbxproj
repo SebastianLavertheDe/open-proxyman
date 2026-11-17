@@ -1,0 +1,28 @@
+// !$*UTF8*$!
+{
+    archiveVersion = 1;
+    classes = {};
+    objectVersion = 56;
+    objects = {
+        B00000000000000000000001 = {isa = PBXProject; buildConfigurationList = B00000000000000000000002; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; knownRegions = (en, Base); mainGroup = B00000000000000000000003; packageReferences = (B00000000000000000000004); productRefGroup = B00000000000000000000005; targets = (B00000000000000000000006); };
+        B00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000007, B00000000000000000000008); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        B00000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000009, B0000000000000000000000A, B00000000000000000000005); sourceTree = "<group>"; };
+        B00000000000000000000004 = {isa = XCLocalSwiftPackageReference; relativePath = ../../../ProxyMirrorBridgeKit; };
+        B00000000000000000000005 = {isa = PBXGroup; children = (B0000000000000000000000B); name = Products; sourceTree = "<group>"; };
+        B00000000000000000000006 = {isa = PBXNativeTarget; buildConfigurationList = B0000000000000000000000C; buildPhases = (B0000000000000000000000D, B0000000000000000000000E); buildRules = (); dependencies = (); name = BridgeDemo; packageProductDependencies = (B0000000000000000000000F); productName = BridgeDemo; productReference = B0000000000000000000000B; productType = "com.apple.product-type.application"; };
+        B00000000000000000000007 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos; }; name = Debug; };
+        B00000000000000000000008 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos; }; name = Release; };
+        B00000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeDemo.swift; sourceTree = "<group>"; };
+        B0000000000000000000000A = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+        B0000000000000000000000B = {isa = PBXFileReference; explicitFileType = wrapper.application; path = BridgeDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+        B0000000000000000000000C = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000010, B00000000000000000000011); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        B0000000000000000000000D = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000012); runOnlyForDeploymentPostprocessing = 0; };
+        B0000000000000000000000E = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000013); runOnlyForDeploymentPostprocessing = 0; };
+        B0000000000000000000000F = {isa = XCSwiftPackageProductDependency; package = B00000000000000000000004; productName = ProxyMirrorBridgeKit; };
+        B00000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; INFOPLIST_FILE = Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.proxymirror.fixture.BridgeDemo; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+        B00000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; INFOPLIST_FILE = Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.proxymirror.fixture.BridgeDemo; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+        B00000000000000000000012 = {isa = PBXBuildFile; fileRef = B00000000000000000000009; };
+        B00000000000000000000013 = {isa = PBXBuildFile; productRef = B0000000000000000000000F; };
+    };
+    rootObject = B00000000000000000000001;
+}

@@ -1,6 +1,6 @@
 # ProxyMirror
 
-仿 Proxyman 的 macOS 原生 HTTP/HTTPS 抓包调试工具（个人自用、全部原创实现、无收费功能）。
+仿 Proxyman 的 macOS 原生 HTTP/HTTPS 抓包调试工具。
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 

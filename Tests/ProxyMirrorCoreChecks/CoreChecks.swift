@@ -2,7 +2,7 @@ import Foundation
 
 /// The XCTest target and CLT executable run the same cases.
 package enum CoreCheckGroup: String, CaseIterable, Sendable {
-    case httpMessages, rules, trafficStore, composeAndPersistence, settings, grpc, capture, contentCoding, deviceAutomation, sse, messagePack, wsInterception, certificates, bridge, charlesImport
+    case httpMessages, rules, trafficStore, composeAndPersistence, trafficMenu, settings, grpc, capture, contentCoding, deviceAutomation, sse, messagePack, wsInterception, certificates, bridge, charlesImport
 
     @MainActor
     package func run(_ report: @escaping (Bool, String, StaticString, UInt) -> Void) throws {
@@ -12,6 +12,7 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
         case .rules: try checkRules(assertions)
         case .trafficStore: try checkTrafficStore(assertions)
         case .composeAndPersistence: try checkComposeAndPersistence(assertions)
+        case .trafficMenu: try checkTrafficMenu(assertions)
         case .settings: checkSettings(assertions)
         case .grpc: try checkGRPC(assertions)
         case .capture: checkCapture(assertions)

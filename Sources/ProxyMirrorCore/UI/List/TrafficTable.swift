@@ -12,6 +12,7 @@ struct TrafficTable: NSViewRepresentable {
     let followLatest: Bool
     let select: (Set<Transaction.ID>) -> Void
     let open: (Transaction.ID) -> Void
+    let copyAsCurl: ([Transaction]) -> Void
     let contextMenu: (Transaction, [Transaction]) -> NSMenu
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -29,11 +30,7 @@ struct TrafficTable: NSViewRepresentable {
         table.setAccessibilityLabel("请求列表")
 
         let coordinator = context.coordinator
-        table.delegate = coordinator
-        table.dataSource = coordinator
-        table.target = coordinator
-        table.doubleAction = #selector(Coordinator.openClickedRow(_:))
-        table.makeMenu = { [weak coordinator] row in coordinator?.menu(for: row) }
+        coordinator.attach(to: table)
 
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
@@ -60,12 +57,25 @@ struct TrafficTable: NSViewRepresentable {
         private weak var table: Table?
         private var select: ((Set<Transaction.ID>) -> Void)?
         private var open: ((Transaction.ID) -> Void)?
+        private var copyAsCurl: (([Transaction]) -> Void)?
         private var contextMenu: ((Transaction, [Transaction]) -> NSMenu)?
+
+        func attach(to table: Table) {
+            self.table = table
+            table.delegate = self
+            table.dataSource = self
+            table.target = self
+            table.action = #selector(selectionAction(_:))
+            table.doubleAction = #selector(openClickedRow(_:))
+            table.makeMenu = { [weak self] row in self?.menu(for: row) }
+            table.copySelectionAsCurl = { [weak self] in self?.copySelectedRowsAsCurl() ?? false }
+        }
 
         func update(_ input: TrafficTable, table: Table) {
             self.table = table
             select = input.select
             open = input.open
+            copyAsCurl = input.copyAsCurl
             contextMenu = input.contextMenu
             updating = true
             defer { updating = false }
@@ -166,9 +176,31 @@ struct TrafficTable: NSViewRepresentable {
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
+            synchronizeSelection()
+        }
+
+        @objc func selectionAction(_ sender: NSTableView) {
+            synchronizeSelection()
+        }
+
+        private var selectedRows: [Transaction] {
+            guard let table else { return [] }
+            return table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0] : nil }
+        }
+
+        private func synchronizeSelection() {
             guard !updating, let table else { return }
             let ids = Set(table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0].id : nil })
             select?(ids)
+        }
+
+        private func copySelectedRowsAsCurl() -> Bool {
+            guard let copyAsCurl else { return false }
+            let targets = selectedRows
+            guard !targets.isEmpty else { return false }
+            select?(Set(targets.map(\.id)))
+            copyAsCurl(targets)
+            return true
         }
 
         @objc func openClickedRow(_ sender: NSTableView) {
@@ -177,19 +209,34 @@ struct TrafficTable: NSViewRepresentable {
 
         func menu(for row: Int) -> NSMenu? {
             guard let table, rows.indices.contains(row) else { return nil }
+            let clicked = rows[row]
             if !table.selectedRowIndexes.contains(row) {
                 table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             }
-            let targets = table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0] : nil }
-            return contextMenu?(rows[row], targets)
+            let targets = selectedRows
+            let menuTargets = targets.isEmpty ? [clicked] : targets
+            select?(Set(menuTargets.map(\.id)))
+            return contextMenu?(clicked, menuTargets)
         }
     }
 
     final class Table: NSTableView {
         var makeMenu: ((Int) -> NSMenu?)?
+        var copySelectionAsCurl: (() -> Bool)?
+
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
+            if modifiers == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "c",
+               copySelectionAsCurl?() == true {
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
+        }
 
         override func menu(for event: NSEvent) -> NSMenu? {
-            makeMenu?(row(at: convert(event.locationInWindow, from: nil)))
+            window?.makeFirstResponder(self)
+            return makeMenu?(row(at: convert(event.locationInWindow, from: nil)))
         }
 
         override func drawBackground(inClipRect clipRect: NSRect) {
@@ -267,20 +314,22 @@ struct TrafficTable: NSViewRepresentable {
 }
 
 private final class TrafficMenuAction: NSObject {
-    let invoke: () -> Void
+    static let shared = TrafficMenuAction()
 
-    init(_ invoke: @escaping () -> Void) { self.invoke = invoke }
-
-    @objc func perform(_ sender: NSMenuItem) { invoke() }
+    @objc func invokeTrafficMenuAction(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? () -> Void else { return }
+        // Keep the action alive after menu tracking ends, and open sheets or write
+        // to the pasteboard from the normal main run loop.
+        RunLoop.main.perform(inModes: [.default]) { action() }
+    }
 }
 
 extension NSMenu {
     func addAction(_ title: String, enabled: Bool = true, action: @escaping () -> Void) {
         autoenablesItems = false
-        let target = TrafficMenuAction(action)
-        let item = NSMenuItem(title: title, action: #selector(TrafficMenuAction.perform(_:)), keyEquivalent: "")
-        item.target = target
-        item.representedObject = target
+        let item = NSMenuItem(title: title, action: #selector(TrafficMenuAction.invokeTrafficMenuAction(_:)), keyEquivalent: "")
+        item.target = TrafficMenuAction.shared
+        item.representedObject = action
         item.isEnabled = enabled
         addItem(item)
     }

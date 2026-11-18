@@ -144,6 +144,7 @@ struct TrafficListView: View {
                         followLatest: store.followLatest,
                         select: store.selectManually,
                         open: openDetails,
+                        copyAsCurl: appState.copyRequestsAsCurl,
                         contextMenu: rowContextMenu
                     )
                     .overlay { if display.rows.isEmpty { emptyState } }
@@ -412,12 +413,12 @@ struct TrafficListView: View {
                 store.update(targets)
             }
         }
-        menu.addAction("复制 URL") { CopyPaste.copy(targets.map(\.fullURL).joined(separator: "\n")) }
-        menu.addAction("复制为 cURL") { CopyPaste.copy(targets.map(ExportService.curlCommand).joined(separator: "\n")) }
+        menu.addAction("复制 URL") { appState.copyText(targets.map(\.fullURL).joined(separator: "\n")) }
+        menu.addAction("复制为 cURL") { appState.copyRequestsAsCurl(targets) }
         menu.addSubmenu(targets.count > 1 ? "复制此请求为代码" : "复制为代码", enabled: tx.canReplay) { submenu in
-            submenu.addAction("Python requests") { CopyPaste.copy(RequestCode.pythonRequests(tx)) }
+            submenu.addAction("Python requests") { appState.copyText(RequestCode.pythonRequests(tx)) }
             submenu.addAction("JavaScript fetch", enabled: RequestCode.supportsFetch(tx)) {
-                CopyPaste.copy(RequestCode.javascriptFetch(tx))
+                appState.copyText(RequestCode.javascriptFetch(tx))
             }
         }
         menu.addItem(.separator())

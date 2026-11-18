@@ -60,12 +60,12 @@ struct ProxyMirrorMainApp: App {
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(appState.activeStore.selectedTransaction?.canReplay != true)
             Button("Copy as cURL") {
-                CopyPaste.copy(appState.activeStore.selectedTransactions.map(ExportService.curlCommand).joined(separator: "\n"))
+                appState.copyRequestsAsCurl(appState.activeStore.selectedTransactions)
             }
-            .keyboardShortcut("C", modifiers: [.command, .shift])
+            .keyboardShortcut("c", modifiers: [.command, .shift])
             .disabled(appState.activeStore.selectedIDs.isEmpty)
             Button("复制为 HTTPie") {
-                CopyPaste.copy(appState.activeStore.selectedTransactions.map(ExportService.httpieCommand).joined(separator: "\n"))
+                appState.copyText(appState.activeStore.selectedTransactions.map(ExportService.httpieCommand).joined(separator: "\n"))
             }
             .disabled(appState.activeStore.selectedIDs.isEmpty)
         }

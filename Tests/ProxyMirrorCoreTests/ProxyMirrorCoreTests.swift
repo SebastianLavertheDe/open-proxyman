@@ -7,6 +7,7 @@ final class ProxyMirrorCoreTests: XCTestCase {
     func testRules() async throws { try await run(.rules) }
     func testTrafficStore() throws { try runWithMainRunLoop(.trafficStore) }
     func testComposeAndPersistence() async throws { try await run(.composeAndPersistence) }
+    func testTrafficMenu() throws { try runWithMainRunLoop(.trafficMenu) }
     func testSettings() async throws { try await run(.settings) }
     func testGRPC() async throws { try await run(.grpc) }
     func testCapture() async throws { try await run(.capture) }

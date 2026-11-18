@@ -4,10 +4,11 @@ import UniformTypeIdentifiers
 
 /// 剪贴板助手
 enum CopyPaste {
-    static func copy(_ text: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+    @discardableResult
+    static func copy(_ text: String, to pasteboard: NSPasteboard = .general) -> Bool {
+        guard !text.isEmpty else { return false }
+        pasteboard.clearContents()
+        return pasteboard.setString(text, forType: .string)
     }
 }
 

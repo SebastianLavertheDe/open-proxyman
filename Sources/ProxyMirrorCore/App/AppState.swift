@@ -622,6 +622,16 @@ final class AppState: ObservableObject, TrafficSink {
 
     // MARK: Flow 动作（对齐 Proxyman Flow 菜单交互）
 
+    func copyText(_ text: String) {
+        if !CopyPaste.copy(text) {
+            systemProxyMessage = "复制失败，请重新选择请求后重试。"
+        }
+    }
+
+    func copyRequestsAsCurl(_ transactions: [Transaction]) {
+        copyText(transactions.map(ExportService.curlCommand).joined(separator: "\n"))
+    }
+
     private func withSelected(_ f: @escaping (Transaction) -> Void) {
         guard let tx = activeStore.selectedTransaction else { return }
         f(tx)

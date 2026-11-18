@@ -53,8 +53,8 @@ struct DetailContentView: View {
                 Spacer(minLength: 8)
                 Menu {
                     Button("Repeat") { appState.repeatRequest(tx) }.disabled(!tx.canReplay)
-                    Button("Copy as cURL") { CopyPaste.copy(ExportService.curlCommand(tx)) }
-                    Button("Copy URL") { CopyPaste.copy(tx.fullURL) }
+                    Button("Copy as cURL") { appState.copyRequestsAsCurl([tx]) }
+                    Button("Copy URL") { appState.copyText(tx.fullURL) }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }

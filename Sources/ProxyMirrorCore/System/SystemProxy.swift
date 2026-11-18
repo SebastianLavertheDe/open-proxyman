@@ -289,6 +289,7 @@ enum CertInstaller {
     }
 
     /// 导入自定义证书到登录钥匙串（对齐 Proxyman 添加自定义证书）
+    @MainActor
     static func importCustomCertificate() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true

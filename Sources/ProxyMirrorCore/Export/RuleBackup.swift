@@ -4,7 +4,7 @@ struct RuleBackup: Codable {
     static let fileLimit = 2 * 1024 * 1024
 
     enum Section: String, Codable, CaseIterable, Identifiable {
-        case mapLocal, mapRemote, blockList, allowList, sslProxyingList, sslApplications
+        case mapLocal, mapRemote, blockList, allowList, sslProxyingList, sslApplications, customCertificates
         case dns, breakpoints, rewrite, latency, noCaching, settings
 
         var id: Self { self }
@@ -16,6 +16,7 @@ struct RuleBackup: Codable {
             case .allowList: return "Allow List"
             case .sslProxyingList: return "SSL Proxying List"
             case .sslApplications: return "按应用 SSL"
+            case .customCertificates: return "自定义服务端证书"
             case .dns: return "DNS 映射"
             case .breakpoints: return "断点规则"
             case .rewrite: return "Rewrite"
@@ -172,6 +173,21 @@ struct RuleBackup: Codable {
         if let sslApplications, !sslApplications.allSatisfy({ SSLApplicationRule.isValid($0.id) }) {
             throw BackupError("按应用 SSL 规则需要有效的 Bundle ID。")
         }
+        try Self.validateIDs(customCertificates, section: .customCertificates)
+        try Self.validateKeys(object, section: .customCertificates,
+                              allowed: ["id", "enabled", "hostPattern", "certificatePath", "privateKeyPath"])
+        for rule in customCertificates ?? [] {
+            let host = rule.hostPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            let domain = host.hasPrefix("*.") ? String(host.dropFirst(2)) : host
+            guard !domain.isEmpty, !domain.contains("*"), !domain.contains("/"),
+                  !domain.contains(":") || URLParser.isIPAddress(URLParser.bareHost(domain)),
+                  domain.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+                  !host.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+                  !rule.certificatePath.isEmpty, !rule.privateKeyPath.isEmpty,
+                  !rule.certificatePath.contains("\0"), !rule.privateKeyPath.contains("\0") else {
+                throw BackupError("自定义服务端证书需要有效域名、证书链和私钥路径。")
+            }
+        }
         try Self.validateIDs(dns, section: .dns)
         try Self.validateKeys(object, section: .dns, allowed: ["id", "enabled", "hostPattern", "ip"])
         try Self.validateIDs(breakpoints, section: .breakpoints)
@@ -275,10 +291,16 @@ struct RuleBackup: Codable {
     }
 
     func migrationNotes() -> [String] {
-        (mapLocal ?? []).enumerated().compactMap { index, rule in
+        let local = (mapLocal ?? []).enumerated().compactMap { index, rule -> String? in
             guard rule.enabled, !rule.target.isEmpty, !FileManager.default.isReadableFile(atPath: rule.target) else { return nil }
             return "Map Local 第 \(index + 1) 条规则的目标在此 Mac 上不可读取，导入后需要更新路径。"
         }
+        let certificates = (customCertificates ?? []).enumerated().compactMap { index, rule -> String? in
+            guard rule.enabled, !FileManager.default.isReadableFile(atPath: rule.certificatePath)
+                || !FileManager.default.isReadableFile(atPath: rule.privateKeyPath) else { return nil }
+            return "自定义服务端证书第 \(index + 1) 条规则的证书链或私钥在此 Mac 上不可读取，导入后需要更新路径。"
+        }
+        return local + certificates
     }
 
     func subset(_ section: Section?) -> RuleBackup {
@@ -291,6 +313,7 @@ struct RuleBackup: Codable {
         if let path = section.classicRules { result[keyPath: path] = self[keyPath: path] }
         switch section {
         case .sslApplications: result.sslApplications = sslApplications
+        case .customCertificates: result.customCertificates = customCertificates
         case .dns: result.dns = dns
         case .breakpoints: result.breakpoints = breakpoints
         case .rewrite: result.rewrite = rewrite
@@ -310,6 +333,9 @@ struct RuleBackup: Codable {
         }
         if let sslApplications {
             result.sslApplications = Self.resolve(sslApplications, current: current.sslApplications ?? [], merge: merge)
+        }
+        if let customCertificates {
+            result.customCertificates = Self.resolve(customCertificates, current: current.customCertificates ?? [], merge: merge)
         }
         if let dns { result.dns = Self.resolve(dns, current: current.dns ?? [], merge: merge) }
         if let breakpoints { result.breakpoints = Self.resolve(breakpoints, current: current.breakpoints ?? [], merge: merge) }
@@ -336,6 +362,10 @@ struct RuleBackup: Codable {
             case .sslApplications:
                 return sslApplications.map {
                     Self.changes(section, incoming: $0, current: current.sslApplications ?? [], mode: mode)
+                }
+            case .customCertificates:
+                return customCertificates.map {
+                    Self.changes(section, incoming: $0, current: current.customCertificates ?? [], mode: mode)
                 }
             case .dns:
                 return dns.map { Self.changes(section, incoming: $0, current: current.dns ?? [], mode: mode) }

@@ -13,9 +13,16 @@ struct CustomTrafficColumn: Codable, Hashable, Identifiable {
 
     static let defaultsKey = "ui.customTrafficColumns"
 
+    private struct Input: Equatable {
+        let revision: UInt64
+        let encodings: [String]
+        let complete: Bool
+        let truncated: Bool
+    }
+
     private final class JSONValues {
-        var requestRevision: UInt64?
-        var responseRevision: UInt64?
+        var requestInput: Input?
+        var responseInput: Input?
         var request: [String: String] = [:]
         var response: [String: String] = [:]
     }
@@ -25,6 +32,7 @@ struct CustomTrafficColumn: Codable, Hashable, Identifiable {
 
     @MainActor
     func value(for tx: Transaction) -> String {
+        guard !Task.isCancelled else { return "" }
         switch source {
         case .requestHeader: return tx.requestHeaders.values(of: key).joined(separator: ", ")
         case .responseHeader: return tx.responseHeaders.values(of: key).joined(separator: ", ")
@@ -35,23 +43,32 @@ struct CustomTrafficColumn: Codable, Hashable, Identifiable {
             let values = Self.jsonValues.object(forKey: tx) ?? JSONValues()
             Self.jsonValues.setObject(values, forKey: tx)
             if source == .requestJSON {
-                if values.requestRevision != tx.requestBodyRevision {
-                    values.requestRevision = tx.requestBodyRevision
+                let input = Input(revision: tx.requestBodyRevision,
+                                  encodings: tx.requestHeaders.values(of: "Content-Encoding"),
+                                  complete: tx.requestBodyComplete, truncated: tx.requestTruncated)
+                if values.requestInput != input {
+                    values.requestInput = input
                     values.request.removeAll()
                 }
-                return jsonValue(in: tx.requestBody, cache: &values.request)
+                return jsonValue(in: InspectionBody.data(for: tx, request: true, limit: 131_072) ?? Data(),
+                                 cache: &values.request)
             }
-            if values.responseRevision != tx.responseBodyRevision {
-                values.responseRevision = tx.responseBodyRevision
+            let input = Input(revision: tx.responseBodyRevision,
+                              encodings: tx.responseHeaders.values(of: "Content-Encoding"),
+                              complete: tx.responseBodyComplete, truncated: tx.responseTruncated)
+            if values.responseInput != input {
+                values.responseInput = input
                 values.response.removeAll()
             }
-            return jsonValue(in: tx.responseBody, cache: &values.response)
+            return jsonValue(in: InspectionBody.data(for: tx, request: false, limit: 131_072) ?? Data(),
+                             cache: &values.response)
         }
     }
 
     private func jsonValue(in data: @autoclosure () -> Data, cache: inout [String: String]) -> String {
         if let cached = cache[key] { return cached }
         let value = jsonValue(in: data())
+        guard !Task.isCancelled else { return "" }
         if cache.count < 16 { cache[key] = value }
         return value
     }

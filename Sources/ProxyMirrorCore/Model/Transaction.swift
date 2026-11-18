@@ -138,6 +138,8 @@ final class Transaction: ObservableObject, Identifiable {
     @Published var suspectedPinning = false     // 疑似证书锁定（客户端拒绝代理证书）
     @Published var sseEvents: [SSEEvent] = []   // text/event-stream 事件级解析结果
     @Published var sseEventsTruncated = false
+    @Published var sseParseIssue: String?
+    @Published var sseDecodingDeferred = false
     var isSSE: Bool { SSEStreamState.matches(contentType) }
     @Published var isTunnel = false             // 未解密的 CONNECT 隧道
     @Published var isWebSocket = false

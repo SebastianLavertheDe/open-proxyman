@@ -8,13 +8,13 @@ final class ProxyMirrorCoreTests: XCTestCase {
     func testTrafficStore() throws { try runWithMainRunLoop(.trafficStore) }
     func testComposeAndPersistence() async throws { try await run(.composeAndPersistence) }
     func testTrafficMenu() throws { try runWithMainRunLoop(.trafficMenu) }
-    func testSettings() async throws { try await run(.settings) }
+    func testSettings() throws { try runWithMainRunLoop(.settings) }
     func testGRPC() async throws { try await run(.grpc) }
     func testCapture() async throws { try await run(.capture) }
 
     func testContentCoding() async throws { try await run(.contentCoding) }
     func testDeviceAutomation() async throws { try await run(.deviceAutomation) }
-    func testSSE() async throws { try await run(.sse) }
+    func testSSE() throws { try runWithMainRunLoop(.sse) }
     func testMessagePack() async throws { try await run(.messagePack) }
     func testWSInterception() throws { try runWithMainRunLoop(.wsInterception) }
     func testCertificates() async throws { try await run(.certificates) }

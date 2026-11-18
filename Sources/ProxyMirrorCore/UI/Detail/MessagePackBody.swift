@@ -36,6 +36,19 @@ enum MessagePackBody {
         return Data(json.utf8)
     }
 
+    struct Inspection {
+        let data: Data
+        let contentType: String
+        let decoded: Bool
+    }
+
+    static func inspect(_ data: Data, contentType: String) -> Inspection {
+        if let decoded = decodeIfMessagePack(data, contentTypeHint: contentType) {
+            return Inspection(data: decoded, contentType: "application/json", decoded: true)
+        }
+        return Inspection(data: data, contentType: contentType, decoded: false)
+    }
+
     // MARK: - 解码
 
     struct Reader {
@@ -107,7 +120,7 @@ enum MessagePackBody {
         case 0x80...0x8f: try readMap(reader: &reader, count: Int(header & 0x0f), into: &out, depth: depth)
         case 0xde: try readMap(reader: &reader, count: Int(try reader.u16()), into: &out, depth: depth)
         case 0xdf: try readMap(reader: &reader, count: Int(try reader.u32()), into: &out, depth: depth)
-        case 0xc7...0xc8, 0xd4...0xd8:                             // ext 8/16/32 与 fixext 1/2/4/8/16
+        case 0xc7...0xc9, 0xd4...0xd8:                             // ext 8/16/32 与 fixext 1/2/4/8/16
             let size: Int
             switch header {
             case 0xc7: size = Int(try reader.byte())
@@ -198,8 +211,8 @@ enum MessagePackBody {
         if type == -1, bytes.count == 8 {
             let value = UInt64(bytes[0]) << 56 | UInt64(bytes[1]) << 48 | UInt64(bytes[2]) << 40 | UInt64(bytes[3]) << 32
                 | UInt64(bytes[4]) << 24 | UInt64(bytes[5]) << 16 | UInt64(bytes[6]) << 8 | UInt64(bytes[7])
-            let seconds = value >> 34
-            let nanos = value & 0x3_FF_FF_FF_FF
+            let seconds = value & 0x3_FF_FF_FF_FF
+            let nanos = value >> 34
             return quote(Self.timestampFormatter.string(
                 from: Date(timeIntervalSince1970: Double(seconds) + Double(nanos) / 1_000_000_000)))
         }

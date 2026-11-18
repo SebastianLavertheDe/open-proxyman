@@ -59,6 +59,7 @@ let package = Package(
                 "ProxyMirrorSystemProxy",
                 .product(name: "ProxyMirrorBridgeKit", package: "ProxyMirrorBridgeKit"),
                 .product(name: "NIOEmbedded", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
             ],
             path: "Tests/ProxyMirrorCoreChecks"
         ),

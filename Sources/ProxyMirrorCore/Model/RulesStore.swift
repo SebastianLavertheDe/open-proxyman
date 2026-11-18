@@ -51,11 +51,13 @@ final class CustomCertificateStore: @unchecked Sendable {
         lock.lock(); cache.removeAll(); lock.unlock()
     }
 
-    func chain(forHost host: String) -> CertificateAuthority.CustomChain? {
-        let snapshot = RulesStore.shared.snapshot()
+    func chain(forHost host: String, rules: RulesStore = .shared) -> CertificateAuthority.CustomChain? {
+        // 默认参数在加锁前完成 shared 初始化，避免首次加载规则时反向调用 invalidate 死锁。
+        // 在同一把锁内读快照并解析，保证失效后不会再由旧快照填回 PEM 缓存。
+        lock.lock(); defer { lock.unlock() }
+        let snapshot = rules.snapshot()
         guard let rule = snapshot.customCertificates.first(where: { $0.matches(host: host) }) else { return nil }
         let key = rule.certificatePath + "|" + rule.privateKeyPath
-        lock.lock(); defer { lock.unlock() }
         if let cached = cache[key] { return cached }
         guard let chain = Self.load(rule: rule) else { return nil }
         cache[key] = chain
@@ -298,7 +300,7 @@ struct RulesSnapshot {
 
 /// 规则存储：UI 编辑 + 引擎读取（线程安全快照），持久化到 AppSupport/rules.json
 final class RulesStore: ObservableObject {
-    static let shared = RulesStore()
+    static let shared = RulesStore(storageURL: rulesPath)
 
     @Published var mapLocal: [ProxyRule] = [] { didSet { scheduleSave() } }
     @Published var mapRemote: [ProxyRule] = [] { didSet { scheduleSave() } }
@@ -308,7 +310,7 @@ final class RulesStore: ObservableObject {
     @Published var sslApplications: [SSLApplicationRule] = [] { didSet { scheduleSave() } }
     @Published var customCertificates: [CustomCertificateRule] = [] {
         didSet {
-            CustomCertificateStore.shared.invalidate()
+            certificateRulesNeedInvalidation = true
             scheduleSave()
         }
     }
@@ -318,12 +320,20 @@ final class RulesStore: ObservableObject {
     private var snapshotCache: RulesSnapshot = RulesSnapshot()
     private var saveTimer: Timer?
     private var applyingBackup = false
+    private var certificateRulesNeedInvalidation = false
+    private let storageURL: URL
+    private let certificateStore: CustomCertificateStore
+    private let certificateAuthority: CertificateAuthority
 
     static var rulesPath: URL {
         CertificateAuthority.applicationSupport.appendingPathComponent("rules.json")
     }
 
-    private init() {
+    init(storageURL: URL, certificateStore: CustomCertificateStore = .shared,
+         certificateAuthority: CertificateAuthority = .shared) {
+        self.storageURL = storageURL
+        self.certificateStore = certificateStore
+        self.certificateAuthority = certificateAuthority
         load()
         rebuildSnapshot()
         NSLog("[ProxyMirror][Rules] 载入: mapLocal=%d mapRemote=%d block=%d allow=%d ssl=%d noCaching=%@",
@@ -343,8 +353,16 @@ final class RulesStore: ObservableObject {
             sslProxyingList: sslProxyingList, sslApplications: sslApplications,
             customCertificates: customCertificates, noCaching: noCaching)
         lock.lock()
+        let certificatesChanged = certificateRulesNeedInvalidation
+            || snapshotCache.customCertificates != s.customCertificates
         snapshotCache = s
         lock.unlock()
+        certificateRulesNeedInvalidation = false
+        if certificatesChanged {
+            // 先发布新快照，再依次清 PEM 和 TLS 缓存；同时覆盖编辑及备份/配置导入。
+            certificateStore.invalidate()
+            certificateAuthority.invalidateLeafContexts()
+        }
     }
 
     private func scheduleSave() {
@@ -357,7 +375,7 @@ final class RulesStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.rulesPath),
+        guard let data = try? Data(contentsOf: storageURL),
               let dto = try? JSONDecoder().decode(RuleBackup.self, from: data) else { return }
         apply(dto)
     }
@@ -404,7 +422,7 @@ final class RulesStore: ObservableObject {
     }
 
     private func persist(_ dto: RuleBackup) throws {
-        let url = Self.rulesPath
+        let url = storageURL
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(dto).write(to: url, options: .atomic)
     }

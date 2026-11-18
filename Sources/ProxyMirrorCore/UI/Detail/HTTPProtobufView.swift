@@ -5,7 +5,7 @@ enum HTTPProtobuf {
         let mime = contentType.split(separator: ";", maxSplits: 1).first?
             .trimmingCharacters(in: .whitespaces).lowercased() ?? ""
         switch mime {
-        case "application/protobuf", "application/x-protobuf", "application/x-protobuffer",
+        case "application/proto", "application/protobuf", "application/x-protobuf", "application/x-protobuffer",
              "application/x-google-protobuf", "application/vnd.google.protobuf":
             return true
         default:
@@ -27,6 +27,8 @@ struct HTTPProtobufView: View {
     let truncated: Bool
     let isError: Bool
     let decodedEncoding: String?
+    var rawHead: RawMessageHead? = nil
+    var rawTrailers = HTTPHeaders()
     @State private var output: (key: DecodeKey, value: Decoded)?
 
     private struct DecodeKey: Equatable {
@@ -66,12 +68,15 @@ struct HTTPProtobufView: View {
             } else {
                 switch decoded {
                 case .rendered(let description):
-                    ScrollView([.vertical, .horizontal]) {
-                        Text(description.text)
-                            .font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
+                    ScrollViewReader { scroll in
+                        ScrollView {
+                            if let rawHead { RawMessageHeadView(head: rawHead).equatable() }
+                            BodyPreview(data: Data(description.text.utf8), format: .text,
+                                        generation: generation, rawHead: rawHead) {
+                                scroll.scrollTo(BodyPreview.ScrollAnchor.pageTop, anchor: .top)
+                            }
+                            rawTrailerView
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 case .failure(let error):
@@ -97,15 +102,35 @@ struct HTTPProtobufView: View {
         }
     }
 
+    @ViewBuilder
     private func message(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if let rawHead {
+            ScrollView {
+                RawMessageHeadView(head: rawHead).equatable()
+                Text(text).font(.caption).foregroundStyle(.secondary).padding(10)
+                rawTrailerView
+            }
+        } else {
+            Text(text).font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private func fallback(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(text).font(.caption).foregroundStyle(.secondary).padding(6)
-            HexView(data: data, generation: generation)
+            ScrollView {
+                if let rawHead { RawMessageHeadView(head: rawHead).equatable() }
+                BodyPreview(data: data, format: .hex, generation: generation, rawHead: rawHead)
+                rawTrailerView
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var rawTrailerView: some View {
+        if rawHead != nil, rawTrailers.count > 0 {
+            RawMessageHeadView(head: RawMessageHead(startLine: "Trailers", headers: rawTrailers))
         }
     }
 }

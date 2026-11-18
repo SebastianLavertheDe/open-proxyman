@@ -11,8 +11,8 @@ enum WSFrameAction: Sendable, Equatable {
 
 /// RFC 6455 帧编码（客户端方向按规范重新掩码；服务端方向不掩码）
 enum WSFrameCodec {
-    static func encode(opcode: UInt8, fin: Bool, payload: Data, mask: Bool) -> Data {
-        var out: [UInt8] = [(fin ? 0x80 : 0) | (opcode & 0x0F)]
+    static func encode(opcode: UInt8, fin: Bool, payload: Data, mask: Bool, compressed: Bool = false) -> Data {
+        var out: [UInt8] = [(fin ? 0x80 : 0) | (compressed ? 0x40 : 0) | (opcode & 0x0F)]
         let length = payload.count
         let maskBit: UInt8 = mask ? 0x80 : 0
         if length < 126 {
@@ -49,6 +49,9 @@ final class WSRelayInterceptor: @unchecked Sendable {
     private let loop: EventLoop
     private let emit: @Sendable (Data, WSFrame.Direction) -> Void
     private let close: @Sendable () -> Void
+    private let issue: @Sendable (String) -> Void
+    private let decoder: WebSocketDeflate.Decoder?
+    private let encoder: WebSocketDeflate.Encoder?
     private let script: (@Sendable (WSFrame, @escaping @Sendable (WSFrameAction) -> Void) -> Void)?
 
     private var parser = WSFrameParser()
@@ -64,12 +67,17 @@ final class WSRelayInterceptor: @unchecked Sendable {
     init(direction: WSFrame.Direction, maskOutgoing: Bool, loop: EventLoop,
          emit: @escaping @Sendable (Data, WSFrame.Direction) -> Void,
          close: @escaping @Sendable () -> Void = {},
+         deflate: WebSocketDeflate? = nil,
+         issue: @escaping @Sendable (String) -> Void = { _ in },
          script: (@Sendable (WSFrame, @escaping @Sendable (WSFrameAction) -> Void) -> Void)?) {
         self.direction = direction
         self.maskOutgoing = maskOutgoing
         self.loop = loop
         self.emit = emit
         self.close = close
+        self.issue = issue
+        decoder = deflate.map(WebSocketDeflate.Decoder.init)
+        encoder = deflate.map(WebSocketDeflate.Encoder.init)
         self.script = script
     }
 
@@ -90,15 +98,26 @@ final class WSRelayInterceptor: @unchecked Sendable {
         guard !stopped, decisionID == nil, let script else { return }
         while true {
             if !queue.isEmpty {
-                let frame = queue.removeFirst()
+                var frame = queue.removeFirst()
+                if frame.rsv1 == true {
+                    // Always advance the incoming dictionary, including messages later dropped.
+                    guard let decoded = decoder?.preview(frame.payload, retaining: 8 * 1024 * 1024), !decoded.truncated else {
+                        issue("WebSocket 压缩消息无法解码或超过 8 MiB，已关闭连接")
+                        stop()
+                        return
+                    }
+                    frame = WSFrame(direction: frame.direction, opcode: frame.opcode, fin: frame.fin,
+                                    masked: frame.masked, payload: decoded.data, rsv1: true)
+                }
+                let message = frame
                 let id = UUID()
                 decisionID = id
                 decisionTimeout = loop.scheduleTask(in: .milliseconds(400)) { [weak self] in
-                    self?.apply(.pass, to: frame, id: id)
+                    self?.apply(.pass, to: message, id: id)
                 }
-                script(frame) { [weak self] action in
+                script(message) { [weak self] action in
                     guard let self else { return }
-                    self.loop.execute { self.apply(action, to: frame, id: id) }
+                    self.loop.execute { self.apply(action, to: message, id: id) }
                 }
                 return
             }
@@ -126,7 +145,8 @@ final class WSRelayInterceptor: @unchecked Sendable {
             if control {
                 write(frame)
             } else {
-                let modified = WSFrame(direction: direction, opcode: frame.opcode, fin: frame.fin, masked: false, payload: payload)
+                let modified = WSFrame(direction: direction, opcode: frame.opcode, fin: frame.fin,
+                                       masked: false, payload: payload, rsv1: frame.rsv1)
                 write(modified)
             }
         }
@@ -145,6 +165,16 @@ final class WSRelayInterceptor: @unchecked Sendable {
     }
 
     private func write(_ frame: WSFrame) {
-        emit(WSFrameCodec.encode(opcode: frame.opcode, fin: frame.fin, payload: frame.payload, mask: maskOutgoing), direction)
+        let payload: Data
+        if frame.rsv1 == true {
+            guard let compressed = encoder?.encode(frame.payload) else {
+                issue("WebSocket 压缩消息无法重新编码，已关闭连接")
+                stop()
+                return
+            }
+            payload = compressed
+        } else { payload = frame.payload }
+        emit(WSFrameCodec.encode(opcode: frame.opcode, fin: frame.fin, payload: payload,
+                                 mask: maskOutgoing, compressed: frame.rsv1 == true), direction)
     }
 }

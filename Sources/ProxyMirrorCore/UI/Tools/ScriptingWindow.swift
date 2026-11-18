@@ -183,6 +183,10 @@ struct ScriptingWindow: View {
                  ? "可读取 direction、fin、opcode、body 和 payloadBase64。返回 action 为 pass、modify、drop 或 close。"
                  : "编辑 message.headers、body 或响应的 status。UTF-8 定长正文上限 256 KiB。")
                 .font(.caption).foregroundStyle(.secondary)
+            if phase == .webSocket {
+                Text("支持 permessage-deflate 压缩。其他扩展保留原始转发，并在执行日志说明原因。脚本正文上限 256 KiB，压缩消息解码上限 8 MiB。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(.leading, 8)
     }

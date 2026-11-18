@@ -675,7 +675,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     private func finishResponse(_ trailers: NIOHTTP1.HTTPHeaders?) {
         guard let downstream, let tx = transaction, !responseEnded else { return }
         let recorded = Self.capturedHeaders(trailers ?? .init())
-        bodyCapture?.flush()
+        bodyCapture?.finishSSE()
         responseEnded = true
         completedNormally = true
         if capture {
@@ -754,7 +754,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             bodyCapture?.append(body.readableBytesView, direction: .downstream)
             downstream.write(wrapOutboundOut(.body(.byteBuffer(body))), promise: nil)
         }
-        bodyCapture?.flush()
+        bodyCapture?.finishSSE()
         responseEnded = true
         downstream.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
         setReading(downstream, true)
@@ -797,7 +797,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         mapLocalSender?.cancel()
         mapLocalSender = nil
         finishFailedInterception()
-        bodyCapture?.flush()
+        bodyCapture?.finishSSE(complete: false)
         responseEnded = true
         if capture, let tx = transaction {
             onMain {
@@ -811,7 +811,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
 
     func channelInactive(context: ChannelHandlerContext) {
         markAborted("客户端取消 HTTP/2 流")
-        bodyCapture?.flush()
+        bodyCapture?.finishSSE(complete: false)
         bodyCapture = nil
         simulatedDelay?.cancel()
         responseWait?.cancel()

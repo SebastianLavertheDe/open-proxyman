@@ -157,6 +157,7 @@ private struct ContentSideView: View {
     @State private var search = ""
     @State private var treeResult: (input: TreeInput, root: JSONTreeNode?)?
     @State private var showingQuery = false
+    @State private var showCapturedBytes = false
     @State private var decodedBody: (input: TreeInput, result: Result<(Data, String), ContentCoding.DecodeError>)?
 
     private struct TreeInput: Equatable {
@@ -175,7 +176,8 @@ private struct ContentSideView: View {
     private var isCompressed: Bool { !contentEncodings.isEmpty }
     private var unsupportedEncodings: Bool { !contentEncodings.allSatisfy({ ContentCoding.supported.contains($0) }) }
     private var decodeInput: TreeInput? {
-        guard tab == .body || tab == .preview, !tx.isWebSocket, !isEncryptedTunnel,
+        guard tab == .body || tab == .preview || (tab == .raw && !showCapturedBytes),
+              !tx.isWebSocket, !isEncryptedTunnel,
               isCompressed, !unsupportedEncodings, complete, !truncated, !capturedData.isEmpty else { return nil }
         return TreeInput(transaction: ObjectIdentifier(tx), revision: bodyRevision)
     }
@@ -187,9 +189,10 @@ private struct ContentSideView: View {
         guard case .success(let decoded) = decodeResult else { return nil }
         return decoded.1
     }
-    private var messagePackApplied: Bool {
-        MessagePackBody.decodeIfMessagePack(baseDecodedData, contentTypeHint: contentType) != nil
+    private var inspectedBody: MessagePackBody.Inspection {
+        MessagePackBody.inspect(baseDecodedData, contentType: contentType)
     }
+    private var messagePackApplied: Bool { inspectedBody.decoded }
     /// 仅 Content-Encoding 解码结果
     private var baseDecodedData: Data {
         if isCompressed {
@@ -199,8 +202,9 @@ private struct ContentSideView: View {
         return capturedData
     }
 
-    private var data: Data {
-        MessagePackBody.decodeIfMessagePack(baseDecodedData, contentTypeHint: contentType) ?? baseDecodedData
+    private var data: Data { inspectedBody.data }
+    private var treeUnavailableReason: String? {
+        JSONTreeAvailability.unavailableReason(bytes: data.count, complete: complete, truncated: truncated)
     }
     private var bodyRevision: UInt64 { isRequest ? tx.requestBodyRevision : tx.responseBodyRevision }
     private var bodyGeneration: UInt64 { isRequest ? tx.requestBodyGeneration : tx.responseBodyGeneration }
@@ -271,8 +275,12 @@ private struct ContentSideView: View {
         .background(isRequest ? ProxymanTheme.inspectorChrome : ProxymanTheme.tableBackground)
         .onChange(of: tx.isWebSocket) { _ in selectedTab = nil }
         .onChange(of: ObjectIdentifier(tx)) { _ in
+            if let selectedTab, !tabs.contains(selectedTab), !additionalTabs.contains(selectedTab) {
+                self.selectedTab = nil
+            }
             search = ""
             showingQuery = false
+            showCapturedBytes = false
             decodedBody = nil
         }
         .task(id: decodeInput) {
@@ -420,7 +428,8 @@ private struct ContentSideView: View {
             rawInspector
         case .preview:
             inspectBody {
-                BodyContentView(data: tx.isWebSocket ? capturedData : data, contentType: contentType, pretty: true,
+                BodyContentView(data: tx.isWebSocket ? capturedData : data,
+                                contentType: tx.isWebSocket ? contentType : inspectedBody.contentType, pretty: true,
                                 complete: complete || tx.state == .failed, truncated: truncated, revision: bodyRevision,
                                 generation: bodyGeneration)
                     .id(ObjectIdentifier(tx))
@@ -498,18 +507,23 @@ private struct ContentSideView: View {
     }
 
     @ViewBuilder
-    private func inspectBody<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    private func inspectBody<Content: View>(rawHead: RawMessageHead? = nil,
+                                           @ViewBuilder _ content: () -> Content) -> some View {
         if !isCompressed || capturedData.isEmpty || tx.isWebSocket {
             content()
         } else if truncated {
-            compressedBody("正文已截断，无法解压。")
+            compressedBody("正文已截断，无法解压。", rawHead: rawHead)
         } else if tx.state == .failed && !complete {
-            compressedBody("响应未完整接收，无法解压。")
+            compressedBody("响应未完整接收，无法解压。", rawHead: rawHead)
         } else if unsupportedEncodings {
-            compressedBody("暂不支持 Content-Encoding: \(contentEncodings.joined(separator: ", "))。")
+            compressedBody("暂不支持 Content-Encoding: \(contentEncodings.joined(separator: ", "))。", rawHead: rawHead)
         } else if !complete {
-            ProgressView("等待接收完整正文…").controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let rawHead {
+                compressedBody("等待接收完整正文，接收后自动解压。", rawHead: rawHead)
+            } else {
+                ProgressView("等待接收完整正文…").controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             switch decodeResult {
             case .success:
@@ -517,24 +531,32 @@ private struct ContentSideView: View {
             case .failure(let error):
                 switch error {
                 case .outputLimit:
-                    compressedBody("解压后的正文超过 32 MiB。")
+                    compressedBody("解压后的正文超过 32 MiB。", rawHead: rawHead)
                 case .unsupported(let list):
-                    compressedBody("暂不支持 Content-Encoding: \(list.joined(separator: ", "))。")
+                    compressedBody("暂不支持 Content-Encoding: \(list.joined(separator: ", "))。", rawHead: rawHead)
                 case .invalidStream:
-                    compressedBody("无法解压 \(contentEncodings.joined(separator: ", ")) 压缩正文。")
+                    compressedBody("无法解压 \(contentEncodings.joined(separator: ", ")) 压缩正文。", rawHead: rawHead)
                 }
             case nil:
-                ProgressView("正在解压…").controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let rawHead {
+                    compressedBody("正在解压…", rawHead: rawHead)
+                } else {
+                    ProgressView("正在解压…").controlSize(.small)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
     }
 
-    private func compressedBody(_ message: String) -> some View {
+    private func compressedBody(_ message: String, rawHead: RawMessageHead? = nil) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(message).font(.caption).foregroundStyle(.secondary).padding(6)
-            HexView(data: capturedData, generation: bodyGeneration)
-                .id(ObjectIdentifier(tx))
+            if let rawHead {
+                rawBodyPreview(capturedData, head: rawHead, forceBinary: true)
+            } else {
+                HexView(data: capturedData, generation: bodyGeneration)
+                    .id(ObjectIdentifier(tx))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -547,6 +569,8 @@ private struct ContentSideView: View {
                         TextField("搜索正文", text: $search).textFieldStyle(.roundedBorder)
                         if isJSON {
                             Toggle("JSON 树", isOn: $tree).toggleStyle(.checkbox)
+                                .disabled(treeUnavailableReason != nil)
+                                .help(treeUnavailableReason ?? "按层级展开 JSON 正文")
                         }
                     } else {
                         Text("JSON 查询").font(.caption.weight(.semibold))
@@ -575,6 +599,10 @@ private struct ContentSideView: View {
                     }
                 }
                 .controlSize(.small).padding(5)
+                if isJSON, !showingQuery, let reason = treeUnavailableReason {
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 5)
+                }
             }
             if showingQuery {
                 BodyQueryView(data: data, unavailableReason: queryUnavailable).id(ObjectIdentifier(tx))
@@ -589,7 +617,7 @@ private struct ContentSideView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(10)
                 }
             } else {
-                BodyContentView(data: data, contentType: contentType, pretty: true,
+                BodyContentView(data: data, contentType: inspectedBody.contentType, pretty: true,
                                 complete: complete || tx.state == .failed, truncated: truncated, revision: bodyRevision,
                                 generation: bodyGeneration)
                     .id(ObjectIdentifier(tx))
@@ -609,29 +637,59 @@ private struct ContentSideView: View {
                 : (tx.statusCode > 0 ? "\(tx.responseVersion) \(tx.statusText)" : "")
         }()
         let head = RawMessageHead(startLine: startLine, headers: headers)
-        let bytes = capturedData
-        let binary = !bytes.isEmpty && (tx.isWebSocket || isCompressed || BodyContentView.isBinary(data: bytes, contentType: contentType))
         return VStack(alignment: .leading, spacing: 0) {
-            Text(tx.isWebSocket ? "握手头部和原始 WebSocket 帧字节" :
-                 isHTTP2 ? "HTTP/2 伪头部、解码后的头部和正文" : "按捕获的首行、头部和已解帧正文重组")
-                .font(.caption).foregroundStyle(.secondary).padding(6)
+            HStack {
+                Text(tx.isWebSocket ? "握手头部和原始 WebSocket 帧字节" :
+                     isHTTP2 ? "HTTP/2 伪头部和正文" : "按捕获的首行、头部和正文重组")
+                Spacer()
+                if !tx.isWebSocket, isCompressed || isHTTPProtobuf || messagePackApplied {
+                    Toggle("捕获字节", isOn: $showCapturedBytes)
+                        .toggleStyle(.checkbox)
+                        .help("切换查看未解压、未转换的捕获正文")
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary).padding(6)
             if !complete && tx.state != .failed {
                 Text("捕获中").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
             }
-            ScrollViewReader { scroll in
-                ScrollView {
-                    RawMessageHeadView(head: head).equatable()
-                    if binary {
-                        Text("二进制正文").font(.caption).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
+            if showCapturedBytes || tx.isWebSocket {
+                rawBodyPreview(capturedData, head: head, forceBinary: isCompressed || tx.isWebSocket)
+            } else {
+                inspectBody(rawHead: head) {
+                    if let decodedLabel {
+                        Text("正文已解码 \(decodedLabel) · 头部保留捕获值")
+                            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
                     }
-                    BodyPreview(data: bytes, format: binary ? .hex : .text, generation: bodyGeneration, rawHead: head) {
-                        scroll.scrollTo(BodyPreview.ScrollAnchor.pageTop, anchor: .top)
+                    if isHTTPProtobuf, grpcMediaType == nil {
+                        HTTPProtobufView(data: baseDecodedData, revision: bodyRevision, generation: bodyGeneration,
+                                         complete: complete || tx.state == .failed, truncated: truncated,
+                                         isError: !isRequest && (400...599).contains(tx.statusCode),
+                                         decodedEncoding: nil, rawHead: head, rawTrailers: trailers)
+                            .id(ObjectIdentifier(tx))
+                    } else {
+                        rawBodyPreview(data, head: head, contentType: inspectedBody.contentType)
                     }
-                    .id(ObjectIdentifier(tx))
-                    if trailers.count > 0 {
-                        fields("Trailers", trailers.pairs.map { ($0.name, $0.value) }).padding(10)
-                    }
+                }
+            }
+        }
+    }
+
+    private func rawBodyPreview(_ bytes: Data, head: RawMessageHead, forceBinary: Bool = false,
+                                contentType: String? = nil) -> some View {
+        let binary = !bytes.isEmpty && (forceBinary || BodyContentView.isBinary(data: bytes, contentType: contentType ?? self.contentType))
+        return ScrollViewReader { scroll in
+            ScrollView {
+                RawMessageHeadView(head: head).equatable()
+                if binary {
+                    Text("二进制正文").font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
+                }
+                BodyPreview(data: bytes, format: binary ? .hex : .text, generation: bodyGeneration, rawHead: head) {
+                    scroll.scrollTo(BodyPreview.ScrollAnchor.pageTop, anchor: .top)
+                }
+                .id(ObjectIdentifier(tx))
+                if trailers.count > 0 {
+                    fields("Trailers", trailers.pairs.map { ($0.name, $0.value) }).padding(10)
                 }
             }
         }

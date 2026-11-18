@@ -73,8 +73,11 @@ func runLoopbackTests() {
         eq(events.map(\.data), [#"{"n": 1}"#, "one\ntwo"], "loopback: SSE 按事件与多行数据解析")
         eq(events.map(\.id), ["42", "42"], "loopback: SSE 继承事件 ID")
         eq(events.last?.retry, 2500, "loopback: SSE 捕获重连间隔")
-        check(events.count == 2 && events[1].at.timeIntervalSince(events[0].at) >= 0.05,
-              "loopback: SSE 保留事件到达间隔")
+        if events.count == 2, let first = events[0].at, let last = events[1].at {
+            check(last.timeIntervalSince(first) >= 0.05, "loopback: SSE 保留事件到达间隔")
+        } else {
+            check(false, "loopback: SSE 实时事件应保留到达时间")
+        }
         eq(sink.records.last?.responseBody, Data(sse.1.utf8), "loopback: SSE 保留原始响应正文")
 
         let closeDelimited = try curl("/closing")

@@ -58,6 +58,7 @@ struct SessionRecord: Codable, Sendable {
     let clientAddress: String?
     let tConnected: Date?
     let tHeaderAt: Date?
+    let sse: SSEInspectionSnapshot?
 
     init(_ tx: Transaction) {
         id = tx.id
@@ -116,6 +117,7 @@ struct SessionRecord: Codable, Sendable {
         clientAddress = tx.clientAddress
         tConnected = tx.tConnected
         tHeaderAt = tx.tHeaderAt
+        sse = tx.isSSE ? SSEInspectionSnapshot(transaction: tx) : nil
     }
 
     func transaction() -> Transaction {
@@ -173,6 +175,8 @@ struct SessionRecord: Codable, Sendable {
         tx.clientAddress = clientAddress
         tx.tConnected = tConnected
         tx.tHeaderAt = tHeaderAt
+        if let sse { tx.applySSESnapshot(sse) }
+        else if tx.isSSE { tx.restoreSSEFromBody() }
         return tx
     }
 }
@@ -287,6 +291,7 @@ struct SessionFile: Codable, Sendable {
             tx.contentType = entry.response.content?.mimeType ?? tx.responseHeaders.value(of: "Content-Type") ?? ""
             tx.duration = max(0, entry.time ?? 0) / 1000
             tx.comment = entry.comment ?? ""
+            if tx.isSSE { tx.restoreSSEFromBody() }
             return tx
         }
     }

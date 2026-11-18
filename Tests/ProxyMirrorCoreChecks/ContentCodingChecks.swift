@@ -2,6 +2,7 @@ import Foundation
 @testable import ProxyMirrorCore
 
 /// G1：Content-Encoding 解码（gzip / zlib 包装 deflate / raw deflate / 组合与失败路径）
+@MainActor
 func checkContentCoding(_ test: CoreAssertions) {
     let unit = "ondehä localization 汉字 {\"k\": [1,2,3], \"msg\": \"hello gzip deflate 中文\"}"
     let plain = Data(String(repeating: unit, count: 20).utf8)
@@ -23,6 +24,13 @@ func checkContentCoding(_ test: CoreAssertions) {
     }
 
     let gzip = fixtures[0].0
+    if case .failure(.outputLimit)? = ContentCoding.decodeIfCompressed(gzip, encodings: ["gzip"], maxOutputBytes: 12) {
+        test.expect(true, "Small inspection limits stop decoded output")
+    } else { test.expect(false, "Small inspection limits must reject full-body decoding") }
+    if case .success(let prefix)? = ContentCoding.decodeIfCompressed(
+        gzip, encodings: ["gzip"], maxOutputBytes: 12, allowTruncatedOutput: true) {
+        test.equal(prefix.0, Data(plain.prefix(12)), "Prefix inspection returns bounded decoded bytes")
+    } else { test.expect(false, "Bounded prefix decoding should succeed") }
     if case .success(let decoded)? = ContentCoding.decodeIfCompressed(gzip + gzip, encodings: ["gzip"]) {
         test.equal(decoded.0, plain + plain, "拼接 gzip 成员逐个还原")
     } else {
@@ -61,9 +69,15 @@ func checkContentCoding(_ test: CoreAssertions) {
         test.expect(false, "容器探测兜底应成功")
     }
     checkHTTPProtobuf(test)
+    checkCursorBodies(test)
 }
 
 private func checkHTTPProtobuf(_ test: CoreAssertions) {
+    test.expect(HTTPProtobuf.matches(contentType: "Application/Proto; charset=binary", query: "", isRequest: true) &&
+                HTTPProtobuf.matches(contentType: "application/proto", query: "", isRequest: false),
+                "Connect unary requests and responses select the HTTP Protobuf decoder")
+    test.expect(!HTTPProtobuf.matches(contentType: "application/connect+proto", query: "", isRequest: true),
+                "Connect streaming frames are not parsed as an unframed HTTP Protobuf message")
     test.expect(HTTPProtobuf.matches(contentType: "Application/X-Google-Protobuf; charset=binary", query: "", isRequest: false),
                 "HTTP Protobuf recognizes Google content type")
     test.expect(HTTPProtobuf.matches(contentType: "application/octet-stream", query: "x=1&alt=proto", isRequest: false),
@@ -89,6 +103,54 @@ private func checkHTTPProtobuf(_ test: CoreAssertions) {
     test.expect(generic?.type == nil && generic?.text == "#2: \"ok\"", "Unknown HTTP Protobuf shows field numbers and readable strings")
     test.rejects(try GRPCProtobuf.describeHTTP(Data([18, 5, 111, 107]), isError: false),
                  with: GRPCInspectionError.self, "HTTP Protobuf rejects an incomplete field")
+}
+
+@MainActor
+private func checkCursorBodies(_ test: CoreAssertions) {
+    // Independent Python gzip/protobuf fixtures model the two captured formats.
+    let compressedProto = ContentCodingFixtures.b64("H4sIAAAAAAACA+NomHF0/iNDIf60zIqS0qJU3YKi/OTU4mIpBy4DfceCgpzM5MSSzPy8Yn03iAK9xIICfef8vJLUvJJifd/EZP9gmJSAlhQXF1t5flF2apEAOwBhdvwqWgAAAA==")
+    if case .success(let decoded)? = ContentCoding.decodeIfCompressed(compressedProto, encodings: ["gzip"]),
+       let rendered = try? GRPCProtobuf.describeHTTP(decoded.0, isError: false) {
+        test.expect(rendered.type == nil && rendered.text.contains("#1: 1710000000000") &&
+                    rendered.text.contains("#2: \"fixture-process\""),
+                    "Gzipped application/proto shows field numbers, integers and text")
+        test.expect(rendered.text.contains("#3: {") && rendered.text.contains("#2: 42") &&
+                    rendered.text.contains("/Applications/Fixture.app/Contents/MacOS/Fixture") &&
+                    rendered.text.contains("#1: \"worker\"") && rendered.text.contains("#2: 7"),
+                    "Schema-free HTTP Protobuf expands nested process metrics")
+    } else {
+        test.expect(false, "Gzipped application/proto decodes to readable Protobuf fields")
+    }
+
+    let opaque = try? GRPCProtobuf.describeHTTP(Data([10, 3, 0, 255, 1]), isError: false)
+    test.equal(opaque?.text, "#1: 3 字节 · 00 ff 01", "Opaque Protobuf bytes remain binary")
+    var deep = Data([8, 1])
+    for _ in 0..<20 { deep = Data([10, UInt8(deep.count)]) + deep }
+    let limited = try? GRPCProtobuf.describeHTTP(deep, isError: false)
+    test.expect(limited?.text.contains("嵌套层级上限") == true, "Inferred Protobuf messages obey the nesting limit")
+
+    let compressedEnvelope = ContentCodingFixtures.b64("H4sIAAAAAAACA6tWSi1LzSuJz0xRslIyMDQyNjE1M7ewTExKTklNQ+cr1XJVK5VUFqQC1YK1Keko5aTmpZdkKFmZGoMkc1OLixPTQfIv1m9/trHp6fZNT9f1POuYAFRZkJNYkpZflAuUzEosSyxOLsosKAEaCQCjrLI4gwAAAA==")
+    let envelope = ContentCodingFixtures.b64("eyJldmVudF9pZCI6IjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmIn0KeyJ0eXBlIjoiZXZlbnQiLCJsZW5ndGgiOjUzfQp7Im1lc3NhZ2UiOiLor7fmsYLlt7LlrozmiJAiLCJwbGF0Zm9ybSI6ImphdmFzY3JpcHQifQo=")
+    let mime = "application/x-sentry-envelope"
+    if case .success(let decoded)? = ContentCoding.decodeIfCompressed(compressedEnvelope, encodings: ["gzip"]) {
+        test.equal(decoded.0, envelope, "Sentry gzip preserves the envelope lines and UTF-8 payload")
+        test.expect(!BodyContentView.isBinary(data: decoded.0, contentType: mime),
+                    "Decoded Sentry envelopes use a text preview instead of hex")
+        let preview = BodyPreviewRenderer.renderAll(decoded.0, format: .text)
+        test.expect(preview?.contains("请求已完成") == true && preview?.contains("\"type\":\"event\"") == true,
+                    "Raw text preview displays the decompressed Sentry event")
+    } else {
+        test.expect(false, "Gzipped Sentry envelope decodes")
+    }
+    test.expect(BodyContentView.isBinary(data: compressedEnvelope, contentType: mime),
+                "Captured gzip bytes remain available as a binary preview")
+    test.expect(BodyContentView.isBinary(data: envelope + Data([0, 255]), contentType: mime),
+                "A Sentry envelope containing binary data retains the hex fallback")
+    if case .failure(.invalidStream)? = ContentCoding.decodeIfCompressed(compressedEnvelope.dropLast(4), encodings: ["gzip"]) {
+        test.expect(true, "An incomplete gzip envelope cannot be presented as decoded text")
+    } else {
+        test.expect(false, "An incomplete gzip envelope must report a decoding failure")
+    }
 }
 
 private enum ContentCodingFixtures {

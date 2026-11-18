@@ -126,6 +126,7 @@ struct ResetCAConfirmView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var working = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -134,17 +135,34 @@ struct ResetCAConfirmView: View {
             Text("将删除钥匙串中的 ProxyMirror CA 并重新生成新证书。\n此前「已解密」的历史会话仍可查看，但需重新信任新 CA。")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 12))
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
             HStack {
                 Spacer()
-                Button("取消") { onConfirm() }
+                Button("取消") { onConfirm() }.disabled(working)
                 if working {
                     ProgressView().controlSize(.small)
                 } else {
                     Button("重置") {
                         working = true
-                        CertInstaller.resetAll {
+                        errorMessage = nil
+                        CertInstaller.resetAll { result in
                             working = false
-                            onConfirm()
+                            switch result {
+                            case .success:
+                                appState.caInstalled = false
+                                appState.caBannerDismissed = false
+                                UserDefaults.standard.set(false, forKey: "caBannerDismissed")
+                                appState.systemProxyMessage = "ProxyMirror CA 已重置，请重新安装并信任新证书。"
+                                onConfirm()
+                            case .failure(let error):
+                                errorMessage = "重置证书失败：\(error.localizedDescription)"
+                            }
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -153,5 +171,6 @@ struct ResetCAConfirmView: View {
         }
         .padding(16)
         .frame(width: 400)
+        .interactiveDismissDisabled(working)
     }
 }

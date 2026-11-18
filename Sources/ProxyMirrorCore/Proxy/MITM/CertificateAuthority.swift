@@ -18,6 +18,7 @@ final class CertificateAuthority: @unchecked Sendable {
     private var caTLSCertificate: NIOSSLCertificate?
     private var leafContexts: [String: NIOSSLContext] = [:]
     private var leafOrder: [String] = []
+    private var leafGeneration: UInt64 = 0
     private let cacheLock = NSLock()
     private let maxCache = 512
 
@@ -31,7 +32,14 @@ final class CertificateAuthority: @unchecked Sendable {
 
     func setCustomCertificateProvider(_ provider: (@Sendable (String) -> CustomChain?)?) {
         customProvider.set(provider)
+        invalidateLeafContexts()
+    }
+
+    /// 不等待 CA 工作队列：provider 可能正在等待 RulesStore.shared 完成初始化。
+    /// 代数也会使正在构建的旧证书上下文失效，避免清空后又被写回缓存。
+    func invalidateLeafContexts() {
         cacheLock.lock()
+        leafGeneration &+= 1
         leafContexts.removeAll()
         leafOrder.removeAll()
         cacheLock.unlock()
@@ -161,10 +169,7 @@ final class CertificateAuthority: @unchecked Sendable {
         caCertificate = certificate
         caPEMText = pem
         caTLSCertificate = tls
-        cacheLock.lock()
-        leafContexts.removeAll()
-        leafOrder.removeAll()
-        cacheLock.unlock()
+        invalidateLeafContexts()
     }
 
     func resetCA() throws {
@@ -226,14 +231,29 @@ final class CertificateAuthority: @unchecked Sendable {
     }
 
     private func loadLeaf(key: String, host: String, enableHTTP2: Bool) -> NIOSSLContext? {
-        if let cached = cachedLeaf(key) { return cached }
-        guard let result = buildLeafContext(forHost: host, enableHTTP2: enableHTTP2) else { return nil }
-        cacheLock.lock()
-        if leafOrder.count == maxCache { leafContexts.removeValue(forKey: leafOrder.removeFirst()) }
-        leafOrder.append(key)
-        leafContexts[key] = result
-        cacheLock.unlock()
-        return result
+        while true {
+            cacheLock.lock()
+            if let cached = leafContexts[key] {
+                cacheLock.unlock()
+                return cached
+            }
+            let generation = leafGeneration
+            cacheLock.unlock()
+
+            let result = buildLeafContext(forHost: host, enableHTTP2: enableHTTP2)
+            cacheLock.lock()
+            guard generation == leafGeneration else {
+                cacheLock.unlock()
+                continue
+            }
+            if let result {
+                if leafOrder.count == maxCache { leafContexts.removeValue(forKey: leafOrder.removeFirst()) }
+                leafOrder.append(key)
+                leafContexts[key] = result
+            }
+            cacheLock.unlock()
+            return result
+        }
     }
 
     private func buildLeafContext(forHost host: String, enableHTTP2: Bool) -> NIOSSLContext? {

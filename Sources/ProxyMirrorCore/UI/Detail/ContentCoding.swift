@@ -15,15 +15,21 @@ enum ContentCoding {
 
     /// 解码成功返回 (数据, 编码标签)；输入未压缩（无编码）返回 nil。
     /// 组合编码（如 "gzip, br"）按声明逆序逐层解开。
-    static func decodeIfCompressed(_ data: Data, encodings: [String]) -> Result<(Data, String), DecodeError>? {
+    static func decodeIfCompressed(_ data: Data, encodings: [String],
+                                   maxOutputBytes: Int = maxDecodedBytes,
+                                   allowTruncatedOutput: Bool = false) -> Result<(Data, String), DecodeError>? {
         let list = encodings.map { $0.lowercased() }.filter { !$0.isEmpty && $0 != "identity" }
         guard !list.isEmpty, !data.isEmpty else { return nil }
         let unsupported = list.filter { !supported.contains($0) }
         guard unsupported.isEmpty else { return .failure(.unsupported(list)) }
         var current = data
         var labels: [String] = []
-        for coding in list.reversed() {
-            switch inflate(coding: coding, data: current) {
+        let layers = Array(list.reversed())
+        for (index, coding) in layers.enumerated() {
+            let finalLayer = index == layers.count - 1
+            let limit = finalLayer ? min(maxDecodedBytes, max(0, maxOutputBytes)) : maxDecodedBytes
+            switch inflate(coding: coding, data: current, limit: limit,
+                           prefix: finalLayer && allowTruncatedOutput) {
             case .success(let out): current = out; labels.insert(coding, at: 0)
             case .failure(let error): return .failure(error)
             }
@@ -33,30 +39,30 @@ enum ContentCoding {
 
     // MARK: - 单层解码
 
-    private static func inflate(coding: String, data: Data) -> Result<Data, DecodeError> {
+    private static func inflate(coding: String, data: Data, limit: Int, prefix: Bool) -> Result<Data, DecodeError> {
         if coding == "br" {
-            do { return .success(try BrotliBody.decode(data, limit: maxDecodedBytes)) }
+            do { return .success(try BrotliBody.decode(data, limit: limit, allowTruncatedOutput: prefix)) }
             catch BrotliBody.DecodeError.outputLimit { return .failure(.outputLimit) }
             catch { return .failure(.invalidStream) }
         }
         let bytes = Array(data.prefix(2))
         guard bytes.count == 2 else { return .failure(.invalidStream) }
         if bytes == [0x1f, 0x8b] {
-            return inflateDeflate(data, window: MAX_WBITS + 16, concatenated: true)
+            return inflateDeflate(data, window: MAX_WBITS + 16, concatenated: true, limit: limit, prefix: prefix)
         }
         let wrapped = bytes[0] & 0x0f == 8 && (Int(bytes[0]) * 256 + Int(bytes[1])) % 31 == 0
         if wrapped {
-            let result = inflateDeflate(data, window: MAX_WBITS, concatenated: false)
+            let result = inflateDeflate(data, window: MAX_WBITS, concatenated: false, limit: limit, prefix: prefix)
             if case .failure(.invalidStream) = result {
-                return inflateDeflate(data, window: -MAX_WBITS, concatenated: false)
+                return inflateDeflate(data, window: -MAX_WBITS, concatenated: false, limit: limit, prefix: prefix)
             }
             return result
         }
-        return inflateDeflate(data, window: -MAX_WBITS, concatenated: false)
+        return inflateDeflate(data, window: -MAX_WBITS, concatenated: false, limit: limit, prefix: prefix)
     }
 
     private static func inflateDeflate(_ data: Data, window: Int32,
-                                       concatenated: Bool) -> Result<Data, DecodeError> {
+                                       concatenated: Bool, limit: Int, prefix: Bool) -> Result<Data, DecodeError> {
         guard data.count <= Int(uInt.max) else { return .failure(.invalidStream) }
         var stream = z_stream()
         guard inflateInit2_(&stream, window, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
@@ -76,7 +82,11 @@ enum ContentCoding {
                     return zlib.inflate(&stream, Z_NO_FLUSH)
                 }
                 let written = chunk.count - Int(stream.avail_out)
-                guard written <= maxDecodedBytes - decoded.count else { return .failure(.outputLimit) }
+                if written > limit - decoded.count {
+                    guard prefix else { return .failure(.outputLimit) }
+                    decoded.append(contentsOf: chunk.prefix(limit - decoded.count))
+                    return .success(decoded)
+                }
                 decoded.append(contentsOf: chunk.prefix(written))
                 if result == Z_STREAM_END {
                     if stream.avail_in == 0 { return .success(decoded) }

@@ -46,7 +46,7 @@ struct CustomizeTrafficColumnsView: View {
                 }
             }
             .frame(minHeight: 80, maxHeight: 200)
-            Text("JSON 键路径示例 items.0.id。仅从已捕获且不超过 128 KiB 的正文取值。")
+            Text("JSON 键路径示例 items.0.id。从解码后不超过 128 KiB 的正文取值；压缩正文需完整捕获。")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
             HStack {

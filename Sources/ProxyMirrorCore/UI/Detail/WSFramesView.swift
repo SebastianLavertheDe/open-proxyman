@@ -12,6 +12,8 @@ struct WSFramesView: View {
     @State private var recovered: (input: RecoveryInput, frames: [WSFrame])?
     @State private var copyTask: Task<Void, Never>?
     @State private var copyFeedback: String?
+    @State private var searchResult: (input: SearchInput, result: WSMessageSearch.Result)?
+    @State private var searchWorker = WSMessageSearch.Worker()
 
     private enum DirectionFilter: String, CaseIterable {
         case all = "所有", sent = "发送", received = "接收"
@@ -30,8 +32,20 @@ struct WSFramesView: View {
     }
 
     private struct RecoveryInput: Equatable {
+        let transaction: ObjectIdentifier
         let request: UInt64?
         let response: UInt64?
+    }
+
+    private struct SearchInput: Equatable {
+        let transaction: ObjectIdentifier
+        let query: String
+        let request: UInt64
+        let response: UInt64
+        let requestGeneration: UInt64
+        let responseGeneration: UInt64
+        let count: Int
+        let recovered: Bool
     }
 
     private static let timeFormatter: DateFormatter = {
@@ -49,20 +63,29 @@ struct WSFramesView: View {
             ? WebSocketDeflate.negotiated(in: tx.responseHeaders, direction: .upstream) : nil
         let responseDeflate = oldSession && direction != .upstream
             ? WebSocketDeflate.negotiated(in: tx.responseHeaders, direction: .downstream) : nil
-        let recovery = RecoveryInput(request: requestDeflate == nil ? nil : tx.requestBodyRevision,
+        let recovery = RecoveryInput(transaction: ObjectIdentifier(tx), request: requestDeflate == nil ? nil : tx.requestBodyRevision,
                                      response: responseDeflate == nil ? nil : tx.responseBodyRevision)
         let allFrames = recovered.flatMap { $0.input == recovery ? $0.frames : nil } ?? captured
+        let searchInput = filter.isEmpty ? nil : SearchInput(transaction: ObjectIdentifier(tx), query: filter,
+            request: tx.requestBodyRevision, response: tx.responseBodyRevision,
+            requestGeneration: tx.requestBodyGeneration, responseGeneration: tx.responseBodyGeneration,
+            count: allFrames.count, recovered: recovered?.input == recovery)
+        let searched = searchResult.flatMap { $0.input == searchInput ? $0.result : nil }
+        let searching = searchInput != nil && searched == nil
         let wantedDirection = direction ?? directionFilter.direction
         let rows = allFrames.filter {
             (wantedDirection == nil || $0.direction == wantedDirection) &&
-            (filter.isEmpty || $0.opcodeName.localizedCaseInsensitiveContains(filter)
-                || $0.previewText.localizedCaseInsensitiveContains(filter))
+            (filter.isEmpty || searched?.ids.contains($0.id) == true)
         }
         let selected = rows.first { $0.id == selectedID }
         return VSplitView {
             VStack(spacing: 0) {
                 listControls
-                messageTable(rows, allFrames: allFrames)
+                messageTable(rows, allFrames: allFrames, searching: searching)
+                if let searched, searched.unavailable > 0 {
+                    Text("\(searched.unavailable) 条压缩消息无法完整解码，已搜索其可用预览。")
+                        .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 7)
+                }
             }
             .frame(minHeight: 72, idealHeight: 150)
 
@@ -96,6 +119,21 @@ struct WSFramesView: View {
             }
             if !Task.isCancelled { recovered = (recovery, frames) }
         }
+        .task(id: searchInput) {
+            guard let input = searchInput else { searchResult = nil; return }
+            let headers = tx.responseHeaders
+            let scanner = searchWorker
+            let worker = Task.detached(priority: .userInitiated) {
+                await scanner.find(input.query, in: allFrames, headers: headers, transaction: input.transaction,
+                    generations: [input.requestGeneration, input.responseGeneration], recovered: input.recovered)
+            }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            if !Task.isCancelled { searchResult = (input, result) }
+        }
         .onChange(of: selected?.id) { _ in cancelCopy() }
         .onDisappear { cancelCopy() }
     }
@@ -117,7 +155,7 @@ struct WSFramesView: View {
         .padding(.vertical, 4)
     }
 
-    private func messageTable(_ rows: [WSFrame], allFrames: [WSFrame]) -> some View {
+    private func messageTable(_ rows: [WSFrame], allFrames: [WSFrame], searching: Bool) -> some View {
         Table(rows, selection: $selectedID) {
             TableColumn("数据") { frame in
                 HStack(spacing: 6) {
@@ -149,7 +187,7 @@ struct WSFramesView: View {
         }
         .overlay {
             if rows.isEmpty {
-                Text(filter.isEmpty ? "暂无 WebSocket 消息" : "没有匹配的消息")
+                Text(searching ? "正在搜索完整消息…" : filter.isEmpty ? "暂无 WebSocket 消息" : "没有匹配的消息")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .allowsHitTesting(false)
@@ -302,7 +340,12 @@ private struct WSMessageTree: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
             } else {
-                TextViewer(data: data, pretty: true, revision: 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    if let reason = JSONTreeAvailability.unavailableReason(bytes: data.count, complete: true, truncated: false) {
+                        Text(reason).font(.caption).foregroundStyle(.secondary).padding(8)
+                    }
+                    TextViewer(data: data, pretty: true, revision: 0)
+                }
             }
         }
         .task {
@@ -372,6 +415,104 @@ struct JSONTreeNodesView: View {
         case "Number": return ProxymanTheme.jsonNumber
         case "Bool", "Null": return ProxymanTheme.jsonBoolNull
         default: return .primary
+        }
+    }
+}
+
+/// Search the complete available message rather than the shortened table label.
+/// Each sender's compression dictionary is replayed once per search, off the UI thread.
+enum WSMessageSearch {
+    struct Result: Sendable {
+        var ids: Set<UUID> = []
+        var unavailable = 0
+    }
+
+    actor Worker {
+        private struct Source: Equatable {
+            let transaction: ObjectIdentifier
+            let query: String
+            let extensions: [String]
+            let generations: [UInt64]
+            let recovered: Bool
+        }
+        private var source: Source?
+        private var scanner: Scanner?
+
+        func find(_ query: String, in frames: [WSFrame], headers: HTTPHeaders, transaction: ObjectIdentifier,
+                  generations: [UInt64], recovered: Bool) -> Result {
+            let input = Source(transaction: transaction, query: query, extensions: headers.values(of: "Sec-WebSocket-Extensions"),
+                               generations: generations, recovered: recovered)
+            if source != input {
+                source = input
+                scanner = Scanner(query: query, headers: headers)
+            }
+            return scanner!.find(in: frames)
+        }
+    }
+
+    static func find(_ query: String, in frames: [WSFrame], headers: HTTPHeaders) -> Result {
+        Scanner(query: query, headers: headers).find(in: frames)
+    }
+
+    private final class Scanner {
+        private let query: String
+        private let headers: HTTPHeaders
+        private var upstream: WebSocketDeflate.Decoder?
+        private var downstream: WebSocketDeflate.Decoder?
+        private var unknownUpstream = false
+        private var unknownDownstream = false
+        private var firstID: UUID?
+        private var lastID: UUID?
+        private var processed = 0
+        private var result = Result()
+
+        init(query: String, headers: HTTPHeaders) {
+            self.query = query
+            self.headers = headers
+            reset()
+        }
+
+        private func reset() {
+            upstream = WebSocketDeflate.negotiated(in: headers, direction: .upstream).map { WebSocketDeflate.Decoder($0) }
+            downstream = WebSocketDeflate.negotiated(in: headers, direction: .downstream).map { WebSocketDeflate.Decoder($0) }
+            unknownUpstream = false
+            unknownDownstream = false
+            processed = 0
+            result = Result()
+            lastID = nil
+        }
+
+        func find(in frames: [WSFrame]) -> Result {
+            if frames.count < processed || frames.first?.id != firstID ||
+                (processed > 0 && frames[processed - 1].id != lastID) {
+                reset()
+            }
+            firstID = frames.first?.id
+            for frame in frames.dropFirst(processed) {
+                guard !Task.isCancelled else { return result }
+                let decoder = frame.direction == .upstream ? upstream : downstream
+                if frame.rsv1 == nil, decoder != nil {
+                    if frame.direction == .upstream { unknownUpstream = true } else { unknownDownstream = true }
+                }
+                let unknownHistory = frame.direction == .upstream ? unknownUpstream : unknownDownstream
+                var payload = frame.displayPayload
+                if frame.rsv1 == true {
+                    if !unknownHistory, let decoded = decoder?.preview(frame.payload, retaining: Int.max), !decoded.truncated {
+                        payload = decoded.data
+                    } else if frame.displayPayload == nil || frame.decompressedPreviewTruncated == true {
+                        result.unavailable += 1
+                    }
+                } else if frame.rsv1 == nil, decoder != nil {
+                    result.unavailable += 1
+                }
+                if frame.opcodeName.localizedCaseInsensitiveContains(query) ||
+                    payload.map({ String(decoding: $0, as: UTF8.self).localizedCaseInsensitiveContains(query) }) == true {
+                    result.ids.insert(frame.id)
+                }
+                processed += 1
+                lastID = frame.id
+            }
+            return result
         }
     }
 }

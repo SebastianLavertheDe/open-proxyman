@@ -27,11 +27,13 @@ struct ProxyMirrorMainApp: App {
 
         Window("断点", id: "breakpoints") {
             BreakpointWindow()
+                .preferredColorScheme(appearance.colorScheme)
         }
         .defaultSize(width: 920, height: 560)
 
         Window("脚本", id: "scripting") {
             ScriptingWindow()
+                .preferredColorScheme(appearance.colorScheme)
         }
         .defaultSize(width: 1020, height: 610)
 

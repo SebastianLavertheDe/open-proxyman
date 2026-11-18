@@ -2,6 +2,15 @@ import SwiftUI
 import AppKit
 import ImageIO
 
+enum JSONTreeAvailability {
+    static func unavailableReason(bytes: Int, complete: Bool, truncated: Bool) -> String? {
+        if truncated { return "正文已截断，无法显示完整 JSON 树。" }
+        if !complete { return "完整接收正文后可查看 JSON 树。" }
+        if bytes > JSONTreeService.maxInput { return "JSON 树支持最大 256 KiB；可使用正文搜索或 JSON 查询。" }
+        return nil
+    }
+}
+
 /// Body 内容查看器：JSON 语法高亮 / 图片 / Hex / 纯文本（对齐 Proxyman 的 Pretty/Raw 切换）
 struct BodyContentView: View {
     let data: Data
@@ -42,6 +51,7 @@ struct BodyContentView: View {
         let kind = BodyKind.from(contentType: contentType, scheme: nil)
         let mime = contentType.split(separator: ";", maxSplits: 1).first?.trimmingCharacters(in: .whitespaces).lowercased()
         let textualApplication = mime == "application/x-www-form-urlencoded" || mime == "application/graphql"
+            || mime == "application/x-sentry-envelope"
         if (kind == .binary && !textualApplication) || kind == .image || kind == .font { return true }
         let prefix = data.prefix(1024)
         if prefix.contains(where: { $0 < 32 && $0 != 9 && $0 != 10 && $0 != 13 }) { return true }

@@ -9,7 +9,7 @@ enum BrotliBody {
 
     static let maxDecodedBytes = 32 * 1024 * 1024
 
-    static func decode(_ data: Data, limit: Int = maxDecodedBytes) throws -> Data {
+    static func decode(_ data: Data, limit: Int = maxDecodedBytes, allowTruncatedOutput: Bool = false) throws -> Data {
         guard !data.isEmpty else { throw DecodeError.invalidStream }
         var chunk = [UInt8](repeating: 0, count: 32 * 1024)
         return try data.withUnsafeBytes { (input: UnsafeRawBufferPointer) in
@@ -30,7 +30,11 @@ enum BrotliBody {
                     let previousInput = stream.src_size
                     let status = compression_stream_process(&stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
                     let written = output.count - stream.dst_size
-                    guard written <= limit - decoded.count else { throw DecodeError.outputLimit }
+                    if written > max(0, limit) - decoded.count {
+                        guard allowTruncatedOutput else { throw DecodeError.outputLimit }
+                        decoded.append(output.baseAddress!, count: max(0, limit) - decoded.count)
+                        return decoded
+                    }
                     decoded.append(output.baseAddress!, count: written)
                     if status == COMPRESSION_STATUS_END, stream.src_size == 0 { return decoded }
                     guard status == COMPRESSION_STATUS_OK, written > 0 || stream.src_size < previousInput else {

@@ -68,7 +68,7 @@ struct TrafficFilterEditor: View {
                 }
             }
             .frame(minHeight: 110, maxHeight: 280)
-            Text("正文条件检查捕获内容的前 1 MiB")
+            Text("正文条件检查解码后内容的前 1 MiB；压缩正文需完整捕获。")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
             HStack {

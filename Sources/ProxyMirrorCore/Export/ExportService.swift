@@ -24,13 +24,23 @@ enum ExportService {
         let records = transactions.map(SessionRecord.init)
         SessionFile.fileQueue.async {
             do {
-                let har = buildHAR(records.map { $0.transaction() })
-                let data = try JSONSerialization.data(withJSONObject: har, options: [.prettyPrinted, .sortedKeys])
-                try data.write(to: url, options: .atomic)
+                try writeHAR(records, to: url)
             } catch {
-                NSLog("[ProxyMirror] HAR 导出失败: \(error)")
+                reportExportFailure(error, format: "HAR")
             }
         }
+    }
+
+    static func writeHAR(_ records: [SessionRecord], to url: URL) throws {
+        let har = buildHAR(records.map { $0.transaction() })
+        let data = try JSONSerialization.data(withJSONObject: har, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: url, options: .atomic)
+    }
+
+    private static func reportExportFailure(_ error: Error, format: String) {
+        let message = "\(format) 导出失败：\(error.localizedDescription)"
+        NSLog("[ProxyMirror] %@", message)
+        DispatchQueue.main.async { AppState.shared.systemProxyMessage = message }
     }
 
     static func buildHAR(_ transactions: [Transaction]) -> [String: Any] {
@@ -123,6 +133,11 @@ enum ExportService {
         panel.nameFieldStringValue = "proxymirror.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try writeCSV(transactions, to: url) }
+        catch { reportExportFailure(error, format: "CSV") }
+    }
+
+    static func writeCSV(_ transactions: [Transaction], to url: URL) throws {
         var rows = ["Method,Status,URL,Content Type,Size,Duration(ms),Start Time"]
         for tx in transactions {
             let cells = [tx.method, String(tx.statusCode), tx.fullURL,
@@ -130,24 +145,26 @@ enum ExportService {
                          String(format: "%.0f", tx.duration * 1000), tx.timeText]
             rows.append(cells.map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))" }.joined(separator: ","))
         }
-        try? rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// 生成可复用的 cURL 命令
     static func curlCommand(_ tx: Transaction) -> String {
         if tx.isTunnel {
-            return "curl --proxy 127.0.0.1:\(AppSettings.shared.port) https://\(tx.host):\(tx.port)"
+            let authority = URLParser.authority(host: tx.host, port: tx.port, scheme: "https")
+            return "curl --proxy 'http://127.0.0.1:\(AppSettings.shared.port)' 'https://\(_escape(authority))'"
         }
         var parts = ["curl '\(_escape(tx.fullURL))'"]
-        if tx.method != "GET" {
+        let body = tx.requestBody
+        if tx.method != "GET" || !body.isEmpty {
             let method = tx.method.utf8.allSatisfy { (65...90).contains($0) } ? tx.method : "'\(_escape(tx.method))'"
             parts.append("-X \(method)")
         }
         let skipped = ["host", "content-length", "connection", "accept-encoding", "transfer-encoding", "trailer", "proxy-authorization", "proxy-connection"]
         for p in tx.requestHeaders.pairs where !skipped.contains(p.name.lowercased()) {
-            parts.append("-H '\(_escape(p.name)): \(_escape(p.value))'")
+            let header = p.value.isEmpty ? p.name + ";" : p.name + ": " + p.value
+            parts.append("-H '\(_escape(header))'")
         }
-        let body = tx.requestBody
         if !body.isEmpty {
             if let text = String(data: body, encoding: .utf8), !text.utf8.contains(0) {
                 parts.append("--data-raw '\(_escape(text))'")

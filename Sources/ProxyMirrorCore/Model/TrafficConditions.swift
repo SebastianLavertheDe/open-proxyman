@@ -42,8 +42,12 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
             case .status: values = tx.statusCode > 0 ? [String(tx.statusCode)] : []
             case .requestHeader: values = tx.requestHeaders.pairs.map { "\($0.name): \($0.value)" }
             case .responseHeader: values = tx.responseHeaders.pairs.map { "\($0.name): \($0.value)" }
-            case .requestBody: values = [String(decoding: tx.requestBody.prefix(Self.bodyLimit), as: UTF8.self)]
-            case .responseBody: values = [String(decoding: tx.responseBody.prefix(Self.bodyLimit), as: UTF8.self)]
+            case .requestBody:
+                values = InspectionBody.data(for: tx, request: true, limit: Self.bodyLimit, prefix: true)
+                    .map { [String(decoding: $0, as: UTF8.self)] } ?? []
+            case .responseBody:
+                values = InspectionBody.data(for: tx, request: false, limit: Self.bodyLimit, prefix: true)
+                    .map { [String(decoding: $0, as: UTF8.self)] } ?? []
             case .client: values = [tx.clientName, tx.clientBundle].compactMap { $0 }
             case .duration: values = tx.state == .completed ? [String(Int((tx.duration * 1000).rounded()))] : []
             case .httpVersion:
@@ -66,13 +70,22 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
         let matches = NSMapTable<Transaction, BodyMatch>(
             keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory)
         return { tx in
-            let generation = request ? tx.requestBodyGeneration : tx.responseBodyGeneration
+            guard !Task.isCancelled else { return false }
+            let encodings = (request ? tx.requestHeaders : tx.responseHeaders).values(of: "Content-Encoding")
+            let generation = encodings.isEmpty
+                ? (request ? tx.requestBodyGeneration : tx.responseBodyGeneration)
+                : (request ? tx.requestBodyRevision : tx.responseBodyRevision)
             let count = min(Self.bodyLimit, request ? tx.requestBody.count : tx.responseBody.count)
-            if let cached = matches.object(forKey: tx), cached.generation == generation, cached.count == count {
+            let complete = request ? tx.requestBodyComplete : tx.responseBodyComplete
+            let truncated = request ? tx.requestTruncated : tx.responseTruncated
+            if let cached = matches.object(forKey: tx), cached.generation == generation, cached.count == count,
+               cached.encodings == encodings, cached.complete == complete, cached.truncated == truncated {
                 return cached.matches
             }
             let result = test(tx)
-            matches.setObject(BodyMatch(generation: generation, count: count, matches: result), forKey: tx)
+            guard !Task.isCancelled else { return false }
+            matches.setObject(BodyMatch(generation: generation, count: count, encodings: encodings,
+                                       complete: complete, truncated: truncated, matches: result), forKey: tx)
             return result
         }
     }
@@ -80,11 +93,17 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
     private final class BodyMatch {
         let generation: UInt64
         let count: Int
+        let encodings: [String]
+        let complete: Bool
+        let truncated: Bool
         let matches: Bool
 
-        init(generation: UInt64, count: Int, matches: Bool) {
+        init(generation: UInt64, count: Int, encodings: [String], complete: Bool, truncated: Bool, matches: Bool) {
             self.generation = generation
             self.count = count
+            self.encodings = encodings
+            self.complete = complete
+            self.truncated = truncated
             self.matches = matches
         }
     }
@@ -119,4 +138,3 @@ struct SavedTrafficFilter: Codable, Identifiable {
 
     static let defaultsKey = "ui.savedTrafficFilters"
 }
-

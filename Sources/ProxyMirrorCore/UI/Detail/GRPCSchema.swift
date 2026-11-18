@@ -206,7 +206,10 @@ enum GRPCProtobuf {
                 let prefix = indent + label + ": "
                 let nestedType = record.number == 2 && anyPayloadType != nil ? anyPayloadType
                     : field?.type == .message ? field?.typeName : nil
-                if case .bytes(let bytes) = record.value, field?.type == .message || nestedType != nil {
+                if case .bytes(let bytes) = record.value,
+                   field?.type == .message || nestedType != nil ||
+                    (field == nil && showUnknownText && Self.unknownText(bytes) == nil &&
+                     !bytes.isEmpty && (try? ProtoWire.fields(bytes))?.isEmpty == false) {
                     if depth >= 16 {
                         lines.append(prefix + Self.byteSummary(bytes) + "（嵌套层级上限）")
                     } else {
@@ -273,15 +276,19 @@ enum GRPCProtobuf {
                 if field?.type == .string, let text = String(data: bytes, encoding: .utf8) {
                     return Self.stringPreview(text)
                 }
-                if field == nil, showUnknownText, bytes.count <= 4096,
-                   let text = String(data: bytes, encoding: .utf8), !text.isEmpty,
-                   text.unicodeScalars.allSatisfy({
-                       !CharacterSet.controlCharacters.contains($0) || $0 == "\n" || $0 == "\r" || $0 == "\t"
-                   }) {
+                if field == nil, showUnknownText, let text = Self.unknownText(bytes) {
                     return Self.stringPreview(text)
                 }
                 return Self.byteSummary(bytes)
             }
+        }
+
+        private static func unknownText(_ bytes: Data) -> String? {
+            guard bytes.count <= 4096, let text = String(data: bytes, encoding: .utf8), !text.isEmpty,
+                  text.unicodeScalars.allSatisfy({
+                      !CharacterSet.controlCharacters.contains($0) || $0 == "\n" || $0 == "\r" || $0 == "\t"
+                  }) else { return nil }
+            return text
         }
 
         private static func stringPreview(_ text: String) -> String {

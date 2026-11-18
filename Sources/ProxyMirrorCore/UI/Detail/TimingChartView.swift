@@ -33,8 +33,12 @@ struct TimingChartView: View {
     private var start: Date { tx.startedAt }
     private var connected: Date? { tx.tConnected }
     private var headerAt: Date? { tx.tHeaderAt }
-    private var end: Date {
-        max(headerAt ?? start, tx.state == .completed ? start.addingTimeInterval(tx.duration) : start)
+    private var end: Date { Self.endDate(for: tx) }
+
+    static func endDate(for tx: Transaction) -> Date {
+        let terminal = tx.state == .completed || tx.state == .failed
+        return max(tx.tHeaderAt ?? tx.startedAt,
+                   terminal ? tx.startedAt.addingTimeInterval(tx.duration) : tx.startedAt)
     }
     private var total: TimeInterval {
         let e = end.timeIntervalSince(start)

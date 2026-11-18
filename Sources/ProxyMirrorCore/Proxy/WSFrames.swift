@@ -245,16 +245,29 @@ enum GraphQLService {
     static func detect(tx: Transaction, inspectResponse: Bool = true) -> GraphQLInfo? {
         guard !tx.requestTruncated,
               var result = detectRequest(path: tx.path, query: tx.query, headers: tx.requestHeaders,
-                                         body: tx.requestBody) else { return nil }
-        if inspectResponse, !tx.responseBody.isEmpty, tx.responseBody.count <= 262_144,
-           let obj = try? JSONSerialization.jsonObject(with: tx.responseBody) as? [String: Any],
+                                         body: InspectionBody.data(for: tx, request: true, limit: 262_144) ?? Data(),
+                                         bodyIsDecoded: true) else { return nil }
+        if inspectResponse, let body = InspectionBody.data(for: tx, request: false, limit: 262_144), !body.isEmpty,
+           let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
            obj.keys.contains("data") || obj.keys.contains("errors") {
             result.responseIsGraphQL = true
         }
         return result
     }
 
-    static func detectRequest(path: String, query: String, headers: HTTPHeaders, body: Data) -> GraphQLInfo? {
+    static func detectRequest(path: String, query: String, headers: HTTPHeaders, body: Data,
+                              bodyIsDecoded: Bool = false) -> GraphQLInfo? {
+        var body = body
+        if !bodyIsDecoded {
+            let encodings = headers.values(of: "Content-Encoding").flatMap { $0.split(separator: ",") }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty && $0 != "identity" }
+            if !encodings.isEmpty, !body.isEmpty {
+                guard case .success(let decoded) = ContentCoding.decodeIfCompressed(
+                    body, encodings: encodings, maxOutputBytes: 262_144) else { return nil }
+                body = decoded.0
+            }
+        }
         guard body.count <= 262_144 else { return nil }
         var info: GraphQLInfo?
         var declaredName: String?

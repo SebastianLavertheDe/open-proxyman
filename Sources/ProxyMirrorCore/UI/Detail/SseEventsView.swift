@@ -4,13 +4,29 @@ import SwiftUI
 struct SseEventsView: View {
     @ObservedObject var tx: Transaction
 
+    private struct RecoveryInput: Equatable {
+        let transaction: ObjectIdentifier
+        let revision: UInt64
+        let generation: UInt64
+        let encodings: [String]
+    }
+
+    private var recoveryInput: RecoveryInput? {
+        guard tx.responseBodyComplete, !tx.responseTruncated, !tx.sseEventsTruncated,
+              !tx.responseBody.isEmpty else { return nil }
+        let encodings = SSEBodyStream.encodings(tx.responseHeaders)
+        guard tx.sseDecodingDeferred || tx.sseEvents.isEmpty || !encodings.isEmpty else { return nil }
+        return RecoveryInput(transaction: ObjectIdentifier(tx), revision: tx.responseBodyRevision,
+                             generation: tx.responseBodyGeneration, encodings: encodings)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Text("共 \(tx.sseEvents.count) 个事件")
                 if tx.sseEventsTruncated { Text("已截断") }
-                if !tx.sseEvents.isEmpty, let first = tx.sseEvents.first, let last = tx.sseEvents.last {
-                    Text(String(format: "· 跨度 %.1fs", max(last.at.timeIntervalSince(first.at), 0)))
+                if let first = tx.sseEvents.first?.at, let last = tx.sseEvents.last?.at {
+                    Text(String(format: "· 跨度 %.1fs", max(last.timeIntervalSince(first), 0)))
                 }
                 Spacer()
             }
@@ -18,15 +34,25 @@ struct SseEventsView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
+            if tx.sseEvents.contains(where: { $0.at == nil }) {
+                Text("事件从捕获正文恢复，历史到达时间未记录。")
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
+            }
+            if let issue = tx.sseParseIssue {
+                Text(issue).font(.caption).foregroundStyle(tx.sseDecodingDeferred ? Color.secondary : Color.orange)
+                    .textSelection(.enabled).padding(.horizontal, 10)
+            }
             if tx.sseEvents.isEmpty {
-                Text(tx.responseBodyComplete ? "没有可显示的 SSE 事件" : "等待事件…")
+                Text(tx.sseDecodingDeferred && tx.responseBodyComplete ? "正在恢复 SSE 事件…" :
+                     tx.responseBodyComplete || tx.state == .failed || (tx.sseParseIssue != nil && !tx.sseDecodingDeferred)
+                        ? "没有可显示的 SSE 事件" : "等待事件…")
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(tx.sseEvents) { event in
+                            ForEach(tx.sseEvents, id: \.index) { event in
                                 eventRow(event).id(event.index)
                             }
                         }
@@ -37,6 +63,22 @@ struct SseEventsView: View {
                     }
                 }
             }
+        }
+        .task(id: recoveryInput) {
+            guard let input = recoveryInput else { return }
+            let data = tx.responseBody
+            let headers = tx.responseHeaders
+            let worker = Task.detached(priority: .userInitiated) {
+                SSEBodyRecovery.recover(data, headers: headers, complete: true, truncated: false)
+            }
+            let snapshot = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard !Task.isCancelled, input.transaction == ObjectIdentifier(tx),
+                  input.revision == tx.responseBodyRevision, input.generation == tx.responseBodyGeneration else { return }
+            tx.applySSESnapshot(snapshot, preservingArrivalTimes: true)
         }
     }
 
@@ -60,11 +102,11 @@ struct SseEventsView: View {
                         .font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
                 }
                 Spacer()
-                if event.index > 0, let previous = tx.sseEvents[safe: event.index - 1] {
-                    Text(String(format: "+%.0f ms", max(0, event.at.timeIntervalSince(previous.at) * 1000)))
+                if event.index > 0, let at = event.at, let previous = tx.sseEvents[safe: event.index - 1]?.at {
+                    Text(String(format: "+%.0f ms", max(0, at.timeIntervalSince(previous) * 1000)))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
-                Text(event.at.formatted(date: .omitted, time: .standard))
+                Text(event.at?.formatted(date: .omitted, time: .standard) ?? "到达时间未记录")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             if let tree = JSONTreeService.build(from: Data(event.data.utf8)) {

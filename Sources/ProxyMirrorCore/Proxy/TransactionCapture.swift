@@ -264,9 +264,12 @@ final class TransactionCapture: @unchecked Sendable {
     private var webSocketCapture: WebSocketCapture?
     private var webSocketChunks: [WebSocketChunk] = []
     private var upgradedToWebSocket = false
-    private var sseState: SSEStreamState?
+    private var sseState: SSEBodyStream?
     private var publishedSSECount = 0
     private var publishedSSETruncated = false
+    private var publishedSSEIssue: String?
+    private var publishedSSEDeferred = false
+    private var sseFinished = false
 
     init(transaction: Transaction, on loop: EventLoop, sink: TrafficSink? = nil) {
         self.transaction = transaction
@@ -296,12 +299,8 @@ final class TransactionCapture: @unchecked Sendable {
 
     func setResponseHeadersForSSE(_ headers: HTTPHeaders) {
         loop.assertInEventLoop()
-        let encodings = headers.values(of: "content-encoding")
-            .flatMap { $0.split(separator: ",") }
-            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        if SSEStreamState.matches(headers.value(of: "content-type") ?? ""),
-           encodings.allSatisfy({ $0 == "identity" }) {
-            sseState = SSEStreamState()
+        if SSEStreamState.matches(headers.value(of: "content-type") ?? "") {
+            sseState = SSEBodyStream(headers: headers)
         }
     }
 
@@ -311,23 +310,43 @@ final class TransactionCapture: @unchecked Sendable {
         webSocketCapture = WebSocketCapture(headers: headers)
     }
 
+    /// Called only at the response terminal boundary, including failures. The
+    /// final container validation may change inspection state without new bytes.
+    func finishSSE(complete: Bool = true) {
+        loop.assertInEventLoop()
+        if !sseFinished {
+            sseState?.finish(complete: complete)
+            sseFinished = true
+        }
+        flush()
+    }
+
+    private func publishSSE() {
+        if let snapshot = sseState?.snapshot,
+           snapshot.events.count > publishedSSECount || snapshot.truncated != publishedSSETruncated ||
+            snapshot.issue != publishedSSEIssue || snapshot.deferred != publishedSSEDeferred {
+            let events = Array(snapshot.events.dropFirst(publishedSSECount))
+            publishedSSECount = snapshot.events.count
+            publishedSSETruncated = snapshot.truncated
+            publishedSSEIssue = snapshot.issue
+            publishedSSEDeferred = snapshot.deferred
+            onMain { [transaction] in
+                transaction.sseEvents.append(contentsOf: events)
+                transaction.sseEventsTruncated = snapshot.truncated
+                transaction.sseParseIssue = snapshot.issue
+                transaction.sseDecodingDeferred = snapshot.deferred
+            }
+        }
+    }
+
     func flush() {
         loop.assertInEventLoop()
         timer?.cancel()
         timer = nil
+        publishSSE()
         guard request.bytes > 0 || response.bytes > 0 else { return }
         let (requestData, requestBytes, requestWS, requestCharge) = request.drain()
         let (responseData, responseBytes, responseWS, responseCharge) = response.drain()
-        if let sseState, sseState.events.count > publishedSSECount || sseState.truncated != publishedSSETruncated {
-            let events = Array(sseState.events.dropFirst(publishedSSECount))
-            let truncated = sseState.truncated
-            publishedSSECount = sseState.events.count
-            publishedSSETruncated = truncated
-            onMain { [transaction] in
-                transaction.sseEvents.append(contentsOf: events)
-                transaction.sseEventsTruncated = truncated
-            }
-        }
         let bodyCharge = requestCharge + responseCharge
         let publish = { [transaction, weak sink] (frames: [WSFrame]) in
             let previewCharge = frames.reduce(0) { $0 + ($1.decompressedPreview?.count ?? 0) }

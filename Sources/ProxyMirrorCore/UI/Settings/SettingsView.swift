@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var selectedTab = 0
 
     @State private var search = ""
+    @State private var excludedHostsText = AppSettings.shared.mitmExcludedHosts.joined(separator: "\n")
     @State private var reveal: SettingsSearchTarget?
     @State private var revealRequest = UUID()
     @FocusState private var searchFocused: Bool
@@ -83,8 +84,15 @@ struct SettingsView: View {
             }
         }
         .frame(width: 520, height: 455)
+        .disabled(appState.proxyRestarting)
         .onAppear { revealSettingsTarget() }
         .onChange(of: appState.settingsTarget) { _ in revealSettingsTarget() }
+        .onChange(of: settings.mitmExcludedHosts) { hosts in
+            // Preserve in-progress line breaks while still reflecting changes from other windows.
+            if AppState.mitmExcludedHosts(from: excludedHostsText) != hosts {
+                excludedHostsText = hosts.joined(separator: "\n")
+            }
+        }
     }
 
     private var searchResults: some View {
@@ -167,7 +175,7 @@ struct SettingsView: View {
             setting(.followLatest) {
                 Toggle("自动滚动到最新请求", isOn: Binding(
                     get: { settings.followLatest },
-                    set: { settings.followLatest = $0 }))
+                    set: { appState.setFollowLatest($0) }))
             }
 
             setting(.appearance) {
@@ -283,8 +291,8 @@ struct SettingsView: View {
                     Text("不解密的主机（每行一个，支持 *.example.com）")
                         .font(.system(size: 12, weight: .medium))
                     TextEditor(text: Binding(
-                        get: { settings.mitmExcludedHosts.joined(separator: "\n") },
-                        set: { settings.mitmExcludedHosts = $0.split(separator: "\n").map(String.init).filter { !$0.isEmpty } }))
+                        get: { excludedHostsText },
+                        set: { excludedHostsText = $0; appState.setMITMExcludedHosts($0) }))
                         .font(.system(size: 11, design: .monospaced))
                         .frame(height: 90)
                         .border(Color.gray.opacity(0.3))
@@ -322,8 +330,11 @@ struct SettingsView: View {
             Divider()
 
             setting(.restart) {
-                Button("应用并重启代理") { appState.applyAndRestartIfNeeded() }
+                Button(appState.proxyRestarting ? "正在重启代理…" : appState.proxyRunning ? "应用并重启代理" : "应用设置") {
+                    appState.applyAndRestartProxy()
+                }
                     .buttonStyle(.borderedProminent)
+                    .disabled(appState.systemProxyBusy)
             }
 
             Divider()

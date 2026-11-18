@@ -261,6 +261,10 @@ struct RulesEditorView: View {
             }
             table
             addRow
+            if kind == .blockList || kind == .allowList {
+                Text("透传 HTTPS 按域名和端口判断；匹配具体路径需启用 SSL 解密。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if kind == .mapLocal {
                 HStack {
                     TextField("状态码", text: $newStatus).frame(width: 72)

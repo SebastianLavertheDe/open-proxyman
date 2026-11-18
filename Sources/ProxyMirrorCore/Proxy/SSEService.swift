@@ -1,15 +1,17 @@
 import Foundation
+import zlib
 
 /// SSE（text/event-stream）增量解析：按 W3C 事件流规范逐字节切行，
 /// 支持 data 多行合并、event/id/retry 字段、冒号注释行，跨 chunk 断行续接。
 /// 事件数与单事件大小有上限，超限丢弃并标记截断（用于调试查看，不参与转发）。
-struct SSEEvent: Identifiable, Equatable {
+struct SSEEvent: Codable, Equatable, Sendable {
     let index: Int
     let event: String       // 未声明时为 "message"
     let data: String        // 多行以 \n 连接
     let id: String?
     let retry: Int?
-    let at: Date
+    /// nil when restored from a body that did not retain per-event arrival times.
+    let at: Date?
 }
 
 struct SSEStreamState {
@@ -37,9 +39,10 @@ struct SSEStreamState {
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "text/event-stream"
     }
 
-    mutating func append<C: Collection>(_ bytes: C, at date: Date = Date()) where C.Element == UInt8 {
+    mutating func append<C: Collection>(_ bytes: C, at date: Date? = Date()) where C.Element == UInt8 {
         guard !truncated else { return }
-        for byte in bytes {
+        for (offset, byte) in bytes.enumerated() {
+            if offset & 0x3fff == 0, Task.isCancelled { return }
             if afterCR {
                 afterCR = false
                 if byte == 0x0A { continue }
@@ -60,13 +63,14 @@ struct SSEStreamState {
                     pending.removeAll(keepingCapacity: true)
                     discardLine = true
                     discardEvent = true
+                    truncated = true
                 }
             }
             if truncated { return }
         }
     }
 
-    private mutating func processLine(_ line: String, at date: Date) {
+    private mutating func processLine(_ line: String, at date: Date?) {
         if line.isEmpty {
             dispatch(at: date)
             return
@@ -91,6 +95,7 @@ struct SSEStreamState {
                 dataBytes += size
             } else {
                 discardEvent = true
+                truncated = true
             }
         case "event":
             declaredEvent = value
@@ -105,7 +110,7 @@ struct SSEStreamState {
         }
     }
 
-    private mutating func dispatch(at date: Date) {
+    private mutating func dispatch(at date: Date?) {
         defer {
             dataLines.removeAll(keepingCapacity: true)
             dataBytes = 0
@@ -123,5 +128,249 @@ struct SSEStreamState {
         events.append(SSEEvent(index: events.count, event: event,
                                data: dataLines.joined(separator: "\n"), id: lastID,
                                retry: declaredRetry, at: date))
+    }
+}
+
+/// Stored alongside the captured body, so Saved and sessions retain actual arrival times.
+struct SSEInspectionSnapshot: Codable, Sendable {
+    var events: [SSEEvent]
+    var truncated: Bool
+    var issue: String?
+    var deferred: Bool
+
+    init(events: [SSEEvent], truncated: Bool = false, issue: String? = nil, deferred: Bool = false) {
+        self.events = events
+        self.truncated = truncated
+        self.issue = issue
+        self.deferred = deferred
+    }
+
+    init(transaction: Transaction) {
+        events = transaction.sseEvents
+        truncated = transaction.sseEventsTruncated
+        issue = transaction.sseParseIssue
+        deferred = transaction.sseDecodingDeferred
+    }
+}
+
+/// Only the owning capture loop mutates this parser. gzip/deflate emit events as
+/// bytes arrive; other supported encodings are decoded once the body is complete.
+final class SSEBodyStream {
+    private var parser = SSEStreamState()
+    private let inflater: SSEIncrementalInflater?
+    private(set) var issue: String?
+    private(set) var deferred: Bool
+    private var decodedBytes = 0
+    private static let decodedLimit = ContentCoding.maxDecodedBytes
+
+    init(headers: HTTPHeaders) {
+        let encodings = Self.encodings(headers)
+        if encodings.isEmpty {
+            inflater = nil
+            deferred = false
+        } else if encodings.count == 1, encodings[0] == "gzip" || encodings[0] == "deflate" {
+            inflater = SSEIncrementalInflater(gzip: encodings[0] == "gzip")
+            deferred = false
+        } else {
+            inflater = nil
+            deferred = encodings.allSatisfy { ContentCoding.supported.contains($0) }
+            issue = deferred ? "SSE 的 \(encodings.joined(separator: ", ")) 正文将在接收完成后解析。"
+                : "暂不支持 SSE Content-Encoding: \(encodings.joined(separator: ", "))。可在原文查看捕获字节。"
+        }
+    }
+
+    static func encodings(_ headers: HTTPHeaders) -> [String] {
+        headers.values(of: "content-encoding").flatMap { $0.split(separator: ",") }
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty && $0 != "identity" }
+    }
+
+    var snapshot: SSEInspectionSnapshot {
+        SSEInspectionSnapshot(events: parser.events, truncated: parser.truncated,
+                              issue: issue, deferred: deferred)
+    }
+
+    func append<C: Collection>(_ bytes: C, at date: Date? = Date()) where C.Element == UInt8 {
+        guard issue == nil, !parser.truncated else { return }
+        do {
+            if let inflater {
+                try inflater.append(Data(bytes)) { decoded in
+                    try self.accept(decoded, at: date)
+                }
+            } else {
+                try accept(Data(bytes), at: date)
+            }
+        } catch {
+            issue = error.localizedDescription
+        }
+    }
+
+    private func accept(_ bytes: Data, at date: Date?) throws {
+        try Task.checkCancellation()
+        guard bytes.count <= Self.decodedLimit - decodedBytes else {
+            throw QueryError("SSE 正文超过 32 MiB 解析上限，后续事件未解析。")
+        }
+        decodedBytes += bytes.count
+        parser.append(bytes, at: date)
+    }
+
+    func finish(complete: Bool = true) {
+        if deferred, !complete {
+            deferred = false
+            issue = "连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。可在原文查看捕获字节。"
+        } else if issue == nil, !parser.truncated, let inflater, !inflater.finished {
+            issue = "SSE 压缩正文不完整，已显示可恢复的事件。"
+        }
+    }
+}
+
+private final class SSEIncrementalInflater {
+    private var stream = z_stream()
+    private let gzip: Bool
+    private var initialized = false
+    private var prefix = Data()
+    private var mayRetryRaw = false
+    private var retryInput = Data()
+    private(set) var finished = false
+
+    init(gzip: Bool) { self.gzip = gzip }
+    deinit { if initialized { inflateEnd(&stream) } }
+
+    private func initialize(window: Int32) throws {
+        guard inflateInit2_(&stream, window, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
+            throw QueryError("无法初始化 SSE 压缩解码。")
+        }
+        initialized = true
+    }
+
+    func append(_ data: Data, emit: (Data) throws -> Void) throws {
+        var input = data
+        if !initialized {
+            prefix.append(data)
+            guard prefix.count >= 2 else { return }
+            input = prefix
+            prefix = Data()
+            let wrapped = input[input.startIndex] & 0x0f == 8 &&
+                (Int(input[input.startIndex]) * 256 + Int(input[input.startIndex + 1])) % 31 == 0
+            try initialize(window: gzip ? MAX_WBITS + 16 : (wrapped ? MAX_WBITS : -MAX_WBITS))
+            mayRetryRaw = !gzip && wrapped
+        }
+        if finished {
+            guard gzip, inflateReset2(&stream, MAX_WBITS + 16) == Z_OK else {
+                throw QueryError("SSE 压缩正文包含多余数据。")
+            }
+            finished = false
+        }
+        if mayRetryRaw {
+            if retryInput.isEmpty { retryInput = input }
+            else if input.count <= 1024 * 1024 - retryInput.count { retryInput.append(input) }
+            else { mayRetryRaw = false; retryInput = Data() }
+        }
+        do {
+            try decode(input) { bytes in
+                // Retrying after publishing bytes could duplicate or corrupt events.
+                self.mayRetryRaw = false
+                self.retryInput = Data()
+                try emit(bytes)
+            }
+            if finished { mayRetryRaw = false; retryInput = Data() }
+        } catch {
+            guard mayRetryRaw else { throw error }
+            let original = retryInput
+            mayRetryRaw = false
+            retryInput = Data()
+            inflateEnd(&stream)
+            initialized = false
+            stream = z_stream()
+            try initialize(window: -MAX_WBITS)
+            try decode(original, emit: emit)
+        }
+    }
+
+    private func decode(_ input: Data, emit: (Data) throws -> Void) throws {
+        try input.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            stream.next_in = UnsafeMutablePointer(mutating: bytes.bindMemory(to: UInt8.self).baseAddress)
+            stream.avail_in = uInt(bytes.count)
+            defer { stream.next_in = nil; stream.next_out = nil }
+            var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+            while true {
+                let before = stream.avail_in
+                let status = buffer.withUnsafeMutableBufferPointer { output in
+                    stream.next_out = output.baseAddress
+                    stream.avail_out = uInt(output.count)
+                    return zlib.inflate(&stream, Z_NO_FLUSH)
+                }
+                let count = buffer.count - Int(stream.avail_out)
+                if count > 0 { try emit(Data(buffer.prefix(count))) }
+                if status == Z_STREAM_END {
+                    finished = true
+                    if stream.avail_in == 0 { return }
+                    guard gzip, inflateReset2(&stream, MAX_WBITS + 16) == Z_OK else {
+                        throw QueryError("SSE 压缩正文包含多余数据。")
+                    }
+                    finished = false
+                } else if status == Z_BUF_ERROR, stream.avail_in == 0, count == 0 {
+                    return
+                } else {
+                    guard status == Z_OK, count > 0 || stream.avail_in < before else {
+                        throw QueryError("SSE 压缩正文损坏，已显示可恢复的事件。")
+                    }
+                    if stream.avail_in == 0, stream.avail_out > 0 { return }
+                }
+            }
+        }
+    }
+}
+
+enum SSEBodyRecovery {
+    static func recover(_ data: Data, headers: HTTPHeaders, complete: Bool, truncated: Bool,
+                        failed: Bool = false) -> SSEInspectionSnapshot {
+        let stream = SSEBodyStream(headers: headers)
+        if stream.deferred {
+            guard complete, !truncated else {
+                return SSEInspectionSnapshot(events: [], truncated: truncated,
+                    issue: truncated ? "SSE 压缩正文已截断，无法完整解码。" :
+                        failed ? "连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。" : stream.issue,
+                    deferred: !truncated && !failed)
+            }
+            switch ContentCoding.decodeIfCompressed(data, encodings: SSEBodyStream.encodings(headers)) {
+            case .success(let decoded):
+                var parser = SSEStreamState()
+                parser.append(decoded.0, at: nil)
+                return SSEInspectionSnapshot(events: parser.events, truncated: parser.truncated)
+            case .failure(.outputLimit):
+                return SSEInspectionSnapshot(events: [], issue: "SSE 解压正文超过 32 MiB。")
+            case .failure:
+                return SSEInspectionSnapshot(events: [], issue: "无法解码 SSE 压缩正文。可在原文查看捕获字节。")
+            case nil:
+                return SSEInspectionSnapshot(events: [], issue: "没有可解码的 SSE 正文。")
+            }
+        }
+        stream.append(data, at: nil)
+        if complete { stream.finish() }
+        var snapshot = stream.snapshot
+        snapshot.truncated = snapshot.truncated || truncated
+        return snapshot
+    }
+}
+
+extension Transaction {
+    func applySSESnapshot(_ snapshot: SSEInspectionSnapshot, preservingArrivalTimes: Bool = false) {
+        let previous = preservingArrivalTimes ? Dictionary(sseEvents.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
+        sseEvents = snapshot.events.map { event in
+            guard let original = previous[event.index], original.event == event.event,
+                  original.data == event.data, original.id == event.id, original.retry == event.retry else { return event }
+            return SSEEvent(index: event.index, event: event.event, data: event.data,
+                            id: event.id, retry: event.retry, at: original.at)
+        }
+        sseEventsTruncated = snapshot.truncated
+        sseParseIssue = snapshot.issue
+        sseDecodingDeferred = snapshot.deferred
+    }
+
+    func restoreSSEFromBody() {
+        guard isSSE else { return }
+        applySSESnapshot(SSEBodyRecovery.recover(responseBody, headers: responseHeaders,
+            complete: responseBodyComplete, truncated: responseTruncated, failed: state == .failed))
     }
 }

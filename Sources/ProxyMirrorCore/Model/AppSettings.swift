@@ -4,7 +4,11 @@ import Foundation
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        d = defaults
+    }
 
     enum Keys {
         static let port = "proxy.port"

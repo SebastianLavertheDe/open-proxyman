@@ -1,7 +1,10 @@
 import AppKit
 import Foundation
+import Crypto
 import ProxyMirrorSystemProxy
+import Security
 import UniformTypeIdentifiers
+import X509
 
 final class SystemProxyController {
     static let shared = SystemProxyController()
@@ -131,6 +134,45 @@ final class SystemProxyController {
 
 /// CA 证书安装
 enum CertInstaller {
+    struct CommandResult {
+        let status: Int32
+        let output: String
+
+        func requireSuccess() throws {
+            guard status == 0 else {
+                let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                throw SystemProxyError(detail.isEmpty ? "证书命令执行失败（退出码 \(status)）。" : detail)
+            }
+        }
+    }
+
+    typealias CommandRunner = (String, [String]) throws -> CommandResult
+    typealias CertificateFinder = (String) throws -> [String]
+
+    struct KeychainCertificates {
+        let path: String
+        let fingerprints: [String]
+    }
+
+    static var loginKeychainPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Keychains/login.keychain-db").path
+    }
+
+    /// 先读取合并输出再等待退出，避免管道写满时阻塞；启动失败由 run() 抛出。
+    static func runCommand(_ executable: String, _ arguments: [String]) throws -> CommandResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return CommandResult(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+    }
+
 
     /// G7：导入外部根 CA（先选证书 PEM，再选私钥 PEM）
     static func importRootCA() {
@@ -255,35 +297,98 @@ enum CertInstaller {
                                      UTType(filenameExtension: "p12") ?? .data]
         panel.message = "选择要导入的证书文件（.pem / .cer / .p12）"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let p = Process()
-        p.launchPath = "/usr/bin/security"
-        p.arguments = ["import", "$HOME/Library/Keychains/login.keychain-db".replacingOccurrences(of: "$HOME", with: NSHomeDirectory()),
-                       url.path]
-        p.launch()
-        p.waitUntilExit()
-        NSLog("[ProxyMirror] 导入证书 status=\(p.terminationStatus)")
+        AppState.shared.systemProxyMessage = "正在导入自定义证书…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let message: String
+            do {
+                try importCertificate(at: url)
+                message = "已将 \(url.lastPathComponent) 导入登录钥匙串。"
+            } catch {
+                message = "导入自定义证书失败：\(error.localizedDescription)"
+            }
+            DispatchQueue.main.async { AppState.shared.systemProxyMessage = message }
+        }
+    }
+
+    static func importCertificate(at url: URL, run: CommandRunner = runCommand) throws {
+        try run("/usr/bin/security", ["import", url.path, "-k", loginKeychainPath]).requireSuccess()
     }
 
     /// 重置：删除钥匙串中的 ProxyMirror CA + 删除本地 CA 文件，并重新生成
-    static func resetAll(completion: @escaping () -> Void) {
-        let script = """
-        security delete-certificate -c "ProxyMirror CA" 2>/dev/null;
-        security delete-certificate -c "ProxyMirror CA" /Library/Keychains/System.keychain 2>/dev/null;
-        true
-        """
-        DispatchQueue.global().async {
-            let escaped = script.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            let p = Process()
-            p.launchPath = "/usr/bin/osascript"
-            p.arguments = ["-e", "do shell script \"\(escaped)\" with administrator privileges"]
-            p.launch()
-            p.waitUntilExit()
-            do { try CertificateAuthority.shared.resetCA() }
-            catch { NSLog("[ProxyMirror] 重置 CA 失败: %@", error.localizedDescription) }
-            DispatchQueue.main.async {
-                completion()
-            }
+    static func resetAll(completion: @escaping (Result<Void, Error>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try resetCertificates() }
+            DispatchQueue.main.async { completion(result) }
         }
+    }
+
+    static func resetCertificates(run: CommandRunner = runCommand,
+                                  findCertificates: CertificateFinder = certificateFingerprints,
+                                  resetCA: () throws -> Void = { try CertificateAuthority.shared.resetCA() }) throws {
+        // 先完成全部查询，避免第二个钥匙串查询失败时已删除第一个钥匙串的证书。
+        let keychains = try [loginKeychainPath, "/Library/Keychains/System.keychain"].map {
+            KeychainCertificates(path: $0, fingerprints: try findCertificates($0))
+        }
+        if keychains.contains(where: { !$0.fingerprints.isEmpty }) {
+            let escaped = resetScript(keychains: keychains)
+                .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            try run("/usr/bin/osascript", ["-e", "do shell script \"\(escaped)\" with administrator privileges"])
+                .requireSuccess()
+        }
+        try resetCA()
+    }
+
+    /// Security 的 -c 文本查找会匹配 CN 子串；直接读取 CN 后精确比较，保留相似名称的其他证书。
+    static func certificateFingerprints(in path: String) throws -> [String] {
+        var keychain: SecKeychain?
+        try requireSecuritySuccess(SecKeychainOpen(path, &keychain))
+        guard let keychain else { throw SystemProxyError("无法打开钥匙串：\(path)") }
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassCertificate,
+            kSecMatchSearchList: [keychain],
+            kSecMatchSubjectContains: "ProxyMirror CA",
+            kSecMatchLimit: kSecMatchLimitAll,
+            kSecReturnRef: true,
+        ]
+        var matches: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &matches)
+        if status == errSecItemNotFound { return [] }
+        try requireSecuritySuccess(status)
+        guard let certificates = matches as? [SecCertificate] else {
+            throw SystemProxyError("无法读取钥匙串证书：\(path)")
+        }
+        return try certificates.compactMap(resetFingerprint)
+    }
+
+    static func resetFingerprint(_ certificate: SecCertificate) throws -> String? {
+        let der = SecCertificateCopyData(certificate) as Data
+        let parsed = try X509.Certificate(derEncoded: Array(der))
+        // CopyCommonName 对无 CN 也可能返回 errSecInternal，先区分无属性与真正解码失败。
+        guard parsed.subject.contains(where: { $0.contains(where: { $0.type == .RDNAttributeType.commonName }) }) else {
+            return nil
+        }
+        var commonName: CFString?
+        let status = SecCertificateCopyCommonName(certificate, &commonName)
+        try requireSecuritySuccess(status)
+        guard commonName as String? == "ProxyMirror CA" else { return nil }
+        return Insecure.SHA1.hash(data: der).map { String(format: "%02X", $0) }.joined()
+    }
+
+    private static func requireSecuritySuccess(_ status: OSStatus) throws {
+        guard status == errSecSuccess else {
+            let message = SecCopyErrorMessageString(status, nil) as String?
+            throw SystemProxyError(message ?? "读取钥匙串失败（错误码 \(status)）。")
+        }
+    }
+
+    /// 仅按精确 CN 匹配后的指纹删除；任一删除失败立即停止，不能替换本地 CA。
+    static func resetScript(keychains: [KeychainCertificates], securityPath: String = "/usr/bin/security") -> String {
+        func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        return keychains.flatMap { keychain in
+            keychain.fingerprints.map { fingerprint in
+                "\(quote(securityPath)) delete-certificate -t -Z \(quote(fingerprint)) \(quote(keychain.path)) || exit $?"
+            }
+        }.joined(separator: "\n")
     }
 
     static func revealCAFile() {

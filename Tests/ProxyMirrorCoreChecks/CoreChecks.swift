@@ -9,19 +9,35 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
         let assertions = CoreAssertions(report: report)
         switch self {
         case .httpMessages: try checkHTTPMessages(assertions)
-        case .rules: try checkRules(assertions)
+        case .rules:
+            try checkRules(assertions)
+            try checkCustomCertificateBackup(assertions)
+            try checkTunnelRuleEnforcement(assertions)
         case .trafficStore: try checkTrafficStore(assertions)
-        case .composeAndPersistence: try checkComposeAndPersistence(assertions)
+        case .composeAndPersistence:
+            try checkComposeAndPersistence(assertions)
+            try checkExportInteractions(assertions)
         case .trafficMenu: try checkTrafficMenu(assertions)
-        case .settings: checkSettings(assertions)
+        case .settings:
+            checkSettings(assertions)
+            try checkSettingsRuntime(assertions)
         case .grpc: try checkGRPC(assertions)
         case .capture: checkCapture(assertions)
-        case .contentCoding: checkContentCoding(assertions)
+        case .contentCoding:
+            checkContentCoding(assertions)
+            checkInspectionBodies(assertions)
+            checkDetailInspection(assertions)
         case .deviceAutomation: checkDeviceAutomation(assertions)
-        case .sse: checkSSE(assertions)
+        case .sse:
+            checkSSE(assertions)
+            try checkSSEInspection(assertions)
         case .messagePack: checkMessagePack(assertions)
-        case .wsInterception: checkWSInterception(assertions)
-        case .certificates: try checkCertificates(assertions)
+        case .wsInterception:
+            checkWSInterception(assertions)
+            checkWSCompressedInterception(assertions)
+        case .certificates:
+            try checkCertificates(assertions)
+            try checkCertInstaller(assertions)
         case .bridge: try checkBridge(assertions)
         case .charlesImport: try checkCharlesImport(assertions)
         }

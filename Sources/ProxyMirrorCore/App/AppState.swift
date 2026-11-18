@@ -9,7 +9,7 @@ final class AppState: ObservableObject, TrafficSink {
     static let shared = AppState()
 
     let store = TrafficStore()
-    let settings = AppSettings.shared
+    let settings: AppSettings
     @Published private(set) var tabs: [TrafficStore] = []
     @Published private(set) var activeTabIndex = 0
     @Published private(set) var splitStore: TrafficStore?
@@ -30,6 +30,7 @@ final class AppState: ObservableObject, TrafficSink {
     @Published var systemProxyActive = false
     @Published private(set) var systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
     @Published private(set) var systemProxyBusy = false
+    @Published private(set) var proxyRestarting = false
     @Published var systemProxyMessage: String?
     private let transparentProxy = TransparentProxyController()
     private var transparentProxyChanges: AnyCancellable?
@@ -75,7 +76,8 @@ final class AppState: ObservableObject, TrafficSink {
         didSet { UserDefaults.standard.set(pinnedDomains, forKey: "pinnedDomains") }
     }
 
-    init() {
+    init(settings: AppSettings = .shared, launchServices: Bool = true) {
+        self.settings = settings
         ProxyEngine.shared.sink = self
         tabs = [store]
         observeActiveWorkspace()
@@ -88,8 +90,6 @@ final class AppState: ObservableObject, TrafficSink {
             CustomCertificateStore.shared.chain(forHost: host)
         }
         ProxyEngine.shared.captureLimit = settings.maxBodyMB * 1024 * 1024
-        pinnedDomains = UserDefaults.standard.stringArray(forKey: "pinnedDomains") ?? []
-        caInstalled = CertInstaller.isInstalled()
         transparentProxyChanges = transparentProxy.$state.dropFirst().sink { [weak self] state in
             guard let self else { return }
             self.transparentProxyState = state
@@ -103,6 +103,9 @@ final class AppState: ObservableObject, TrafficSink {
                 break
             }
         }
+        guard launchServices else { return }
+        pinnedDomains = UserDefaults.standard.stringArray(forKey: "pinnedDomains") ?? []
+        caInstalled = CertInstaller.isInstalled()
         let hasExtension = TransparentProxyController.isAvailable
         if settings.autoStartProxy {
             startProxy(automaticallyTakeOver: !hasExtension)
@@ -190,8 +193,9 @@ final class AppState: ObservableObject, TrafficSink {
 
     // MARK: 代理启停
 
-    func startProxy(automaticallyTakeOver: Bool = true) {
-        guard !proxyRunning else { return }
+    func startProxy(automaticallyTakeOver: Bool = true, duringRestart: Bool = false) {
+        guard !proxyRunning, !proxyRestarting || duringRestart else { return }
+        applyRuntimeSettings()
         do {
             try CertificateAuthority.shared.ensureCA()
             UpstreamTrust.prewarm()
@@ -212,7 +216,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func stopProxy() {
-        guard !systemProxyBusy else { return }
+        guard !systemProxyBusy, !proxyRestarting else { return }
         if transparentProxyNeedsStop {
             Task {
                 if await stopTransparentProxy() { stopProxy() }
@@ -232,6 +236,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func toggleTransparentProxy() {
+        guard !proxyRestarting else { return }
         guard TransparentProxyController.isAvailable else {
             systemProxyMessage = "此版本没有透明代理扩展。请使用带网络扩展的签名版本。"
             return
@@ -245,19 +250,25 @@ final class AppState: ObservableObject, TrafficSink {
             return
         }
         Task {
-            guard !transparentProxyNeedsStop, !systemProxyActive, !systemProxyBusy else { return }
+            guard !transparentProxyNeedsStop, !systemProxyActive, !systemProxyBusy, !proxyRestarting else { return }
             if !proxyRunning { startProxy(automaticallyTakeOver: false) }
             guard proxyRunning else { return }
-            do {
-                let ingress = try ProxyEngine.shared.startTransparentIngress()
-                try await transparentProxy.start(port: ingress.port, token: ingress.token)
-            } catch is CancellationError {
-                if !transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
-            } catch {
-                if !transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
-                systemProxyMessage = error.localizedDescription
-            }
+            _ = await startTransparentProxy()
         }
+    }
+
+    private func startTransparentProxy() async -> Bool {
+        do {
+            let ingress = try ProxyEngine.shared.startTransparentIngress()
+            try await transparentProxy.start(port: ingress.port, token: ingress.token)
+            return true
+        } catch is CancellationError {
+            if !transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
+        } catch {
+            if !transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
+            systemProxyMessage = error.localizedDescription
+        }
+        return false
     }
 
     func stopTransparentProxy() async -> Bool {
@@ -271,7 +282,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func restoreCaptureOnExit(_ completion: @escaping (Bool) -> Void) {
-        guard !systemProxyBusy else { completion(false); return }
+        guard !systemProxyBusy, !proxyRestarting else { completion(false); return }
         if transparentProxyNeedsStop {
             Task {
                 guard await stopTransparentProxy() else { completion(false); return }
@@ -285,10 +296,12 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func toggleProxy() {
+        guard !proxyRestarting else { return }
         if proxyRunning { stopProxy() } else { startProxy() }
     }
 
     func toggleRecording() {
+        guard !proxyRestarting else { return }
         if proxyRunning {
             recordingEnabled.toggle()
         } else {
@@ -297,9 +310,24 @@ final class AppState: ObservableObject, TrafficSink {
         }
     }
 
-    /// 设置变更后重启引擎
-    func applyAndRestartIfNeeded() {
-        guard !systemProxyBusy else { return }
+    func setMITMExcludedHosts(_ text: String) {
+        let hosts = Self.mitmExcludedHosts(from: text)
+        settings.mitmExcludedHosts = hosts
+        ProxyEngine.shared.mitmExcludedHosts = hosts
+    }
+
+    static func mitmExcludedHosts(from text: String) -> [String] {
+        text.components(separatedBy: .newlines).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+    }
+
+    func setFollowLatest(_ enabled: Bool) {
+        settings.followLatest = enabled
+        activeStore.followLatest = enabled
+    }
+
+    private func applyRuntimeSettings() {
         ProxyEngine.shared.mitmEnabled = settings.mitmEnabled
         ProxyEngine.shared.http2Enabled = settings.http2Enabled
         ProxyEngine.shared.mitmExcludedHosts = settings.mitmExcludedHosts
@@ -309,6 +337,12 @@ final class AppState: ObservableObject, TrafficSink {
         ProxyEngine.shared.captureLimit = settings.maxBodyMB * 1024 * 1024
         store.maxTransactions = settings.maxTransactions
         activeStore.followLatest = settings.followLatest
+    }
+
+    /// 普通应用只在监听端点变化时重绑，避免 SSL 开关等操作中断现有连接。
+    func applyAndRestartIfNeeded() {
+        applyRuntimeSettings()
+        guard !systemProxyBusy, !proxyRestarting else { return }
         let engine = ProxyEngine.shared
         if proxyRunning, settings.port != engine.port || settings.lanAccess != engine.lanAccess {
             let oldPort = engine.port
@@ -321,18 +355,60 @@ final class AppState: ObservableObject, TrafficSink {
                     : "请先恢复系统代理，再调整监听地址或端口。"
                 return
             }
-            ReverseProxyController.shared.stop()
-            engine.stop()
-            stopBridgeCapture()
-            proxyRunning = false
-            startProxy(automaticallyTakeOver: false)
-            if !proxyRunning {
-                let error = proxyStartError
-                settings.port = oldPort
-                restoreLAN(oldLAN)
-                startProxy(automaticallyTakeOver: false)
-                if proxyRunning { proxyStartError = error.map { $0 + "\n已恢复原监听端口 \(oldPort)。" } }
+            restartListener(oldPort: oldPort, oldLAN: oldLAN)
+        }
+    }
+
+    /// 用户明确要求重启：先恢复系统路由，再关闭全部旧连接，最后恢复之前的捕获模式。
+    func applyAndRestartProxy() {
+        guard !systemProxyBusy, !proxyRestarting else { return }
+        applyRuntimeSettings()
+        guard proxyRunning else {
+            systemProxyMessage = "设置已应用，监听尚未启动。"
+            return
+        }
+        let oldPort = ProxyEngine.shared.port
+        let oldLAN = ProxyEngine.shared.lanAccess
+        let resumeSystemProxy = systemProxyActive
+        let resumeTransparentProxy = transparentProxyNeedsStop
+        proxyRestarting = true
+        systemProxyMessage = "正在应用并重启代理…"
+        Task {
+            defer { proxyRestarting = false }
+            if resumeTransparentProxy, !(await stopTransparentProxy()) { return }
+            if resumeSystemProxy {
+                let restored = await withCheckedContinuation { continuation in
+                    stopSystemProxy(duringRestart: true) { continuation.resume(returning: $0) }
+                }
+                guard restored else { return }
             }
+            restartListener(oldPort: oldPort, oldLAN: oldLAN)
+            // 重绑失败且旧端点也未能恢复时，不再把系统流量指向不存在的监听。
+            guard proxyRunning else { return }
+            if resumeTransparentProxy {
+                _ = await startTransparentProxy()
+            } else if resumeSystemProxy {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    startSystemProxy(duringRestart: true) { _, _ in continuation.resume() }
+                }
+            } else if proxyStartError == nil {
+                systemProxyMessage = "设置已应用，代理已重启。"
+            }
+        }
+    }
+
+    private func restartListener(oldPort: UInt16, oldLAN: LANAccess?) {
+        ReverseProxyController.shared.stop()
+        ProxyEngine.shared.stop()
+        stopBridgeCapture()
+        proxyRunning = false
+        startProxy(automaticallyTakeOver: false, duringRestart: true)
+        if !proxyRunning {
+            let error = proxyStartError
+            settings.port = oldPort
+            restoreLAN(oldLAN)
+            startProxy(automaticallyTakeOver: false, duringRestart: true)
+            if proxyRunning { proxyStartError = error.map { $0 + "\n已恢复原监听端口 \(oldPort)。" } }
         }
     }
 
@@ -462,7 +538,11 @@ final class AppState: ObservableObject, TrafficSink {
         activeStore.clear()
     }
 
-    func startSystemProxy(onComplete: ((Bool, String) -> Void)? = nil) {
+    func startSystemProxy(duringRestart: Bool = false, onComplete: ((Bool, String) -> Void)? = nil) {
+        guard !proxyRestarting || duringRestart else {
+            onComplete?(false, "请等待代理重启完成。")
+            return
+        }
         guard !transparentProxyNeedsStop else {
             let message = "请先停止透明抓包，再接管系统代理。"
             systemProxyMessage = message
@@ -497,7 +577,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func uninstallSystemProxyService() {
-        guard !systemProxyBusy, !systemProxyActive else { return }
+        guard !systemProxyBusy, !systemProxyActive, !proxyRestarting else { return }
         systemProxyBusy = true
         systemProxyMessage = "正在移除系统代理授权…"
         SystemProxyController.shared.uninstall { [weak self] ok, message in
@@ -509,7 +589,8 @@ final class AppState: ObservableObject, TrafficSink {
         }
     }
 
-    func stopSystemProxy(onComplete: ((Bool) -> Void)? = nil) {
+    func stopSystemProxy(duringRestart: Bool = false, onComplete: ((Bool) -> Void)? = nil) {
+        guard !proxyRestarting || duringRestart else { onComplete?(false); return }
         guard !systemProxyBusy else { onComplete?(false); return }
         systemProxyBusy = true
         systemProxyMessage = "正在关闭系统代理…"

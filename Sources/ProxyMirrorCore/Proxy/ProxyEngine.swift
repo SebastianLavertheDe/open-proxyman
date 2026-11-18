@@ -246,6 +246,7 @@ final class ConnState {
     var awaitingCertificate = false
     /// CONNECT authority 里的目标主机
     var resolvedConnectHost: String?
+    var sniffedServerName: String?
     var resolvedConnectPort = 443
     var clientApplication: ProcessAppInfo?
     var transparentFlow: TransparentProxyFlow?
@@ -309,6 +310,7 @@ final class SniPeekHandler: ChannelInboundHandler, RemovableChannelHandler {
 
         let result = ClientHelloSniffer.parse(helloBytes)
         guard result.complete else { return }
+        state.sniffedServerName = result.sni
         let connectHost = state.resolvedConnectHost ?? "unknown"
         let certHost = result.sni ?? connectHost
         guard helloBytes.first == 0x16, state.shouldMITM(host: certHost) else {
@@ -425,6 +427,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     typealias OutboundOut = ByteBuffer
 
     private let conn: ConnState
+    private let tunnelRules: () -> RulesSnapshot
     private weak var clientChannel: Channel?
 
     enum Mode {
@@ -568,8 +571,9 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private var downstreamShutdownStarted = false
     private var downstreamInputClosed = false
 
-    init(conn: ConnState) {
+    init(conn: ConnState, tunnelRules: @escaping () -> RulesSnapshot = { RulesStore.shared.snapshot() }) {
         self.conn = conn
+        self.tunnelRules = tunnelRules
     }
 
     func channelActive(context: ChannelHandlerContext) {
@@ -1185,6 +1189,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         conn.clientApplication = application
         tx.setClientApplication(application)
         conn.transparentFlow?.mark(tx)
+        let intercept = conn.transparentFlow != nil ? conn.allowsMITM(host: tx.host) : conn.shouldMITM(host: tx.host)
+        if !intercept, rejectTunnelIfNeeded(tx, sendResponse: conn.transparentFlow == nil) { return }
         publish(tx)
         if conn.transparentFlow == nil { writeRaw("HTTP/1.1 200 Connection Established\r\n\r\n") }
 
@@ -1193,7 +1199,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         earlyConnectByteCount = 0
 
         // A transparent flow may only carry an IP until its TLS ClientHello supplies SNI.
-        if conn.transparentFlow != nil ? conn.allowsMITM(host: tx.host) : conn.shouldMITM(host: tx.host) {
+        if intercept {
             mode = .tlsPending
             conn.snifferArmed = true
             refreshReads()
@@ -1222,9 +1228,43 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         } else {
             // 回退为裸隧道
             if let tx = connectTx, mode == .tlsPending {
+                // CONNECT was already acknowledged before peeking at ClientHello.
+                // A rejected TLS flow must close, rather than injecting plaintext into TLS.
+                if rejectTunnelIfNeeded(tx, sendResponse: false, published: true) { return }
                 beginRawTunnel(host: tx.host, port: tx.port)
             }
         }
+    }
+
+    @discardableResult
+    private func rejectTunnelIfNeeded(_ tx: Transaction, sendResponse: Bool, published: Bool = false) -> Bool {
+        let serverName = conn.transparentFlow == nil ? nil : conn.sniffedServerName
+        guard let reason = tunnelRules().tunnelRejection(host: tx.host, port: tx.port,
+                                                         serverName: serverName) else { return false }
+        let body = Data(reason.utf8)
+        tx.matchedByBlock = true
+        tx.statusCode = 403
+        tx.statusReason = "Forbidden"
+        tx.contentType = "text/plain"
+        tx.responseHeaders = HTTPHeaders([("Content-Type", "text/plain"), ("Content-Length", String(body.count)),
+                                           ("Connection", "close"), ("X-ProxyMirror", "Rule")])
+        tx.appendResponseBody(body)
+        tx.responseBodyComplete = true
+        tx.state = .failed
+        tx.errorText = reason
+        tx.duration = Date().timeIntervalSince(tx.startedAt)
+        if published {
+            let sink = conn.engine.sink
+            onMain { sink?.transactionUpdated(tx) }
+        } else { publish(tx) }
+        connectTx = nil
+        earlyConnectBytes.removeAll()
+        earlyConnectByteCount = 0
+        mode = .closed
+        if sendResponse {
+            writeRawAndClose("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n\(reason)")
+        } else { closeClient() }
+        return true
     }
 
     private func beginRawTunnel(host: String, port: Int) {
@@ -1677,29 +1717,36 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                 sink?.transactionUpdated(tx)
             }
 
-            let wsTarget = ScriptingTarget(method: tx.method, scheme: tx.scheme,
+            let wsTarget = breakpointTarget?.scripting ?? ScriptingTarget(method: tx.method, scheme: tx.scheme,
                 host: tx.host, path: tx.path, query: tx.query, url: tx.originalURL ?? tx.fullURL)
-            // Extension payloads (for example permessage-deflate) keep their wire encoding.
-            if !resp.headers.contains("Sec-WebSocket-Extensions"),
-               let plan = ScriptingService.plan(for: wsTarget, phase: .webSocket),
+            if let plan = ScriptingService.plan(for: wsTarget, phase: .webSocket),
                let clientChannel, let upstreamChannel {
-                let graphqlName = scriptingOperationName
-                wsUpstreamInterceptor = WSRelayInterceptor(direction: .upstream, maskOutgoing: true,
-                    loop: clientChannel.eventLoop,
-                    emit: { [weak self] data, direction in self?.relayWebSocketBytes(data, direction: direction) },
-                    close: { [weak self] in self?.closeWebSocketRelay() },
-                    script: { frame, done in
-                        ScriptingService.rewriteFrame(plan: plan, frame: frame, graphqlName: graphqlName,
-                                                      completion: done)
-                    })
-                wsDownstreamInterceptor = WSRelayInterceptor(direction: .downstream, maskOutgoing: false,
-                    loop: upstreamChannel.eventLoop,
-                    emit: { [weak self] data, direction in self?.relayWebSocketBytes(data, direction: direction) },
-                    close: { [weak self] in self?.closeWebSocketRelay() },
-                    script: { frame, done in
-                        ScriptingService.rewriteFrame(plan: plan, frame: frame, graphqlName: graphqlName,
-                                                      completion: done)
-                    })
+                if let issue = WebSocketDeflate.scriptingIssue(in: resp.headers) {
+                    recordWebSocketScriptIssue("\(issue)，此连接未执行帧脚本并保留原始转发", target: wsTarget, tx: tx)
+                } else {
+                    let graphqlName = scriptingOperationName
+                    let report: @Sendable (String) -> Void = { [weak self] issue in
+                        self?.recordWebSocketScriptIssue(issue, target: wsTarget, tx: tx)
+                    }
+                    wsUpstreamInterceptor = WSRelayInterceptor(direction: .upstream, maskOutgoing: true,
+                        loop: clientChannel.eventLoop,
+                        emit: { [weak self] data, direction in self?.relayWebSocketBytes(data, direction: direction) },
+                        close: { [weak self] in self?.closeWebSocketRelay() },
+                        deflate: WebSocketDeflate.negotiated(in: resp.headers, direction: .upstream), issue: report,
+                        script: { frame, done in
+                            ScriptingService.rewriteFrame(plan: plan, frame: frame, graphqlName: graphqlName,
+                                                          completion: done)
+                        })
+                    wsDownstreamInterceptor = WSRelayInterceptor(direction: .downstream, maskOutgoing: false,
+                        loop: upstreamChannel.eventLoop,
+                        emit: { [weak self] data, direction in self?.relayWebSocketBytes(data, direction: direction) },
+                        close: { [weak self] in self?.closeWebSocketRelay() },
+                        deflate: WebSocketDeflate.negotiated(in: resp.headers, direction: .downstream), issue: report,
+                        script: { frame, done in
+                            ScriptingService.rewriteFrame(plan: plan, frame: frame, graphqlName: graphqlName,
+                                                          completion: done)
+                        })
+                }
             }
             sendResponseHead(resp, headers: resp.headers, pauseMs: simulation.responseDelay)
             mode = .wsRelay
@@ -1750,6 +1797,16 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         if noBody {
             onMain { tx.responseBodyComplete = true }
             finishRequest()
+        }
+    }
+
+    private func recordWebSocketScriptIssue(_ text: String, target: ScriptingTarget, tx: Transaction) {
+        let sink = conn.engine.sink
+        DispatchQueue.main.async {
+            let line = "WebSocket · \(text)"
+            tx.appendScriptingLogs([line])
+            ScriptingActivity.shared.record(url: target.url, lines: [line])
+            sink?.transactionUpdated(tx)
         }
     }
 
@@ -1806,6 +1863,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     }
 
     private func finishResponseWrites(transaction: Transaction?, close: Bool) {
+        bodyCapture?.finishSSE()
         let sink = conn.engine.sink
         let started = responseStart
         let upstreamElapsed = Date().timeIntervalSince(started)
@@ -1855,7 +1913,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private func finishRequestWithFailure(_ text: String, status: Int = 502, reason: String = "Bad Gateway") {
         mapLocalSender?.cancel()
         mapLocalSender = nil
-        bodyCapture?.flush()
+        bodyCapture?.finishSSE(complete: false)
         let generatedBody = respHeadParsed ? nil : Data("ProxyMirror: \(text)".utf8)
         if let tx {
             let sink = conn.engine.sink
@@ -1972,7 +2030,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     func channelUnregistered(context: ChannelHandlerContext) {
         mapLocalSender?.cancel()
         mapLocalSender = nil
-        bodyCapture?.flush()
+        bodyCapture?.finishSSE(complete: false)
         bodyCapture = nil
         connectAttributionTimeout?.cancel()
         connectAttributionTimeout = nil

@@ -5,6 +5,32 @@ struct WebSocketDeflate: Sendable {
     let windowBits: Int32
     let noContextTakeover: Bool
 
+    /// Unlike preview decoding, interception must understand every negotiated extension.
+    /// Unknown extensions can change the frame payload and cannot safely be re-encoded.
+    static func scriptingIssue(in headers: HTTPHeaders) -> String? {
+        let extensions = headers.values(of: "Sec-WebSocket-Extensions").flatMap { $0.split(separator: ",", omittingEmptySubsequences: false) }
+        guard !extensions.isEmpty else { return nil }
+        guard extensions.count == 1 else { return "不支持同时协商多个 WebSocket 扩展" }
+        let parts = extensions[0].split(separator: ";", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        guard parts.first == "permessage-deflate" else { return "不支持的 WebSocket 扩展：\(parts.first ?? "")" }
+        var seen: Set<String> = []
+        for parameter in parts.dropFirst() {
+            let pair = parameter.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard let key = pair.first, seen.insert(key).inserted else { return "WebSocket 压缩参数重复" }
+            switch key {
+            case "client_no_context_takeover", "server_no_context_takeover":
+                guard pair.count == 1 else { return "WebSocket 压缩参数无效：\(key)" }
+            case "client_max_window_bits", "server_max_window_bits":
+                guard pair.count == 2, let bits = Int(pair[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))),
+                      (8...15).contains(bits) else { return "WebSocket 压缩窗口无效：\(key)" }
+            default: return "不支持的 WebSocket 压缩参数：\(key)"
+            }
+        }
+        return nil
+    }
+
     static func negotiated(in headers: HTTPHeaders, direction: WSFrame.Direction) -> WebSocketDeflate? {
         let extensions = headers.values(of: "Sec-WebSocket-Extensions").flatMap { $0.split(separator: ",") }
         for item in extensions {
@@ -161,6 +187,60 @@ struct WebSocketDeflate: Sendable {
                 stream.pointee.avail_in = remaining
                 return true
             }
+        }
+    }
+
+    /// A distinct outbound dictionary is essential after a script modifies or drops a message.
+    /// Reusing the sender's compressed bytes would reference history the receiver never saw.
+    final class Encoder {
+        private let configuration: WebSocketDeflate
+        private let stream = UnsafeMutablePointer<z_stream>.allocate(capacity: 1)
+        private var initialized = false
+
+        init(_ configuration: WebSocketDeflate) {
+            self.configuration = configuration
+            stream.initialize(to: z_stream())
+        }
+
+        deinit {
+            if initialized { deflateEnd(stream) }
+            stream.deinitialize(count: 1)
+            stream.deallocate()
+        }
+
+        func encode(_ payload: Data) -> Data? {
+            guard payload.count <= Int(uInt.max) else { return nil }
+            if !initialized {
+                // zlib cannot encode an 8-bit raw window. Literal-only Huffman coding
+                // uses no distance references and is valid for the negotiated 8-bit window.
+                let bits = max(9, configuration.windowBits)
+                let strategy = configuration.windowBits == 8 ? Z_HUFFMAN_ONLY : Z_DEFAULT_STRATEGY
+                initialized = deflateInit2_(stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -bits, 8, strategy,
+                                           ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK
+                guard initialized else { return nil }
+            } else if configuration.noContextTakeover {
+                guard deflateReset(stream) == Z_OK else { return nil }
+            }
+            var output = Data()
+            var chunk = [UInt8](repeating: 0, count: 16 * 1024)
+            let success = payload.withUnsafeBytes { bytes -> Bool in
+                stream.pointee.next_in = UnsafeMutablePointer(mutating: bytes.bindMemory(to: UInt8.self).baseAddress)
+                stream.pointee.avail_in = uInt(bytes.count)
+                defer { stream.pointee.next_in = nil; stream.pointee.next_out = nil }
+                repeat {
+                    let status = chunk.withUnsafeMutableBufferPointer { buffer in
+                        stream.pointee.next_out = buffer.baseAddress
+                        stream.pointee.avail_out = uInt(buffer.count)
+                        return deflate(stream, Z_SYNC_FLUSH)
+                    }
+                    guard status == Z_OK else { return false }
+                    output.append(contentsOf: chunk.prefix(chunk.count - Int(stream.pointee.avail_out)))
+                } while stream.pointee.avail_in > 0 || stream.pointee.avail_out == 0
+                return true
+            }
+            guard success, output.suffix(4) == Data([0, 0, 0xff, 0xff]) else { return nil }
+            output.removeLast(4)
+            return output
         }
     }
 }

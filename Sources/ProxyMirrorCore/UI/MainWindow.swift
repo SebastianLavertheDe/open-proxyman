@@ -161,7 +161,7 @@ struct MainWindow: View {
                 .background(appState.splitFocused == right ? Color.accentColor.opacity(0.12) : .clear)
             }
             .buttonStyle(.plain)
-            workspace(store, dockRight: false)
+            workspace(store, dockRight: appState.dockRight)
                 .id(store.id)
                 .simultaneousGesture(TapGesture().onEnded { appState.focusSplit(right) })
         }

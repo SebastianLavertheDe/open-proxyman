@@ -41,7 +41,14 @@ struct ProxyMirrorMainApp: App {
 
         toolScenes
 
-        MenuBarExtra("ProxyMirror", systemImage: "network", isInserted: $showMenuBarIcon) {
+        MenuBarExtra("ProxyMirror", systemImage: "network", isInserted: Binding(
+            get: { showMenuBarIcon },
+            set: { value in
+                // MenuBarExtra may write its current value during scene updates.
+                // Avoid notifying AppStorage again and rebuilding the same scene.
+                guard showMenuBarIcon != value else { return }
+                showMenuBarIcon = value
+            })) {
             Button(appState.proxyRunning ? "停止监听" : "启动监听", action: appState.toggleProxy)
             Button(appState.recordingEnabled ? "暂停录制" : "恢复录制", action: appState.toggleRecording)
             Divider()

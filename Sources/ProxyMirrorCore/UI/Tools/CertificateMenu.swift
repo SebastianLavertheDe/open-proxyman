@@ -7,7 +7,7 @@ struct CertificateGuideSheet: View {
 
     private var guide: CertificatePlatformGuides.Guide {
         CertificatePlatformGuides.guide(for: platform, certificatePath: CertificateAuthority.shared.caCertPath.path,
-                                       port: AppSettings.shared.port)
+                                       port: Int(AppSettings.shared.port))
     }
 
     var body: some View {

@@ -214,14 +214,18 @@ struct SessionFile: Codable, Sendable {
         if header.format == "proxymirror-domain-logs" {
             let bundle = try decoder.decode(DomainLogs.self, from: data)
             guard bundle.version == 1 else { throw SessionError.unsupportedVersion }
-            let records = bundle.sessions.flatMap { $0.session.records }.sorted {
-                $0.startedAt == $1.startedAt ? $0.seq < $1.seq : $0.startedAt < $1.startedAt
+            var records: [SessionRecord] = bundle.sessions.flatMap { $0.session.records }
+            records.sort { (left: SessionRecord, right: SessionRecord) -> Bool in
+                if left.startedAt == right.startedAt { return left.seq < right.seq }
+                return left.startedAt < right.startedAt
             }
-            guard Set(records.map(\.id)).count == records.count else { throw SessionError.duplicateIDs }
+            let recordIDs: [UUID] = records.map { $0.id }
+            guard Set(recordIDs).count == records.count else { throw SessionError.duplicateIDs }
             var pins = Set<String>(), selection = Set<UUID>()
             let pinnedDomains = bundle.sessions.flatMap { $0.session.pinnedDomains }.filter { pins.insert($0).inserted }
             for group in bundle.sessions { selection.formUnion(group.session.selected) }
-            return Self(records: records, pinnedDomains: pinnedDomains, selected: records.map(\.id).filter(selection.contains))
+            let selectedIDs: [UUID] = recordIDs.filter { selection.contains($0) }
+            return Self(records: records, pinnedDomains: pinnedDomains, selected: selectedIDs)
         }
         return try decoder.decode(Self.self, from: data)
     }

@@ -166,7 +166,7 @@ struct CodeTextEditor: NSViewRepresentable {
         editor.isAutomaticDashSubstitutionEnabled = false; editor.isAutomaticTextReplacementEnabled = false
         editor.isAutomaticSpellingCorrectionEnabled = false; editor.isContinuousSpellCheckingEnabled = false
         editor.isGrammarCheckingEnabled = false; editor.isVerticallyResizable = true
-        editor.minSize = .zero; editor.maxSize = NSSize(width: .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        editor.minSize = .zero; editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.textContainerInset = NSSize(width: 6, height: 6)
         editor.autoresizingMask = [.width]
         editor.delegate = context.coordinator
@@ -190,7 +190,7 @@ struct CodeTextEditor: NSViewRepresentable {
         (scroll as? CodeEditorScrollView)?.wordWrap = wordWrap
         editor.textContainer?.widthTracksTextView = wordWrap
         editor.isHorizontallyResizable = !wordWrap
-        if !wordWrap { editor.textContainer?.containerSize = NSSize(width: .greatestFiniteMagnitude, height: .greatestFiniteMagnitude) }
+        if !wordWrap { editor.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude) }
         editor.textColor = .textColor
         scroll.hasHorizontalScroller = !wordWrap
         CodeTextStyle.apply(to: editor, settings: settings, fontSize: fontSize, wordWrap: wordWrap)

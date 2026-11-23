@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Darwin
+import ProxyMirrorSystemProxy
 
 /// Samples counters on the UI timer; no polling or traffic work is added to NIO loops.
 @MainActor

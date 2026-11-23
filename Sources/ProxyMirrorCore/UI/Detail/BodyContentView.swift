@@ -37,7 +37,7 @@ struct BodyContentView: View {
         } else if Self.isBinary(data: data, contentType: contentType) {
             HexView(data: data, generation: generation)
         } else {
-            TextViewer(data: data, pretty: pretty && complete && !truncated && contentType.lowercased().contains("json"),
+            TextViewer(data: data, pretty: pretty && complete && !truncated && Self.isJSON(data: data, contentType: contentType),
                        revision: revision)
         }
     }
@@ -46,13 +46,21 @@ struct BodyContentView: View {
         BodyKind.from(contentType: contentType, scheme: nil)
     }
 
+    static func isJSON(data: Data, contentType: String) -> Bool {
+        if contentType.localizedCaseInsensitiveContains("json") { return true }
+        return data.prefix(256).first { ![9, 10, 13, 32].contains($0) }.map { $0 == 123 || $0 == 91 } ?? false
+    }
+
     static func isBinary(data: Data, contentType: String) -> Bool {
         guard !data.isEmpty else { return false }
         let kind = BodyKind.from(contentType: contentType, scheme: nil)
         let mime = contentType.split(separator: ";", maxSplits: 1).first?.trimmingCharacters(in: .whitespaces).lowercased()
         let textualApplication = mime == "application/x-www-form-urlencoded" || mime == "application/graphql"
             || mime == "application/x-sentry-envelope"
-        if (kind == .binary && !textualApplication) || kind == .image || kind == .font { return true }
+        // Some clients send gzipped JSON with a binary MIME type. Inspect the decoded
+        // JSON prefix as well, using the same decision as the tree and pretty views.
+        if (kind == .binary && !textualApplication && !isJSON(data: data, contentType: contentType))
+            || kind == .image || kind == .font { return true }
         let prefix = data.prefix(1024)
         if prefix.contains(where: { $0 < 32 && $0 != 9 && $0 != 10 && $0 != 13 }) { return true }
         if String(data: prefix, encoding: .utf8) != nil { return false }

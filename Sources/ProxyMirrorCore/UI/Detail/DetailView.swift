@@ -228,8 +228,7 @@ private struct ContentSideView: View {
         HTTPProtobuf.matches(contentType: contentType, query: tx.query, isRequest: isRequest)
     }
     private var isJSON: Bool {
-        if contentType.localizedCaseInsensitiveContains("json") { return true }
-        return data.prefix(256).first { ![9, 10, 13, 32].contains($0) }.map { $0 == 123 || $0 == 91 } ?? false
+        BodyContentView.isJSON(data: data, contentType: inspectedBody.contentType)
     }
 
     private var queryUnavailable: String? {

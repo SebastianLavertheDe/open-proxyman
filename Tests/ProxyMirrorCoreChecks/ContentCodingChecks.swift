@@ -70,6 +70,44 @@ func checkContentCoding(_ test: CoreAssertions) {
     }
     checkHTTPProtobuf(test)
     checkCursorBodies(test)
+    checkJSONBodyPresentation(test)
+}
+
+@MainActor
+private func checkJSONBodyPresentation(_ test: CoreAssertions) {
+    // Independent gzip fixture shaped like a Feishu pc_log request; no captured user data.
+    let wire = ContentCodingFixtures.b64("H4sIAAAAAAACA4uuVkpJLElUsqpWSiwoiC9LLSrOzM9TslKy0DPXMzRU0lFKTixJTc8vqgSKFaQWpQFFUstS80ri8xJzU4FiIF35eanxuZl5pSWp8ckFpfGlxYnpqUB1uanFYJaV0rOG5S+a9z7fPf/FuoVKtbWxAFARGDp2AAAA")
+    let plain = Data(#"[{"data":{"app_version":"8.7.11","category":"perf","event_name":"app_one_minute_cpu_usage","message":"性能统计"}}]"#.utf8)
+    guard case .success(let decoded)? = ContentCoding.decodeIfCompressed(wire, encodings: ["gzip"]) else {
+        test.expect(false, "Gzipped Feishu-style JSON decodes before presentation")
+        return
+    }
+    test.equal(decoded.0, plain, "Gzipped telemetry decodes to the expected JSON")
+    for mime in ["application/octet-stream", "Application/Octet-Stream; charset=binary",
+                 "application/x-telemetry", "application/json", ""] {
+        test.expect(BodyContentView.isJSON(data: decoded.0, contentType: mime),
+                    "Decoded JSON enables pretty, tree and query presentation for \(mime)")
+        test.expect(!BodyContentView.isBinary(data: decoded.0, contentType: mime),
+                    "Decoded JSON uses text instead of hex for \(mime)")
+        test.expect(BodyContentView.isBinary(data: wire, contentType: mime),
+                    "Original gzip bytes retain binary presentation for \(mime)")
+    }
+    let object = Data(" \r\n\t{\"message\":\"hello\"}".utf8)
+    test.expect(BodyContentView.isJSON(data: object, contentType: "application/octet-stream") &&
+                !BodyContentView.isBinary(data: object, contentType: "application/octet-stream"),
+                "JSON object detection ignores leading whitespace")
+    let incomplete = Data("{\"message\":".utf8)
+    test.expect(!BodyContentView.isBinary(data: incomplete, contentType: "application/octet-stream"),
+                "An uncompressed JSON prefix can display as text while receiving")
+    let splitUTF8 = Data(("{\"message\":\"" + String(repeating: "a", count: 1011) + "中文\"}").utf8)
+    test.expect(!BodyContentView.isBinary(data: splitUTF8, contentType: "application/octet-stream"),
+                "JSON sniffing preserves text when the preview ends inside a UTF-8 scalar")
+    for bytes in [Data([0, 255, 1]), object + Data([0]), object + Data([255])] {
+        test.expect(BodyContentView.isBinary(data: bytes, contentType: "application/octet-stream"),
+                    "Control bytes and invalid UTF-8 retain the binary fallback")
+    }
+    test.expect(BodyContentView.isBinary(data: Data("opaque".utf8), contentType: "application/octet-stream"),
+                "Printable binary content is not assumed to be JSON")
 }
 
 private func checkHTTPProtobuf(_ test: CoreAssertions) {

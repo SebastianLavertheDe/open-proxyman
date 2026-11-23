@@ -39,7 +39,7 @@ enum TrafficColumn: Hashable, Identifiable {
         case .client: return 143
         case .method: return 70
         case .status: return 78
-        case .time: return 93
+        case .time: return AppSettings.shared.showFullDate ? (AppSettings.shared.use24HourClock ? 180 : 210) : (AppSettings.shared.use24HourClock ? 93 : 120)
         case .duration: return 72
         case .request, .response: return 73
         case .ssl: return 31
@@ -120,6 +120,7 @@ enum TrafficColumn: Hashable, Identifiable {
 struct TrafficListView: View {
     @ObservedObject var store: TrafficStore
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var presentationSettings = AppSettings.shared
     @Environment(\.openWindow) private var openWindow
     @AppStorage("ui.hiddenTrafficColumns") private var hiddenColumns = ""
     @AppStorage("ui.trafficColumnWidths") private var storedWidths = ""
@@ -149,7 +150,8 @@ struct TrafficListView: View {
                         select: store.selectManually,
                         open: openDetails,
                         copyAsCurl: appState.copyRequestsAsCurl,
-                        contextMenu: rowContextMenu
+                        contextMenu: rowContextMenu,
+                        copyUsingDefaultFormat: appState.copyRequestsUsingDefaultFormat
                     )
                     .overlay { if display.rows.isEmpty { emptyState } }
                 }
@@ -193,6 +195,7 @@ struct TrafficListView: View {
         switch column {
         case .url: return 175
         case .ssl: return 29
+        case .time: return TrafficColumn.time.preferredWidth
         default: return 40
         }
     }
@@ -401,6 +404,7 @@ struct TrafficListView: View {
             submenu.addAction("HAR") { ExportService.exportHAR(targets) }
             submenu.addAction("CSV") { ExportService.exportCSV(targets) }
         }
+        SavedRequestMenu.add(to: menu, store: store, transactions: targets, reportError: { appState.systemProxyMessage = $0 })
         menu.addAction("添加备注…") { appState.openComment(targets) }
         menu.addAction(appState.diffPool.contains(where: { $0 === tx }) ? "从对比池移除" : "加入对比池") {
             appState.toggleDiffCandidate(tx)
@@ -418,6 +422,7 @@ struct TrafficListView: View {
             }
         }
         menu.addAction("复制 URL") { appState.copyText(targets.map(\.fullURL).joined(separator: "\n")) }
+        menu.addAction("复制（\(presentationSettings.defaultCopyFormat.title)）") { appState.copyRequestsUsingDefaultFormat(targets) }
         menu.addAction("复制为 cURL") { appState.copyRequestsAsCurl(targets) }
         menu.addSubmenu(targets.count > 1 ? "复制此请求为代码" : "复制为代码", enabled: tx.canReplay) { submenu in
             for format in RequestCode.Format.allCases {
@@ -438,6 +443,7 @@ struct TrafficRow: View {
     let columns: [(TrafficColumn, CGFloat)]
 
     var isSelected = false
+    @ObservedObject private var presentationSettings = AppSettings.shared
     @ObservedObject private var filterPalette = TrafficFilterPalette.shared
     @AppStorage("ui.truncationStyle") private var truncationStyle = "middle"
 
@@ -465,11 +471,17 @@ struct TrafficRow: View {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity)
         .frame(height: ProxymanTheme.rowHeight)
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
+        .font(PresentationFonts.swiftUIFont(size: 11, weight: .medium))
         .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.87))
         .contentShape(Rectangle())
-        .background((tx.highlightName ?? filterPalette.highlight(for: tx)).map { ProxymanTheme.highlightColor($0).opacity(0.28) } ?? .clear)
+        .background(rowBackground)
         .accessibilityElement(children: .combine)
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color(nsColor: TrafficRowPresentation.background(selected: true, highlight: nil, alternate: false)) }
+        guard let name = tx.highlightName ?? filterPalette.highlight(for: tx) else { return .clear }
+        return Color(nsColor: TrafficRowPresentation.background(selected: false, highlight: NSColor(ProxymanTheme.highlightColor(name)), alternate: false))
     }
 
     @ViewBuilder
@@ -503,7 +515,7 @@ struct TrafficRow: View {
                   : tx.statusCode == 0 ? "进行中" : String(tx.statusCode),
                   color: Color(nsColor: tx.statusColor))
                 .help(tx.errorText ?? tx.statusText)
-        case .time: Text(tx.timeText).font(.system(size: 10.5, design: .monospaced))
+        case .time: Text(tx.timeText).font(PresentationFonts.swiftUIFont(size: 10.5)).help(tx.timeText)
         case .duration: Text(tx.state == .pending || tx.state == .awaiting ? "–" : tx.durationText)
         case .request: Text(size(max(tx.requestBytes, tx.requestBody.count)))
         case .response: Text(size(max(tx.responseBytes, tx.responseBody.count)))
@@ -526,7 +538,7 @@ struct TrafficRow: View {
 
     private func badge(_ title: String, color: Color) -> some View {
         Text(title)
-            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            .font(PresentationFonts.swiftUIFont(size: 10.5, weight: .semibold))
             .foregroundStyle(isSelected ? Color.white : color)
             .padding(.horizontal, 5)
             .frame(height: 17)

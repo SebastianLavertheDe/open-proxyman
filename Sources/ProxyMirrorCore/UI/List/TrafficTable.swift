@@ -14,6 +14,8 @@ struct TrafficTable: NSViewRepresentable {
     let open: (Transaction.ID) -> Void
     let copyAsCurl: ([Transaction]) -> Void
     let contextMenu: (Transaction, [Transaction]) -> NSMenu
+    var copyUsingDefaultFormat: (([Transaction]) -> Void)?
+    @ObservedObject private var presentationSettings = AppSettings.shared
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -42,6 +44,8 @@ struct TrafficTable: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let table = scroll.documentView as? Table else { return }
+        table.showsAlternatingRows = presentationSettings.showAlternatingRows
+        table.needsDisplay = true
         context.coordinator.update(self, table: table)
     }
 
@@ -58,6 +62,7 @@ struct TrafficTable: NSViewRepresentable {
         private var select: ((Set<Transaction.ID>) -> Void)?
         private var open: ((Transaction.ID) -> Void)?
         private var copyAsCurl: (([Transaction]) -> Void)?
+        private var copyUsingDefaultFormat: (([Transaction]) -> Void)?
         private var contextMenu: ((Transaction, [Transaction]) -> NSMenu)?
 
         func attach(to table: Table) {
@@ -69,6 +74,7 @@ struct TrafficTable: NSViewRepresentable {
             table.doubleAction = #selector(openClickedRow(_:))
             table.makeMenu = { [weak self] row in self?.menu(for: row) }
             table.copySelectionAsCurl = { [weak self] in self?.copySelectedRowsAsCurl() ?? false }
+            table.copySelectionUsingDefaultFormat = { [weak self] in self?.copySelectedRowsUsingDefaultFormat() ?? false }
         }
 
         func update(_ input: TrafficTable, table: Table) {
@@ -76,6 +82,7 @@ struct TrafficTable: NSViewRepresentable {
             select = input.select
             open = input.open
             copyAsCurl = input.copyAsCurl
+            copyUsingDefaultFormat = input.copyUsingDefaultFormat
             contextMenu = input.contextMenu
             updating = true
             defer { updating = false }
@@ -203,6 +210,15 @@ struct TrafficTable: NSViewRepresentable {
             return true
         }
 
+        private func copySelectedRowsUsingDefaultFormat() -> Bool {
+            guard let copyUsingDefaultFormat else { return false }
+            let targets = selectedRows
+            guard !targets.isEmpty else { return false }
+            select?(Set(targets.map(\.id)))
+            copyUsingDefaultFormat(targets)
+            return true
+        }
+
         @objc func openClickedRow(_ sender: NSTableView) {
             if rows.indices.contains(sender.clickedRow) { open?(rows[sender.clickedRow].id) }
         }
@@ -223,13 +239,15 @@ struct TrafficTable: NSViewRepresentable {
     final class Table: NSTableView {
         var makeMenu: ((Int) -> NSMenu?)?
         var copySelectionAsCurl: (() -> Bool)?
+        var copySelectionUsingDefaultFormat: (() -> Bool)?
+        var showsAlternatingRows = true
 
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
             guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
-            let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
-            if modifiers == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "c",
-               copySelectionAsCurl?() == true {
-                return true
+            switch TrafficCopyShortcut.resolve(characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags) {
+            case .preferred where copySelectionUsingDefaultFormat?() == true: return true
+            case .curl where copySelectionAsCurl?() == true: return true
+            default: break
             }
             return super.performKeyEquivalent(with: event)
         }
@@ -242,6 +260,7 @@ struct TrafficTable: NSViewRepresentable {
         override func drawBackground(inClipRect clipRect: NSRect) {
             ProxymanTheme.tableBackgroundColor.setFill()
             clipRect.fill()
+            guard showsAlternatingRows else { return }
             ProxymanTheme.tableAlternateColor.setFill()
             let stride = rowHeight * 2
             guard stride > 0 else { return }
@@ -255,6 +274,10 @@ struct TrafficTable: NSViewRepresentable {
 
     private final class Row: NSTableRowView {
         static let reuseIdentifier = NSUserInterfaceItemIdentifier("traffic-row")
+
+        override var isSelected: Bool {
+            didSet { subviews.compactMap { $0 as? Cell }.forEach { $0.setSelected(isSelected) } }
+        }
 
         override func drawSelection(in dirtyRect: NSRect) {
             guard isSelected else { return }
@@ -305,7 +328,14 @@ struct TrafficTable: NSViewRepresentable {
         }
 
         override var backgroundStyle: NSView.BackgroundStyle {
-            didSet { setSelected(backgroundStyle == .emphasized) }
+            didSet {
+                var ancestor = superview
+                while let view = ancestor {
+                    if let row = view as? NSTableRowView { setSelected(row.isSelected); return }
+                    ancestor = view.superview
+                }
+                setSelected(backgroundStyle == .emphasized)
+            }
         }
 
         // The row content is display-only. Let the table handle selection, double-clicks and menus.

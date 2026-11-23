@@ -30,7 +30,7 @@ func runScriptingLoopback(engine: ProxyEngine, source: String, records: () -> [T
     }
 
     let first = rule("第一条", path: "/scripting", phase: .request, js: """
-        if (typeof fetch !== "undefined" || typeof process.exit !== "undefined" || typeof require !== "function") {
+        if (typeof fetch !== "function" || typeof process.exit !== "undefined" || typeof require !== "function") {
             throw new Error("host interface available");
         }
         message.body += "|one";
@@ -103,6 +103,25 @@ func runScriptingLoopback(engine: ProxyEngine, source: String, records: () -> [T
     let mocked = try send("/scripting-mock", body: "never-send-upstream")
     check(mocked.contains("201") && mocked.contains("X-PM-Mock: local") && mocked.hasSuffix("local-mock-only"),
           "loopback: 请求脚本通过本地 Mock 响应结束，无需上游响应")
+
+    let lookupURL = String(decoding: try JSONEncoder().encode(source + "/scripting-network-lookup"), as: UTF8.self)
+    let networkRule = rule("网络 API", path: "/scripting-network", phase: .request, js: """
+        async function onRequest(message) {
+            const response = await fetch(\(lookupURL), {
+                method: 'POST', headers: {'Content-Type': 'text/plain', 'X-Native-Bridge': '1'},
+                body: 'native-fetch', timeoutMs: 2000
+            });
+            const echo = await response.json();
+            message.body = echo.body + '|network';
+            console.info('native-fetch-status', response.status);
+            return message;
+        }
+        """)
+    config.rewrite.set([RewriteRuleSet(rules: [networkRule])])
+    let beforeNetwork = records().count
+    let networked = try send("/scripting-network", body: "original")
+    check(networked.contains(#""body": "native-fetch|network""#), "loopback: Swift URLSession fetch 真正请求本地上游并改写原请求")
+    check(records().count == beforeNetwork + 1, "loopback: 脚本网络 API 直连目标，不经自身代理递归抓包")
 
     let named = rule("FindUser", path: "/scripting-graphql", phase: .response, operation: "FindUser", js: """
         message.status = 202;

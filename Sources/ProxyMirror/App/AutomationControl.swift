@@ -73,7 +73,10 @@ enum AutomationControl {
                 default: throw LocalControlError.usage("format 必须为 har、json、csv 或 session。")
                 }
             }
-        case "rules": result = try rules(arguments)
+        case "export_logs": return try NativeLogExport.data(arguments, app: app)
+        case "rules":
+            do { result = try rules(arguments) }
+            catch let error as RuleMutation.Failure { throw LocalControlError.usage(error.localizedDescription) }
         case "folders": result = try folders(arguments)
         case "tools":
             let action = arguments["action"] as? String ?? "list"
@@ -114,8 +117,9 @@ enum AutomationControl {
         case "factory_reset": result = try factoryReset(arguments, app: app)
         case "script_help":
             result = ["worker": "JavaScriptCore", "stages": ["onRequest", "onResponse", "onWebSocket"],
-                      "example": "async function onRequest(request) { console.info(request.url); return request; }",
-                      "note": "Scripts execute in an isolated worker. Review generated code before activation."]
+                      "example": "async function onRequest(message) { const r = await fetch('https://example.com/api', {timeoutMs: 3000}); console.info(r.status, await r.json()); return message; }",
+                      "network": ["fetch", "require('@proxymirror/http')", "require('axios') subset", "AbortController"],
+                      "note": "Native direct networking validates TLS and does not read system cookies or credentials. ProxyMirror self-connections are refused. Default network wall budget 10s, maximum 8 requests/4 concurrent, response 1 MiB. Preview/beautify disable networking. Axios interceptors/adapters are unsupported."]
         default: throw LocalControlError.usage("未知自动化操作 \(operation)。")
         }
         return try json(result)
@@ -183,17 +187,34 @@ enum AutomationControl {
         case "reverse": rows = try ReverseProxyController.shared.rules.map(object)
         case "latency":
             let latency = LatencyConditions.snapshot()
-            let rules: [NetworkConditionRule]
-            if let existing = latency.rules { rules = existing }
+            if let existing = latency.rules { rows = try existing.map(object) }
             else if latency.enabled {
                 var legacy = NetworkConditionRule(legacy: latency, name: "旧版弱网设置")
                 legacy.id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-                rules = [legacy]
-            } else { rules = [] }
-            rows = try rules.map(object)
+                rows = [try object(legacy)]
+            } else { rows = [] }
         default: rows = backup[tool] as? [[String: Any]] ?? []
         }
         let identifier = arguments["id"] as? String
+        var groups = rows
+        var groupIndex: Int?
+        if let groupID = try optionalUUID(arguments, "groupId") {
+            guard tool == "rewrite", let found = groups.firstIndex(where: { UUID(uuidString: $0["id"] as? String ?? "") == groupID }) else {
+                throw LocalControlError.noMatches("找不到脚本规则集。")
+            }
+            groupIndex = found
+        } else if tool == "rewrite", let identifier,
+                  !groups.contains(where: { ruleID($0, tool: tool).caseInsensitiveCompare(identifier) == .orderedSame }) {
+            let candidates = groups.indices.filter { index in
+                (groups[index]["rules"] as? [[String: Any]] ?? []).contains {
+                    ruleID($0, tool: tool).caseInsensitiveCompare(identifier) == .orderedSame
+                }
+            }
+            guard candidates.count <= 1 else { throw LocalControlError.usage("多个规则集含相同子规则 ID，请指定 --group-id。") }
+            groupIndex = candidates.first
+        }
+        if let groupIndex { rows = groups[groupIndex]["rules"] as? [[String: Any]] ?? [] }
+        let nestedRewrite = groupIndex != nil
         let index = identifier.flatMap { id in rows.firstIndex { ruleID($0, tool: tool).caseInsensitiveCompare(id) == .orderedSame } }
         if action == "list" {
             if let folder = try optionalUUID(arguments, "folderId") {
@@ -205,7 +226,9 @@ enum AutomationControl {
             guard let index else { throw LocalControlError.noMatches("找不到规则。") }
             return rows[index]
         }
+        var organization = RuleOrganizationStore.shared.snapshot()
         var affected: [String: Any]?
+        var removedIDs = Set<String>()
         switch action {
         case "add", "create":
             guard var row = arguments["rule"] as? [String: Any] else { throw LocalControlError.usage("新增需要 rule JSON 对象。") }
@@ -218,7 +241,7 @@ enum AutomationControl {
             case "latency": defaults = try object(NetworkConditionRule())
             case "dns": defaults = try object(DNSSpoofRule())
             case "breakpoints": defaults = try object(BreakpointRule())
-            case "rewrite": defaults = try object(RewriteRuleSet())
+            case "rewrite": defaults = nestedRewrite ? try object(RewriteRule()) : try object(RewriteRuleSet())
             case "customCertificates": defaults = try object(CustomCertificateRule())
             default: defaults = [:]
             }
@@ -233,28 +256,68 @@ enum AutomationControl {
             guard !id.isEmpty, !rows.contains(where: { ruleID($0, tool: tool).caseInsensitiveCompare(id) == .orderedSame }) else {
                 throw LocalControlError.usage("规则 ID 为空或已存在。")
             }
-            rows.append(row)
-            affected = row
+            rows.append(row); affected = row
+        case "rename":
+            guard let index else { throw LocalControlError.noMatches("找不到要改名的规则。") }
+            rows[index] = try RuleMutation.rename(rows[index], tool: tool, nestedRewrite: nestedRewrite, name: try string(arguments, "name"))
+            affected = rows[index]
+        case "duplicate":
+            guard let index else { throw LocalControlError.noMatches("找不到要复制的规则。") }
+            guard arguments["rule"] == nil else { throw LocalControlError.usage("duplicate 使用 --name/--bundle-id；复制后可通过 update 编辑配置。") }
+            let copy = try RuleMutation.duplicate(rows[index], tool: tool, nestedRewrite: nestedRewrite,
+                name: arguments["name"] as? String, bundleID: arguments["bundleId"] as? String)
+            let id = ruleID(copy.rule, tool: tool)
+            guard !rows.contains(where: { ruleID($0, tool: tool).caseInsensitiveCompare(id) == .orderedSame }) else {
+                throw LocalControlError.usage("复制的规则身份已存在。")
+            }
+            let prefix = tool + ":"
+            let sourceAssignments = organization.assignments
+            for (key, folder) in sourceAssignments where key.hasPrefix(prefix) {
+                let old = String(key.dropFirst(prefix.count))
+                let normalized = UUID(uuidString: old)?.uuidString ?? old.lowercased()
+                for newID in copy.identifiers[normalized] ?? [] { organization.assignments[prefix + newID] = folder }
+            }
+            rows.insert(copy.rule, at: index + 1); affected = copy.rule
         case "update":
             guard let index, let fields = arguments["rule"] as? [String: Any] else { throw LocalControlError.noMatches("更新需要已有规则 ID 和 rule 对象。") }
             let originalID = ruleID(rows[index], tool: tool)
+            let oldIDs = RuleMutation.ownedIdentifiers(rows[index])
             rows[index].merge(fields) { _, new in new }
             guard ruleID(rows[index], tool: tool).caseInsensitiveCompare(originalID) == .orderedSame else {
                 throw LocalControlError.usage("更新不能更改规则 ID。")
             }
+            removedIDs.formUnion(oldIDs.subtracting(RuleMutation.ownedIdentifiers(rows[index])))
             affected = rows[index]
         case "delete", "remove":
             guard let index else { throw LocalControlError.noMatches("找不到要删除的规则。") }
             affected = rows.remove(at: index)
+            removedIDs = RuleMutation.ownedIdentifiers(affected ?? [:])
+            if let affected { removedIDs.insert(ruleID(affected, tool: tool)) }
         case "enable", "disable":
             guard let index else { throw LocalControlError.noMatches("找不到要切换的规则。") }
-            rows[index]["enabled"] = action == "enable"
-            affected = rows[index]
-        default: throw LocalControlError.usage("规则动作支持 list/get/add/update/delete/enable/disable。")
+            rows[index]["enabled"] = action == "enable"; affected = rows[index]
+        default: throw LocalControlError.usage("规则动作支持 list/get/add/update/delete/enable/disable/rename/duplicate。")
         }
+        let prefix = tool + ":"
+        organization.assignments = organization.assignments.filter { key, _ in
+            guard key.hasPrefix(prefix) else { return true }
+            let id = String(key.dropFirst(prefix.count))
+            return !removedIDs.contains(UUID(uuidString: id)?.uuidString ?? id.lowercased())
+        }
+        if let folderID = try optionalUUID(arguments, "folderId"), ["add", "create", "duplicate"].contains(action), let affected {
+            guard organization.folders.contains(where: { $0.id == folderID && $0.tool == tool }) else {
+                throw LocalControlError.noMatches("目标文件夹不存在或属于其他工具。")
+            }
+            organization.assignments[prefix + ruleID(affected, tool: tool)] = folderID.uuidString
+        }
+        if let groupIndex {
+            groups[groupIndex]["rules"] = rows
+            rows = groups
+        }
+        backup["organization"] = try object(organization)
         switch tool {
         case "reverse":
-            try ReverseProxyController.shared.save(JSONDecoder().decode([ReverseProxyRule].self, from: json(rows)))
+            try ReverseProxyController.shared.save(JSONDecoder().decode([ReverseProxyRule].self, from: json(rows)), organization: organization)
         default:
             if tool == "protobuf" {
                 var configuration = ProtobufRuntimeStore.shared.snapshot()
@@ -263,21 +326,15 @@ enum AutomationControl {
             } else if tool == "latency" {
                 var latency = LatencyConditions.snapshot()
                 latency.rules = try JSONDecoder().decode([NetworkConditionRule].self, from: json(rows))
-                if action == "add" || action == "create" { latency.enabled = true }
+                if ["add", "create", "duplicate"].contains(action) { latency.enabled = true }
                 backup[tool] = try object(latency)
             } else { backup[tool] = rows }
-            if action == "delete" || action == "remove", let affected,
-               var organization = backup["organization"] as? [String: Any],
-               var assignments = organization["assignments"] as? [String: String] {
-                assignments.removeValue(forKey: tool + ":" + ruleID(affected, tool: tool))
-                organization["assignments"] = assignments
-                backup["organization"] = organization
-            }
-            // Validate the same strict schema used by backup previews before touching disk.
             let (validated, _) = try RuleBackup.read(json(backup))
             try RulesStore.shared.install(validated)
         }
-        return ["tool": tool, "action": action, "rule": affected ?? [:], "count": rows.count]
+        var result: [String: Any] = ["tool": tool, "action": action, "rule": affected ?? [:], "count": rows.count]
+        if let groupIndex { result["groupId"] = groups[groupIndex]["id"] }
+        return result
     }
 
     private static func ruleID(_ row: [String: Any], tool: String) -> String {
@@ -357,7 +414,8 @@ enum AutomationControl {
         switch command {
         case "export":
             guard arguments.count > 1, ["flows", "logs"].contains(arguments[1]) else { throw LocalControlError.usage("export 需要 flows 或 logs。") }
-            operation = "export_flows"; offset = 2
+            operation = arguments[1] == "logs" ? "export_logs" : "export_flows"
+            offset = 2
         case "flow": operation = "get_flow"
         case "code": operation = "copy_as_code"
         case "proxy-address": operation = "proxy_address"
@@ -376,6 +434,10 @@ enum AutomationControl {
         default: return nil
         }
         var object: [String: Any] = ["operation": operation]
+        if operation == "export_logs", arguments.count > offset, !arguments[offset].hasPrefix("--") {
+            guard ["all", "domains"].contains(arguments[offset]) else { throw LocalControlError.usage("export logs 需要 all 或 domains 范围。") }
+            object["scope"] = arguments[offset]; offset += 1
+        }
         if let action { object["action"] = action }
         if let tool { object["tool"] = tool }
         var output: String?
@@ -383,9 +445,20 @@ enum AutomationControl {
         var remaining = arguments.dropFirst(offset).makeIterator()
         let valueOptions: [String: String] = ["--url": "url", "--domain": "domain", "--method": "method", "--status": "status",
             "--id": "id", "--after-id": "afterId", "--limit": "limit", "--format": "format", "--language": "language",
-            "--tool": "tool", "--name": "name", "--parent-id": "parentId", "--folder-id": "folderId", "--rule-id": "ruleId"]
+            "--tool": "tool", "--name": "name", "--parent-id": "parentId", "--folder-id": "folderId", "--rule-id": "ruleId",
+            "--domains": "domains", "--from": "from", "--to": "to", "--group-id": "groupId", "--bundle-id": "bundleId"]
         while let flag = remaining.next() {
             guard seen.insert(flag).inserted else { throw LocalControlError.usage("参数 \(flag) 只能出现一次。") }
+            if operation == "export_flows" {
+                guard ["--selected", "--url", "--domain", "--method", "--status", "--id", "--after-id", "--limit", "--format", "--output"].contains(flag) else {
+                    throw LocalControlError.usage("流量导出不接受参数 \(flag)。")
+                }
+            }
+            if operation == "export_logs" {
+                guard ["--selected", "--domain", "--domains", "--from", "--to", "--format", "--output"].contains(flag) else {
+                    throw LocalControlError.usage("日志导出不接受参数 \(flag)。")
+                }
+            }
             if let key = ["--selected": "selected", "--confirm-reset": "confirmReset", "--delete-rules": "deleteRules"][flag] {
                 object[key] = true; continue
             }
@@ -397,13 +470,17 @@ enum AutomationControl {
                 guard let input = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw LocalControlError.usage("input 必须为 JSON 对象。") }
                 object[operation == "external_proxy" ? "config" : "rule"] = input
             } else if let key = valueOptions[flag] {
-                if key == "status" || key == "limit" {
+                if operation == "export_logs", key == "domains" || key == "domain" {
+                    let values = value.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+                    guard values.allSatisfy({ !$0.isEmpty }) else { throw LocalControlError.usage("域名筛选不能包含空项。") }
+                    object["domains"] = (object["domains"] as? [String] ?? []) + values
+                } else if key == "status" || key == "limit" {
                     guard let number = Int(value) else { throw LocalControlError.usage("\(flag) 需要整数。") }
                     object[key] = number
                 } else { object[key] = value }
             }
         }
-        if operation != "export_flows", output != nil { throw LocalControlError.usage("此命令不接受 --output。") }
+        if operation != "export_flows", operation != "export_logs", output != nil { throw LocalControlError.usage("此命令不接受 --output。") }
         return (object, output)
     }
 

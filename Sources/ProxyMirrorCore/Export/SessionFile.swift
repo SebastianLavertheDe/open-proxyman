@@ -209,7 +209,32 @@ struct SessionFile: Codable, Sendable {
     }
 
     static func decode(_ data: Data) throws -> SessionFile {
-        try JSONDecoder().decode(Self.self, from: data)
+        let decoder = JSONDecoder()
+        let header = try decoder.decode(ImportHeader.self, from: data)
+        if header.format == "proxymirror-domain-logs" {
+            let bundle = try decoder.decode(DomainLogs.self, from: data)
+            guard bundle.version == 1 else { throw SessionError.unsupportedVersion }
+            let records = bundle.sessions.flatMap { $0.session.records }.sorted {
+                $0.startedAt == $1.startedAt ? $0.seq < $1.seq : $0.startedAt < $1.startedAt
+            }
+            guard Set(records.map(\.id)).count == records.count else { throw SessionError.duplicateIDs }
+            var pins = Set<String>(), selection = Set<UUID>()
+            let pinnedDomains = bundle.sessions.flatMap { $0.session.pinnedDomains }.filter { pins.insert($0).inserted }
+            for group in bundle.sessions { selection.formUnion(group.session.selected) }
+            return Self(records: records, pinnedDomains: pinnedDomains, selected: records.map(\.id).filter(selection.contains))
+        }
+        return try decoder.decode(Self.self, from: data)
+    }
+
+    private struct ImportHeader: Decodable { let format: String? }
+    private struct DomainLogs: Decodable {
+        struct Group: Decodable { let domain: String; let session: SessionFile }
+        let version: Int
+        let sessions: [Group]
+    }
+
+    private init(records: [SessionRecord], pinnedDomains: [String], selected: [UUID]) {
+        version = 1; self.records = records; self.pinnedDomains = pinnedDomains; self.selected = selected
     }
 
     private enum CodingKeys: String, CodingKey { case version, records, pinnedDomains, selected }

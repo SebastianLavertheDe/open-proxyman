@@ -188,7 +188,8 @@ private struct BreakpointRuleEditor: View {
     @State private var rules = InterceptionConfig.shared.breakpoints.value
     @State private var selected: UUID?
     @State private var error: String?
-    @State private var dirty = false
+    @State private var folderDraft = RuleFolderEditingDraft()
+    private var dirty: Bool { rules != InterceptionConfig.shared.breakpoints.value || folderDraft.hasChanges }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -229,18 +230,18 @@ private struct BreakpointRuleEditor: View {
                 }
                 .disabled(selected == nil)
                 Spacer()
-                Button("还原") { rules = InterceptionConfig.shared.breakpoints.value; error = nil; dirty = false }
+                Button("还原") { rules = InterceptionConfig.shared.breakpoints.value; folderDraft = RuleFolderEditingDraft(); error = nil }
                     .disabled(!dirty)
                 Button("保存规则") { save() }.disabled(!dirty)
             }
         }
-        .onChange(of: rules) { _ in dirty = rules != InterceptionConfig.shared.breakpoints.value }
     }
 
     private func fields(_ rule: Binding<BreakpointRule>) -> some View {
         Form {
             Toggle("启用此规则", isOn: rule.enabled)
             TextField("名称", text: rule.rule.name)
+            RuleFolderPicker(tool: "breakpoints", ruleID: rule.wrappedValue.id.uuidString, draft: $folderDraft)
             Picker("暂停阶段", selection: rule.phase) {
                 Text("请求").tag(BreakpointRule.Phase.request)
                 Text("响应").tag(BreakpointRule.Phase.response)
@@ -285,13 +286,14 @@ private struct BreakpointRuleEditor: View {
         var backup = store.backup()
         backup.breakpoints = updated
         do {
+            backup.organization = try folderDraft.merging(into: backup.organization ?? RuleOrganizationStore.shared.snapshot(), tool: "breakpoints", keeping: Set(updated.map { $0.id.uuidString }))
             try store.install(backup)
         } catch let failure {
             error = failure.localizedDescription
             return
         }
         rules = updated
-        dirty = false
+        folderDraft = RuleFolderEditingDraft()
         error = nil
     }
 }

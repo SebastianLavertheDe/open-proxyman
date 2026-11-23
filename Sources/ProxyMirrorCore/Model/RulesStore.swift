@@ -28,6 +28,7 @@ struct ProxyRule: Codable, Identifiable, Equatable, Sendable {
 struct CustomCertificateRule: Codable, Identifiable, Equatable {
     var id = UUID()
     var enabled = true
+    var name: String?
     /// 通配：*.example.com / example.com
     var hostPattern: String = ""
     /// PEM 证书链文件（叶子在前，含中间证书）

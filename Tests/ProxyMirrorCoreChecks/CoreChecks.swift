@@ -18,11 +18,15 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
         case .composeAndPersistence:
             try checkComposeAndPersistence(assertions)
             try checkExportInteractions(assertions)
+            try checkDomainLogImport(assertions)
         case .trafficMenu: try checkTrafficMenu(assertions)
         case .settings:
             checkSettings(assertions)
+            try checkPresentationSettings(assertions)
             try checkSettingsRuntime(assertions)
-            checkUpdateConfiguration(assertions)
+            try checkUpdateConfiguration(assertions)
+            try checkMemoryPressure(assertions)
+            try checkPresentationBackup(assertions)
         case .grpc: try checkGRPC(assertions)
         case .capture: checkCapture(assertions)
         case .contentCoding:

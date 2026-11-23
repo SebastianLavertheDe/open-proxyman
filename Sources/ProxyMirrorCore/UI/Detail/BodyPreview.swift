@@ -117,9 +117,7 @@ struct RawMessageHeadView: View, Equatable {
 
     var body: some View {
         if !head.startLine.isEmpty {
-            Text(head.text)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
+            CodeText(text: head.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .padding(.top, 10)
@@ -141,6 +139,7 @@ struct BodyPreview: View {
     @State private var page = 0
     @State private var rendered: Rendered?
     @State private var copyTask: Task<Void, Never>?
+    @State private var memoryEpoch: UInt64 = 0
     @AppStorage("ui.wordWrap") private var wordWrap = true
     @AppStorage("ui.showInvisibles") private var showInvisibles = false
     @AppStorage("ui.showMinimap") private var showMinimap = false
@@ -154,6 +153,7 @@ struct BodyPreview: View {
         let source: Source
         let page: Int
         let range: Range<Int>
+        let memoryEpoch: UInt64
     }
 
     private struct Rendered {
@@ -166,7 +166,7 @@ struct BodyPreview: View {
         let pages = BodyPreviewRenderer.pageCount(bytes: data.count, format: format)
         let selected = min(page, pages - 1)
         let range = BodyPreviewRenderer.range(in: data, format: format, page: selected) ?? 0..<0
-        let input = Input(source: source, page: selected, range: range)
+        let input = Input(source: source, page: selected, range: range, memoryEpoch: memoryEpoch)
         VStack(alignment: .leading, spacing: 4) {
             if pages > 1 || !data.isEmpty || rawHead?.startLine.isEmpty == false {
                 HStack(spacing: 8) {
@@ -234,7 +234,7 @@ struct BodyPreview: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled, let text { rendered = Rendered(input: input, text: text) }
+            if !Task.isCancelled, input.memoryEpoch == memoryEpoch, let text { rendered = Rendered(input: input, text: text) }
         }
         .onChange(of: source) { _ in
             page = 0
@@ -242,13 +242,16 @@ struct BodyPreview: View {
         }
         .onChange(of: selected) { _ in scrollToPageTop?() }
         .onDisappear(perform: cancelCopy)
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in
+            cancelCopy()
+            rendered = nil
+            memoryEpoch &+= 1
+        }
     }
 
     private func previewText(_ text: String) -> some View {
-        Text(showInvisibles && format == .text ? text.replacingOccurrences(of: " ", with: "·")
-            .replacingOccurrences(of: "\t", with: "→   ").replacingOccurrences(of: "\n", with: "¬\n") : text)
-            .font(.system(size: format == .hex ? 10 : 11, design: .monospaced))
-            .textSelection(.enabled)
+        CodeText(text: text, fontSize: format == .hex ? 10 : 11, wordWrap: wordWrap || format == .hex,
+                 showInvisibles: showInvisibles && format == .text)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
     }

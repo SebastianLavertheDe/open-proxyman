@@ -326,14 +326,7 @@ final class Transaction: ObservableObject, Identifiable {
         return String(format: "%.2f MB", Double(n) / (1024 * 1024))
     }
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
-        f.timeZone = .autoupdatingCurrent
-        return f
-    }()
-
-    var timeText: String { Self.timeFormatter.string(from: startedAt) }
+    var timeText: String { PresentationTime.string(from: startedAt) }
 
     var durationText: String {
         if duration < 1 { return String(format: "%.0f ms", duration * 1000) }

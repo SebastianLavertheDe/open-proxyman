@@ -6,12 +6,41 @@ import NIOSSL
 import NIOTLS
 
 extension ExternalProxyConfig {
-    func applies(to host: String, respectGlobalSwitch: Bool = true) -> Bool {
-        guard enabled, !respectGlobalSwitch || RuleOrganizationStore.shared.isEnabled("external") else { return false }
-        guard let host = ExternalProxyHost(host) else { return true }
-        // Local services are always reached directly, including IPv4-mapped IPv6 loopback.
-        guard !host.isLoopback else { return false }
-        return !(bypassHosts ?? []).contains { pattern in
+    /// Final target decision. URL patterns are evaluated only once a request path is available.
+    func applies(to host: String, url: String? = nil, respectGlobalSwitch: Bool = true) -> Bool {
+        guard routingAvailable(host: host, respectGlobalSwitch: respectGlobalSwitch) else { return false }
+        switch effectiveRoutingMode {
+        case .all: return true
+        case .bypass: return !matchesBypass(host)
+        case .inclusive:
+            return (includedTargets ?? []).contains { ExternalProxyTarget($0)?.matches(host: host, url: url) == true }
+        }
+    }
+
+    /// A URL-inclusive rule cannot be discarded while only the CONNECT/host is
+    /// known. HTTPOrigin retains it until resolvingProxy supplies the full URL.
+    func couldApply(to host: String, respectGlobalSwitch: Bool = true) -> Bool {
+        guard routingAvailable(host: host, respectGlobalSwitch: respectGlobalSwitch) else { return false }
+        switch effectiveRoutingMode {
+        case .all: return true
+        case .bypass: return !matchesBypass(host)
+        case .inclusive:
+            return (includedTargets ?? []).contains { raw in
+                guard let target = ExternalProxyTarget(raw) else { return false }
+                return target.isURL || target.matches(host: host, url: nil)
+            }
+        }
+    }
+
+    private func routingAvailable(host: String, respectGlobalSwitch: Bool) -> Bool {
+        guard enabled, !respectGlobalSwitch || RuleOrganizationStore.shared.isEnabled("external"),
+              let target = ExternalProxyHost(host), !target.isLoopback else { return false }
+        return true
+    }
+
+    private func matchesBypass(_ host: String) -> Bool {
+        guard let host = ExternalProxyHost(host) else { return false }
+        return (bypassHosts ?? []).contains { pattern in
             let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.hasPrefix("*.") {
                 guard let domain = ExternalProxyHost(String(trimmed.dropFirst(2))), domain.isDNS else { return false }
@@ -26,6 +55,15 @@ extension ExternalProxyConfig {
     }
 
     var validationError: String? {
+        if let includedTargets {
+            guard includedTargets.count <= 256 else { return "包含目标最多 256 项。" }
+            if let invalid = includedTargets.first(where: { ExternalProxyTarget($0) == nil }) {
+                return "包含目标格式无效：\(String(invalid.prefix(128)))"
+            }
+        }
+        if enabled, effectiveRoutingMode == .inclusive, includedTargets?.isEmpty != false {
+            return "仅包含列表模式至少需要一个目标主机或 URL。"
+        }
         if let invalid = (bypassHosts ?? []).first(where: { pattern in
             if pattern.hasPrefix("*.") {
                 return ExternalProxyHost(String(pattern.dropFirst(2)))?.isDNS != true

@@ -64,6 +64,7 @@ enum TrafficFilterMode: Equatable {
     case all
     case pinned
     case saved
+    case savedFolder(UUID)
     case archive
     case client(String)
     case clientDomain(client: String, host: String)
@@ -105,6 +106,43 @@ final class TrafficStore: ObservableObject {
     var transferredBytes: (request: Int64, response: Int64) { data.transferredBytes }
     var saved: [Transaction] { data.saved }
     var sourceFolders: [SourceFolder] { data.sourceFolders }
+    var savedRequestFolders: [SavedRequestFolder] { data.savedRequestFolders }
+    var isBrowsingSavedRequests: Bool { filterMode.isSavedRequests }
+    var activeSavedRequestFolderID: UUID? {
+        if case .savedFolder(let id) = filterMode { return id }
+        return nil
+    }
+    func savedRequests(in folder: UUID?) -> [Transaction] { data.savedRequests(in: folder) }
+    func savedRequestFolderPath(_ id: UUID?) -> String {
+        guard let id else { return "Saved（未分组）" }
+        var current: UUID? = id
+        var names: [String] = []
+        var seen = Set<UUID>()
+        while let key = current, seen.insert(key).inserted,
+              let folder = savedRequestFolders.first(where: { $0.id == key }) {
+            names.insert(folder.name, at: 0); current = folder.parentID
+        }
+        return names.joined(separator: " / ")
+    }
+    @discardableResult
+    func createSavedRequestFolder(name: String, parentID: UUID? = nil) throws -> UUID {
+        var id = UUID()
+        try data.mutateSavedLibrary { id = try $0.create(name: name, parentID: parentID) }
+        return id
+    }
+    func updateSavedRequestFolder(_ id: UUID, name: String, parentID: UUID?) throws {
+        try data.mutateSavedLibrary { archive in try archive.rename(id, name: name); try archive.moveFolder(id, parentID: parentID) }
+    }
+    func renameSavedRequestFolder(_ id: UUID, name: String) throws { try data.mutateSavedLibrary { try $0.rename(id, name: name) } }
+    func moveSavedRequestFolder(_ id: UUID, parentID: UUID?) throws { try data.mutateSavedLibrary { try $0.moveFolder(id, parentID: parentID) } }
+    func deleteSavedRequestFolder(_ id: UUID) throws { try data.mutateSavedLibrary { try $0.deletePreservingRequests(id) } }
+    func copyRequests(_ requests: [Transaction], toSavedFolder folder: UUID?) throws {
+        let snapshots = requests.map(SessionRecord.init)
+        try data.mutateSavedLibrary { try $0.add(snapshots, to: folder) }
+    }
+    func transferSavedRequests(ids: Set<UUID>, from source: UUID?, to destination: UUID?, copy: Bool) throws {
+        try data.mutateSavedLibrary { try $0.transfer(ids: ids, from: source, to: destination, copy: copy) }
+    }
     @Published private(set) var archive: [Transaction] = [] {
         didSet {
             archiveByID = Dictionary(archive.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -216,7 +254,7 @@ final class TrafficStore: ObservableObject {
         visibleRows = nil
         if visible {
             refreshSharedData()
-            if receivedWhileHidden, followLatest, filterMode != .saved, filterMode != .archive,
+            if receivedWhileHidden, followLatest, !filterMode.isSavedRequests, filterMode != .archive,
                let latest = lastInSource(where: isVisible) {
                 selectedIDs = [latest.id]
             }
@@ -225,7 +263,7 @@ final class TrafficStore: ObservableObject {
     }
 
     func noteBodyCaptureUpdate(_ tx: Transaction) {
-        guard workspaceVisible, filterMode != .saved, filterMode != .archive,
+        guard workspaceVisible, !filterMode.isSavedRequests, filterMode != .archive,
               data.transaction(id: tx.id) === tx,
               sortsByCapturedBody || filter.conditions.readsBody else { return }
         let schedule = pendingBodies.isEmpty
@@ -242,7 +280,7 @@ final class TrafficStore: ObservableObject {
     private func refreshSharedData(_ change: TrafficData.Change? = nil) {
         switch change {
         case .appended(let transaction, let evicted):
-            if filterMode != .saved && filterMode != .archive {
+            if !filterMode.isSavedRequests && filterMode != .archive {
                 guard workspaceVisible else {
                     visibleRows = nil
                     receivedWhileHidden = true
@@ -263,7 +301,7 @@ final class TrafficStore: ObservableObject {
             if workspaceVisible { changePublisher.send() }
             return
         case .live(let ids, let captures, let reset):
-            if filterMode != .saved && filterMode != .archive {
+            if !filterMode.isSavedRequests && filterMode != .archive {
                 if !workspaceVisible {
                     if reset || !ids.isEmpty { visibleRows = nil }
                     if !captures.isEmpty { receivedWhileHidden = true }
@@ -282,7 +320,10 @@ final class TrafficStore: ObservableObject {
             if workspaceVisible { changePublisher.send() }
             return
         case .saved:
-            if filterMode == .saved { visibleRows = nil; reconcileSelection() }
+            if case .savedFolder(let id) = filterMode, !data.savedRequestFolders.contains(where: { $0.id == id }) {
+                filterMode = .saved
+            }
+            if filterMode.isSavedRequests { visibleRows = nil; reconcileSelection() }
             if workspaceVisible { changePublisher.send() }
             return
         case .folders:
@@ -349,6 +390,7 @@ final class TrafficStore: ObservableObject {
     private var source: [Transaction] {
         switch filterMode {
         case .saved: return saved
+        case .savedFolder(let id): return data.savedRequests(in: id)
         case .archive: return archive
         default: return transactions
         }
@@ -357,6 +399,7 @@ final class TrafficStore: ObservableObject {
     private func lastInSource(where predicate: (Transaction) -> Bool) -> Transaction? {
         switch filterMode {
         case .saved: return saved.last(where: predicate)
+        case .savedFolder(let id): return data.savedRequests(in: id).last(where: predicate)
         case .archive: return archive.last(where: predicate)
         default: return data.live.last(where: predicate)
         }
@@ -369,6 +412,7 @@ final class TrafficStore: ObservableObject {
         let rows: [Transaction]
         switch filterMode {
         case .saved: rows = saved.filter(isVisible)
+        case .savedFolder(let id): rows = data.savedRequests(in: id).filter(isVisible)
         case .archive: rows = archive.filter(isVisible)
         default: rows = data.live.filter(isVisible)
         }
@@ -398,7 +442,7 @@ final class TrafficStore: ObservableObject {
               extraChips.isEmpty ? tx.matches(chip: activeChip) : extraChips.contains(where: { tx.matches(chip: $0) })
         else { return false }
         switch filterMode {
-        case .all, .saved, .archive: break
+        case .all, .saved, .savedFolder, .archive: break
         case .pinned:
             guard AppState.shared.pinnedDomains.contains(tx.host) else { return false }
         case .client(let name):
@@ -551,11 +595,13 @@ final class TrafficStore: ObservableObject {
 
     func transaction(id: UUID) -> Transaction? {
         transactionInSource(id) ?? archiveByID[id] ?? data.transaction(id: id) ?? data.savedByID[id]
+            ?? data.savedFolderRecords.values.lazy.compactMap { $0.first { $0.id == id } }.first
     }
 
     private func transactionInSource(_ id: UUID) -> Transaction? {
         switch filterMode {
         case .saved: return data.savedByID[id]
+        case .savedFolder(let folder): return data.savedRequests(in: folder).first { $0.id == id }
         case .archive: return archiveByID[id]
         default: return data.transaction(id: id)
         }
@@ -601,7 +647,7 @@ final class TrafficStore: ObservableObject {
     }
 
     func update(_ records: [Transaction]) {
-        let changesSaved = records.contains { data.savedByID[$0.id] === $0 }
+        let changesSaved = records.contains { record in data.savedByID[record.id] === record || data.savedFolderRecords.values.contains { $0.contains { $0 === record } } }
         if changesSaved {
             data.persistSaved()
             data.changed.send(.saved)
@@ -617,6 +663,7 @@ final class TrafficStore: ObservableObject {
         switch filterMode {
         case .saved:
             data.editSaved { $0.removeAll() }
+        case .savedFolder(let folder): data.editSavedFolder(folder) { $0.removeAll() }
         case .archive: archive.removeAll()
         default: data.clear()
         }
@@ -629,6 +676,7 @@ final class TrafficStore: ObservableObject {
         switch filterMode {
         case .saved:
             data.editSaved { $0.removeAll { ids.contains($0.id) } }
+        case .savedFolder(let folder): data.editSavedFolder(folder) { $0.removeAll { ids.contains($0.id) } }
         case .archive: archive.removeAll { ids.contains($0.id) }
         default: data.remove(ids)
         }
@@ -636,15 +684,10 @@ final class TrafficStore: ObservableObject {
     }
 
     func saveSelection() {
-        guard filterMode != .saved else { return }
+        guard !filterMode.isSavedRequests else { return }
         let records = selectedTransactions
         guard !records.isEmpty else { return }
-        let snapshots = records.map { SessionRecord($0).transaction() }
-        let ids = Set(snapshots.map(\.id))
-        data.editSaved { current in
-            current.removeAll { ids.contains($0.id) }
-            current.append(contentsOf: snapshots)
-        }
+        data.saveCopiesToUnfiled(records.map(SessionRecord.init))
     }
 
     func finishSaving(_ completion: @escaping (Bool) -> Void) -> Bool {
@@ -664,7 +707,7 @@ final class TrafficStore: ObservableObject {
     }
 
     func session(onlySelection: Bool, pinned: [String]) -> SessionFile {
-        let active = filterMode == .saved || filterMode == .archive ? source : transactions
+        let active = filterMode.isSavedRequests || filterMode == .archive ? source : transactions
         return SessionFile(transactions: onlySelection ? selectedTransactions : active,
                            pinnedDomains: filterMode == .archive ? savedPins : pinned, selected: selectedIDs)
     }
@@ -787,6 +830,8 @@ private final class TrafficData {
     private(set) var transferredBytes: (request: Int64, response: Int64) = (0, 0)
     private(set) var saved: [Transaction] = []
     private(set) var savedByID: [UUID: Transaction] = [:]
+    private(set) var savedRequestFolders: [SavedRequestFolder] = []
+    private(set) var savedFolderRecords: [UUID: [Transaction]] = [:]
     private(set) var savedError: String?
     private(set) var sourceFolders: [SourceFolder] = []
     private(set) var foldersByID: [UUID: SourceFolder] = [:]
@@ -812,9 +857,9 @@ private final class TrafficData {
     private let savedQueue = DispatchQueue(label: "proxymirror.saved-traffic", qos: .utility)
     private enum SavedState { case loading, ready, unavailable }
     private var savedState = SavedState.loading
-    private var queuedEdits: [(inout [Transaction]) -> Void] = []
+    private var queuedEdits: [(inout SavedRequestFolderArchive) throws -> Void] = []
     private var writingSaved = false
-    private var nextWrite: SessionFile?
+    private var nextWrite: SavedRequestFolderArchive?
     private var saveWaiters: [(Bool) -> Void] = []
 
     init(sourceFolderFile: URL, savedFile: URL) {
@@ -823,13 +868,7 @@ private final class TrafficData {
         do { setSourceFolders(try SourceFolderArchive.read(sourceFolderFile)) }
         catch { sourceFolderReadError = error }
         savedQueue.async { [weak self] in
-            let result = Result {
-                do {
-                    return try SessionFile.decode(Data(contentsOf: savedFile)).records
-                } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
-                    return []
-                }
-            }
+            let result = Result { try SavedRequestFolderArchive.load(legacy: savedFile) }
             DispatchQueue.main.async { [weak self] in self?.loadedSaved(result) }
         }
     }
@@ -980,10 +1019,57 @@ private final class TrafficData {
         publishLive(reset: true)
     }
 
+    func savedRequests(in folder: UUID?) -> [Transaction] { folder.map { savedFolderRecords[$0] ?? [] } ?? saved }
+
+    private func savedLibrarySnapshot() -> SavedRequestFolderArchive {
+        SavedRequestFolderArchive(folders: savedRequestFolders, unfiled: saved.map(SessionRecord.init),
+            requestsByFolder: Dictionary(uniqueKeysWithValues: savedFolderRecords.map { ($0.key.uuidString, $0.value.map(SessionRecord.init)) }))
+    }
+
+    private func applySavedLibrary(_ archive: SavedRequestFolderArchive) {
+        savedRequestFolders = archive.folders
+        saved = archive.unfiled.map { record in savedByID[record.id] ?? record.transaction() }
+        savedFolderRecords = Dictionary(uniqueKeysWithValues: archive.folders.map { folder in
+            let existing = Dictionary((savedFolderRecords[folder.id] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return (folder.id, archive.records(in: folder.id).map { existing[$0.id] ?? $0.transaction() })
+        })
+        reindexSaved()
+    }
+
+    func mutateSavedLibrary(_ mutation: (inout SavedRequestFolderArchive) throws -> Void) throws {
+        guard savedState == .ready else { throw SavedRequestFolderArchive.Failure(savedState == .loading ? "Saved 请求库正在加载，请稍后重试。" : savedError ?? "Saved 请求库不可用，原文件未修改。") }
+        var archive = savedLibrarySnapshot()
+        try mutation(&archive)
+        try archive.validate()
+        applySavedLibrary(archive)
+        persistSaved()
+        changed.send(.saved)
+    }
+
+    func editSavedFolder(_ folder: UUID, _ edit: (inout [Transaction]) -> Void) {
+        guard savedState == .ready, var requests = savedFolderRecords[folder] else { return }
+        edit(&requests)
+        savedFolderRecords[folder] = requests
+        persistSaved(); changed.send(.saved)
+    }
+
+    func saveCopiesToUnfiled(_ records: [SessionRecord]) {
+        if savedState == .loading {
+            queuedEdits.append { try $0.add(records, to: nil) }
+        } else {
+            do { try mutateSavedLibrary { try $0.add(records, to: nil) } }
+            catch { savedError = error.localizedDescription; changed.send(.saved) }
+        }
+    }
+
     func editSaved(_ edit: @escaping (inout [Transaction]) -> Void) {
         switch savedState {
         case .loading:
-            queuedEdits.append(edit)
+            queuedEdits.append { archive in
+                var records = archive.unfiled.map { $0.transaction() }
+                edit(&records)
+                archive.unfiled = records.map(SessionRecord.init)
+            }
         case .ready:
             edit(&saved)
             reindexSaved()
@@ -994,17 +1080,17 @@ private final class TrafficData {
         }
     }
 
-    private func loadedSaved(_ result: Result<[SessionRecord], Error>) {
+    private func loadedSaved(_ result: Result<(archive: SavedRequestFolderArchive, migrated: Bool), Error>) {
         let edits = queuedEdits
         queuedEdits.removeAll()
-        switch result {
-        case .success(let records):
-            saved = records.map { $0.transaction() }
-            for edit in edits { edit(&saved) }
-            reindexSaved()
+        do {
+            var loaded = try result.get()
+            for edit in edits { try edit(&loaded.archive) }
+            try loaded.archive.validate()
+            applySavedLibrary(loaded.archive)
             savedState = .ready
-            if !edits.isEmpty { persistSaved() }
-        case .failure(let error):
+            if loaded.migrated || !edits.isEmpty { persistSaved() }
+        } catch {
             savedState = .unavailable
             savedError = "无法加载已保存流量：\(error.localizedDescription)"
             completeSaveWaiters(false)
@@ -1018,7 +1104,7 @@ private final class TrafficData {
 
     func persistSaved() {
         guard savedState == .ready else { return }
-        nextWrite = SessionFile(transactions: saved, pinnedDomains: [], selected: [])
+        nextWrite = savedLibrarySnapshot()
         writeNextSaved()
     }
 
@@ -1026,7 +1112,7 @@ private final class TrafficData {
         guard !writingSaved, let snapshot = nextWrite else { return }
         nextWrite = nil
         writingSaved = true
-        let destination = savedFile
+        let destination = SavedRequestFolderArchive.fileURL(for: savedFile)
         savedQueue.async { [weak self] in
             let result = Result {
                 try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
@@ -1061,5 +1147,12 @@ private final class TrafficData {
         let waiters = saveWaiters
         saveWaiters.removeAll()
         for waiter in waiters { waiter(success) }
+    }
+}
+
+
+extension TrafficFilterMode {
+    var isSavedRequests: Bool {
+        switch self { case .saved, .savedFolder: return true; default: return false }
     }
 }

@@ -18,8 +18,14 @@
 - CommonJS Addons、Lodash / Moment、环境变量、sharedState、Mock API、分级 Console；脚本继续在有超时限制的独立进程内执行。
 - HTTP 与 SOCKS5 共用监听端口，支持 zstd 解码、12 种多规则弱网预设、全局 Protobuf Schema 映射。
 - 局域网按多 IP / CIDR 白名单接入，默认只监听回环地址；macOS 系统代理旁路列表随接管恢复。
+- External Proxy 支持全部、排除列表和 Inclusive 包含列表；可按主机或 HTTP(S) URL 通配选择上游路由。
+- Saved 请求支持嵌套文件夹、移动和复制，旧 Saved 托盘自动迁移；流量汇总提供状态分桶、耗时直方图与 P50 / P95 / P99。
+- 等宽字体、真实 Tab 宽度、12 / 24 小时制、完整日期、斑马纹和默认复制格式均可设置；帮助菜单提供六项故障排查和模拟内存警告。
+- 脚本支持 `fetch`、`@proxymirror/http` 及 Axios 的 HTTP 子集，可等待 HTTP(S)、取消请求并设置超时；脚本窗口可复制 MCP 生成脚本任务。
 
 常用快捷键为 ⌘F 过滤当前流量、⇧⌘F 查找来源、⌥⌘N 构建请求、⌘K 编辑请求、⇧⌘R 编辑并重发，以及 ⇧⌘C 复制 cURL。
+
+高级过滤面板内，⌘N 新增条件，⇧⌘N 新增子组，⌘↑ / ⌘↓ 导航，⌘B 切换预设着色；列表 ⌘C 使用所选默认复制格式。
 
 ## 构建 / 运行
 
@@ -116,6 +122,15 @@ pm=./build_app/ProxyMirror.app/Contents/MacOS/ProxyMirror
 `status` 分别报告代理监听、录制和系统代理状态。`traffic` 和 `export-har` 默认查询实时捕获。`--selected` 改为当前视图选中的记录，也可同时使用其他筛选条件。查询按捕获顺序返回最近匹配的记录，默认 100 条，最多 1000 条。
 
 HAR 包含已捕获的请求头、响应头和正文。单次导出的正文上限为 24 MiB，超过时可缩小筛选范围。指定文件路径时，应用以当前用户可读写的权限写入文件。`--output -` 将 HAR 写到标准输出。
+
+`export logs` 导出当前保留的完整原生会话，不采用流量查询默认的 100 条上限。`domains` 按域名分组，导出的日志包也可直接作为会话重新打开；可以用域名和带时区的 ISO 8601 时间拆分。`export flows` 继续提供增量查询和分页。
+
+```zsh
+"$pm" export logs all --output ./traffic.proxymirror
+"$pm" export logs domains --domains '*.example.com' --output ./domains.proxymirror
+"$pm" rules dns rename --id "$rule_id" --name '测试 DNS'
+"$pm" rules dns duplicate --id "$rule_id" --name '测试 DNS 副本'
+```
 
 ### 规则与设置迁移
 

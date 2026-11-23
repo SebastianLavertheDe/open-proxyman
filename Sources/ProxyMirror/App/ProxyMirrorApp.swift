@@ -276,12 +276,19 @@ struct ProxyMirrorMainApp: App {
         }
         CommandMenu("证书") { CertificateMenuContent() }
         CommandGroup(replacing: .help) {
-            Button("入门、故障排查与数据恢复…") { openWindow(id: "help-guide") }
+            Button("使用指南…") {
+                HelpGuideCoordinator.shared.show(.gettingStarted)
+                openWindow(id: "help-guide")
+            }
+            TroubleshootingMenu()
             Button("安装 proxymirror-cli 到 PATH…") { LocalControl.installCLI() }
             Button("查看 MCP 连接配置") { LocalControl.showMCPConfiguration() }
             Button("软件更新设置…") { openWindow(id: "updates") }
             Divider()
             Button("复制调试信息") { appState.copyText(AppDiagnostics.debugInfo()) }
+            Button("模拟内存警告") {
+                appState.systemProxyMessage = MemoryPressureController.shared.simulateWarning().summary
+            }
             Button("打开用户数据文件夹") { AppDiagnostics.openDataFolder() }
             Button("打开备份文件夹") { AppDiagnostics.openDataFolder(backups: true) }
             Button("备份规则与设置") {
@@ -300,9 +307,16 @@ struct ProxyMirrorMainApp: App {
 @MainActor
 final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
     private var localControl: DispatchSourceRead?
+    private var mcpConfigurationObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppUpdateController.shared.startIfConfigured()
+        MemoryPressureController.shared.startMonitoring()
+        mcpConfigurationObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("ProxyMirror.showMCPConfiguration"), object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in LocalControl.showMCPConfiguration() }
+        }
         do {
             localControl = try LocalControl.start()
         } catch {
@@ -311,6 +325,9 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        MemoryPressureController.shared.stopMonitoring()
+        if let observer = mcpConfigurationObserver { NotificationCenter.default.removeObserver(observer) }
+        mcpConfigurationObserver = nil
         localControl?.cancel()
         LocalControl.stopAutomation()
     }

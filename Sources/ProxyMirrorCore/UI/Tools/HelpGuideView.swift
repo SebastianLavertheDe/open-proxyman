@@ -3,15 +3,15 @@ import AppKit
 
 struct HelpGuideView: View {
     @ObservedObject private var appState = AppState.shared
-    @State private var topic = "开始使用"
-    private let topics = ["开始使用", "没有流量", "HTTPS 与证书", "设备接入", "数据与备份", "脚本与自动化"]
+    @ObservedObject private var guide = HelpGuideCoordinator.shared
+    private var topic: String { guide.topic.rawValue }
     var body: some View {
         HSplitView {
-            List(topics, id: \.self) { candidate in
-                Button { topic = candidate } label: {
-                    Text(candidate).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
+            List(HelpGuideTopic.allCases) { candidate in
+                Button { guide.show(candidate) } label: {
+                    Text(candidate.rawValue).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
                 }.buttonStyle(.plain)
-                    .listRowBackground(topic == candidate ? Color.accentColor.opacity(0.15) : .clear)
+                    .listRowBackground(guide.topic == candidate ? Color.accentColor.opacity(0.15) : .clear)
             }.frame(width: 160)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -33,6 +33,8 @@ struct HelpGuideView: View {
                         Button("安装并信任本机 CA…") { appState.installCACertificate() }
                         Button("显示 CA 文件") { appState.revealCAFile() }
                     }
+                    Divider()
+                    MemoryPressureStatusView()
                     Link("项目文档与问题反馈", destination: URL(string: "https://github.com/SebastianLavertheDe/open-proxyman")!)
                 }.padding(22)
             }.frame(minWidth: 460)

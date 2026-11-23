@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 func checkDiffAndFilters(_ test: CoreAssertions) throws {
+    try checkSavedRequestFolders(test)
+    checkFilterPanelShortcuts(test)
     let tx = Transaction()
     tx.host = "api.example.test"
     tx.path = "/v1/items"

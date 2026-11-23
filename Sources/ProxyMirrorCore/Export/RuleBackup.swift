@@ -76,11 +76,20 @@ struct RuleBackup: Codable {
             var showMinimap: Bool?
             var systemBypassHosts: [String]?
             var usesCustomSystemBypass: Bool?
+            var monospacedFontFamily: String?
+            var codeTabWidth: Int?
+            var use24HourClock: Bool?
+            var showFullDate: Bool?
+            var showAlternatingRows: Bool?
+            var defaultCopyFormat: String?
 
             var valid: Bool {
                 (truncationStyle.map { ["head", "middle", "tail"].contains($0) } ?? true)
                     && NetworkAccessPolicy.validationError(for: allowedPeerRanges ?? []) == nil
                     && SystemProxyBypassList.validationError(systemBypassHosts ?? []) == nil
+                    && (codeTabWidth.map { (1...16).contains($0) } ?? true)
+                    && (monospacedFontFamily.map { $0.utf8.count <= 256 && !$0.contains("\0") } ?? true)
+                    && (defaultCopyFormat.map { RequestCode.Format(rawValue: $0) != nil } ?? true)
             }
 
             init(_ settings: AppSettings) {
@@ -94,6 +103,12 @@ struct RuleBackup: Codable {
                 wordWrap = settings.wordWrap; showInvisibles = settings.showInvisibles; showMinimap = settings.showMinimap
                 systemBypassHosts = settings.systemBypassHosts
                 usesCustomSystemBypass = systemBypassHosts != nil
+                monospacedFontFamily = settings.monospacedFontFamily
+                codeTabWidth = settings.codeTabWidth
+                use24HourClock = settings.use24HourClock
+                showFullDate = settings.showFullDate
+                showAlternatingRows = settings.showAlternatingRows
+                defaultCopyFormat = settings.defaultCopyFormat.rawValue
             }
 
             func apply(to settings: AppSettings) {
@@ -116,6 +131,12 @@ struct RuleBackup: Codable {
                 if let usesCustomSystemBypass {
                     settings.systemBypassHosts = usesCustomSystemBypass ? systemBypassHosts ?? [] : nil
                 }
+                if let monospacedFontFamily { settings.monospacedFontFamily = monospacedFontFamily }
+                if let codeTabWidth { settings.codeTabWidth = codeTabWidth }
+                if let use24HourClock { settings.use24HourClock = use24HourClock }
+                if let showFullDate { settings.showFullDate = showFullDate }
+                if let showAlternatingRows { settings.showAlternatingRows = showAlternatingRows }
+                if let raw = defaultCopyFormat, let format = RequestCode.Format(rawValue: raw) { settings.defaultCopyFormat = format }
             }
         }
 
@@ -265,7 +286,7 @@ struct RuleBackup: Codable {
         }
         try Self.validateIDs(customCertificates, section: .customCertificates)
         try Self.validateKeys(object, section: .customCertificates,
-                              allowed: ["id", "enabled", "hostPattern", "certificatePath", "privateKeyPath"])
+                              allowed: ["id", "enabled", "name", "hostPattern", "certificatePath", "privateKeyPath"])
         for rule in customCertificates ?? [] {
             let host = rule.hostPattern.trimmingCharacters(in: .whitespacesAndNewlines)
             let domain = host.hasPrefix("*.") ? String(host.dropFirst(2)) : host
@@ -279,7 +300,7 @@ struct RuleBackup: Codable {
             }
         }
         try Self.validateIDs(dns, section: .dns)
-        try Self.validateKeys(object, section: .dns, allowed: ["id", "enabled", "hostPattern", "ip"])
+        try Self.validateKeys(object, section: .dns, allowed: ["id", "enabled", "name", "hostPattern", "ip"])
         try Self.validateIDs(breakpoints, section: .breakpoints)
         try Self.validateKeys(object, section: .breakpoints, allowed: ["id", "enabled", "rule", "phase"])
         if let rawRules = object[Section.breakpoints.rawValue] as? [[String: Any]] {

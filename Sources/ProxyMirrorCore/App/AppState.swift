@@ -538,7 +538,7 @@ final class AppState: ObservableObject, TrafficSink {
     // MARK: 动作
 
     func clearTraffic() {
-        if activeStore.filterMode != .saved && activeStore.filterMode != .archive {
+        if !activeStore.isBrowsingSavedRequests && activeStore.filterMode != .archive {
             ProxyEngine.shared.clearBreakpointSession()
             BreakpointManager.shared.discardAll()
         }
@@ -718,6 +718,16 @@ final class AppState: ObservableObject, TrafficSink {
 
     func copyRequestsAsCurl(_ transactions: [Transaction]) {
         copyText(transactions.map(ExportService.curlCommand).joined(separator: "\n"))
+    }
+
+    func copyRequestsUsingDefaultFormat(_ transactions: [Transaction]) {
+        guard !transactions.isEmpty else { return }
+        let format = settings.defaultCopyFormat
+        guard transactions.allSatisfy({ RequestCode.supported(format, for: $0) || (format == .curl && $0.isTunnel) }) else {
+            systemProxyMessage = "所选请求无法复制为 \(format.title)。请确认请求捕获完整，或在设置中选择其他默认复制格式。"
+            return
+        }
+        copyText(transactions.map { RequestCode.generate($0, format: format) }.joined(separator: "\n\n"))
     }
 
     private func withSelected(_ f: @escaping (Transaction) -> Void) {

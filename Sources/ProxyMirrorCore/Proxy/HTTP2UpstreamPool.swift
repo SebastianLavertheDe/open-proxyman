@@ -13,32 +13,34 @@ struct HTTPOrigin: Hashable {
     let tls: Bool
     let cleartextHTTP2: Bool
     let external: ExternalProxyConfig?
+    let proxyResolved: Bool
     let clientIdentityID: UUID?
 
     init(host: String, dialHost: String, port: Int, tls: Bool) {
         let proxy = InterceptionConfig.shared.externalProxy.value
-        self.init(host: host, dialHost: dialHost, port: port, tls: tls, external: proxy.applies(to: host) ? proxy : nil)
+        self.init(host: host, dialHost: dialHost, port: port, tls: tls, external: proxy.couldApply(to: host) ? proxy : nil)
     }
 
-    private init(host: String, dialHost: String, port: Int, tls: Bool, external: ExternalProxyConfig?) {
+    private init(host: String, dialHost: String, port: Int, tls: Bool, external: ExternalProxyConfig?, proxyResolved: Bool = false) {
         self.host = host
         self.dialHost = dialHost
         self.port = port
         self.tls = tls
         cleartextHTTP2 = !tls && InterceptionConfig.shared.h2cUpstream.value.matches(host: host)
         self.external = external
+        self.proxyResolved = proxyResolved
         clientIdentityID = tls ? ClientTLSIdentities.shared.identity(for: host)?.id : nil
     }
 
     func resolvingProxy(path: String, tunnel: Bool = false, on loop: EventLoop) -> EventLoopFuture<Self> {
-        guard let external, external.mode == .pac else { return loop.makeSucceededFuture(self) }
+        guard let external, !proxyResolved else { return loop.makeSucceededFuture(self) }
         let scheme = tls || tunnel ? "https" : "http"
         let authority = URLParser.authority(host: host, port: port, scheme: scheme)
         guard let url = URL(string: "\(scheme)://\(authority)\(path.hasPrefix("/") ? path : "/")") else {
-            return loop.makeFailedFuture(ExternalProxyError("PAC 目标 URL 无效。"))
+            return loop.makeFailedFuture(ExternalProxyError("外部代理目标 URL 无效。"))
         }
         return external.resolve(for: url, on: loop).map {
-            Self(host: self.host, dialHost: self.dialHost, port: self.port, tls: self.tls, external: $0)
+            Self(host: self.host, dialHost: self.dialHost, port: self.port, tls: self.tls, external: $0, proxyResolved: true)
         }
     }
 
@@ -199,7 +201,7 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
     func exchange(to origin: HTTPOrigin, path: String = "/", relay: HTTP2UpstreamRelay) -> EventLoopFuture<Exchange> {
         loop.assertInEventLoop()
         guard !closed else { return loop.makeFailedFuture(ProxyHTTP2Error.connectionClosed) }
-        if origin.external?.mode == .pac {
+        if origin.external != nil && !origin.proxyResolved {
             return origin.resolvingProxy(path: path, on: loop).flatMap { self.exchange(to: $0, path: path, relay: relay) }
         }
         guard origin.tls || origin.cleartextHTTP2 else {

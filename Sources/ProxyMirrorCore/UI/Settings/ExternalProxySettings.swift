@@ -8,6 +8,8 @@ struct ExternalProxySettings: View {
     @State private var port = String(InterceptionConfig.shared.externalProxy.value.port)
     @State private var bypass = InterceptionConfig.shared.externalProxy.value.bypassHosts ?? []
     @State private var newBypassHost = ""
+    @State private var includedTargets = InterceptionConfig.shared.externalProxy.value.includedTargets ?? []
+    @State private var newIncludedTarget = ""
     @State private var pacChecking = false
     @State private var pacFeedback: String?
     @State private var feedback: String?
@@ -28,9 +30,21 @@ struct ExternalProxySettings: View {
                 } else {
                     manualSettings
                 }
-                Text("直连主机").fontWeight(.medium)
-                bypassList
-                Text("example.com 仅匹配该主机，*.example.com 匹配子域。localhost、*.localhost、127.0.0.0/8、::1 与其 IPv4 映射地址始终直连。")
+                Picker("路由范围", selection: Binding(get: { draft.effectiveRoutingMode }, set: { draft.routingMode = $0 })) {
+                    ForEach(ExternalProxyConfig.RoutingMode.allCases, id: \.self) { mode in Text(mode.title).tag(mode) }
+                }
+                if draft.effectiveRoutingMode == .bypass {
+                    Text("直连主机").fontWeight(.medium)
+                    bypassList
+                    Text("列表中的主机直连，其余目标使用上游。example.com 仅匹配该主机，*.example.com 匹配子域。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if draft.effectiveRoutingMode == .inclusive {
+                    Text("使用上游的包含目标").fontWeight(.medium)
+                    inclusiveList
+                    Text("例如 *.example.com 或 https://api.example.com/v1/*。仅命中的主机或完整 URL 使用上游，其余目标直连。URL 的路径和查询区分大小写，* 匹配任意字符。HTTPS 路径匹配需要 SSL 解密，透传连接请使用主机匹配。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("localhost、*.localhost、127.0.0.0/8、::1 与其 IPv4 映射地址在所有模式下始终直连。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let issue = validation ?? feedback {
@@ -44,6 +58,7 @@ struct ExternalProxySettings: View {
         .onChange(of: draft) { _ in feedback = nil; pacFeedback = nil }
         .onChange(of: port) { _ in feedback = nil }
         .onChange(of: bypass) { _ in feedback = nil }
+        .onChange(of: includedTargets) { _ in feedback = nil }
     }
 
     private var bypassList: some View {
@@ -66,6 +81,36 @@ struct ExternalProxySettings: View {
                 Button("添加", action: addBypass).disabled(newBypassHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+    }
+
+    private var inclusiveList: some View {
+        VStack(spacing: 6) {
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(includedTargets.indices, id: \.self) { index in
+                        HStack {
+                            Text(includedTargets[index]).font(.system(.caption, design: .monospaced))
+                            Spacer()
+                            Button { includedTargets.remove(at: index) } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.borderless).accessibilityLabel("移除包含目标 \(includedTargets[index])")
+                        }
+                    }
+                }.frame(maxWidth: .infinity)
+            }.frame(height: min(105, max(30, CGFloat(includedTargets.count) * 22)))
+                .padding(5).overlay(Rectangle().strokeBorder(.quaternary))
+            HStack {
+                TextField("主机通配或完整 URL 通配", text: $newIncludedTarget).onSubmit(addIncludedTarget)
+                Button("添加", action: addIncludedTarget)
+                    .disabled(newIncludedTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || includedTargets.count >= 256)
+            }
+        }
+    }
+
+    private func addIncludedTarget() {
+        let raw = newIncludedTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target = ExternalProxyTarget(raw) else { feedback = "请输入有效的主机通配或 HTTP(S) URL 通配。"; saveFailed = true; return }
+        if !includedTargets.contains(target.pattern) { includedTargets.append(target.pattern) }
+        newIncludedTarget = ""; feedback = nil
     }
 
     private func addBypass() {
@@ -134,6 +179,7 @@ struct ExternalProxySettings: View {
         value.pacURL = draft.pacURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.mode == .pac { value.useAuth = false }
         value.bypassHosts = bypass.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        value.includedTargets = includedTargets.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         return value
     }
 

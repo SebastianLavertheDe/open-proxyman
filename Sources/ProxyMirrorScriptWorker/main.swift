@@ -1,14 +1,29 @@
 import Foundation
 import JavaScriptCore
 import CryptoKit
+import Darwin
 
 private let inputLimit = 2 * 1024 * 1024
 private let outputLimit = 2 * 1024 * 1024
+private let outputLock = NSLock()
+private var wroteOutput = false
+
+private func writeOnce(_ data: Data) {
+    outputLock.lock(); defer { outputLock.unlock() }
+    guard !wroteOutput else { return }
+    wroteOutput = true
+    try? FileHandle.standardOutput.write(contentsOf: data)
+}
 
 private func output(_ object: [String: Any]) {
-    if let data = try? JSONSerialization.data(withJSONObject: object), data.count <= outputLimit {
-        try? FileHandle.standardOutput.write(contentsOf: data)
-    }
+    if let data = try? JSONSerialization.data(withJSONObject: object), data.count <= outputLimit { writeOnce(data) }
+}
+
+private func cpuSeconds() -> Double {
+    var usage = rusage()
+    guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
+    return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+        + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
 }
 
 private func run() throws {
@@ -65,18 +80,51 @@ private func run() throws {
     }
     context.setObject(digest, forKeyedSubscript: "__pmDigest" as NSString)
     context.setObject(random, forKeyedSubscript: "__pmRandom" as NSString)
+    let networkEnabled = options["networkEnabled"] as? Bool == true && options["operation"] == nil
+    let limits = ScriptNetworkBridge.Limits(options["network"] as? [String: Any] ?? [:])
+    let network: ScriptNetworkBridge? = networkEnabled ? ScriptNetworkBridge(limits: limits) { [weak context] result in
+        let data: Data
+        if let encoded = try? JSONSerialization.data(withJSONObject: result), encoded.count <= 3 * 1024 * 1024 { data = encoded }
+        else {
+            data = (try? JSONSerialization.data(withJSONObject: ["id": result["id"] as? String ?? "", "error": "网络响应编码超过上限", "name": "TypeError"])) ?? Data()
+        }
+        let serialized = String(decoding: data, as: UTF8.self)
+        DispatchQueue.main.async { [weak context] in
+            context?.objectForKeyedSubscript("__pmNetworkComplete")?.call(withArguments: [serialized])
+        }
+    } : nil
+    defer { network?.cancelAll() }
+    let fetchNative: @convention(block) (String) -> Void = { network?.start($0) }
+    let abortNative: @convention(block) (String) -> Void = { network?.cancel($0) }
+    context.setObject(fetchNative, forKeyedSubscript: "__pmFetchNative" as NSString)
+    context.setObject(abortNative, forKeyedSubscript: "__pmAbortNative" as NSString)
+    // CPU time excludes time waiting for network I/O. A separate queue can kill a
+    // JavaScript infinite loop even while the worker's main thread is occupied.
+    let cpuStart = cpuSeconds()
+    let cpuWatchdog = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "ProxyMirror.script.cpu"))
+    cpuWatchdog.schedule(deadline: .now() + .milliseconds(20), repeating: .milliseconds(20))
+    cpuWatchdog.setEventHandler {
+        if cpuSeconds() - cpuStart > 0.4 {
+            network?.cancelAll()
+            output(["error": "脚本 CPU 执行超过 400 ms"])
+            _exit(124)
+        }
+    }
+    cpuWatchdog.resume()
+    defer { cpuWatchdog.cancel() }
+    let started = Date()
+    let deadline = started.addingTimeInterval(networkEnabled ? Double(limits.wallTimeMilliseconds) / 1000 : 0.35)
     context.evaluateScript(scriptingRuntime)
-    let deadline = Date().addingTimeInterval(0.35)
     while exception == nil, context.objectForKeyedSubscript("__pmResult")?.isUndefined != false, Date() < deadline {
         RunLoop.current.run(until: Date().addingTimeInterval(0.001))
     }
     if let exception { output(["error": exception]); return }
     guard let text = context.objectForKeyedSubscript("__pmResult")?.toString(),
           let data = text.data(using: .utf8), data.count <= outputLimit, text != "undefined", !text.isEmpty else {
-        output(["error": "异步脚本未及时完成，或输出超过 2 MiB"])
+        output(["error": networkEnabled ? "脚本网络等待超过 wall time 或 Promise 未完成，或输出超过 2 MiB" : "异步脚本未及时完成，或输出超过 2 MiB"])
         return
     }
-    try FileHandle.standardOutput.write(contentsOf: data)
+    writeOnce(data)
 }
 
 do { try run() }

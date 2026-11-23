@@ -28,6 +28,20 @@ enum InspectionBody {
     private static var order: [Key] = []
     private static var cachedBytes = 0
     private static let byteLimit = 8 * 1024 * 1024
+    private static var generation: UInt64 = 0
+
+    /// Captured wire bodies remain on Transaction; only decoded derivations are
+    /// evicted. A decode already running cannot repopulate a cleared generation.
+    static func clearCache() {
+        lock.lock(); defer { lock.unlock() }
+        generation &+= 1
+        cache.removeAll(); order.removeAll(); cachedBytes = 0
+    }
+
+    static var cacheStatistics: (entries: Int, bytes: Int, generation: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        return (cache.count, cachedBytes, generation)
+    }
 
     static func data(for tx: Transaction, request: Bool, limit: Int, prefix: Bool = false) -> Data? {
         guard !Task.isCancelled else { return nil }
@@ -46,6 +60,7 @@ enum InspectionBody {
         let revision = request ? tx.requestBodyRevision : tx.responseBodyRevision
         let key = Key(transaction: ObjectIdentifier(tx), request: request, limit: limit, prefix: prefix)
         lock.lock()
+        let observedGeneration = generation
         if let entry = cache[key], entry.owner === tx, entry.revision == revision, entry.encodings == encodings {
             let result = entry.data
             lock.unlock()
@@ -65,6 +80,7 @@ enum InspectionBody {
         // Decoder cancellation is transient, unlike an invalid body at a fixed revision.
         guard !Task.isCancelled else { return nil }
         lock.lock()
+        guard generation == observedGeneration else { lock.unlock(); return result }
         if let previous = cache.removeValue(forKey: key) { cachedBytes -= previous.data?.count ?? 0 }
         order.removeAll { $0 == key }
         while !order.isEmpty && (order.count >= 64 || cachedBytes + (result?.count ?? 0) > byteLimit) {

@@ -497,6 +497,8 @@ private enum ScriptWorker {
         object["source"] = source
         object["mockMode"] = source.hasPrefix(ScriptingRuntimeSettings.mockDirective)
         object["operation"] = operation
+        if operation != nil { object["networkEnabled"] = false }
+        let wallTime = operation == nil ? ((object["network"] as? [String: Any])?["wallTimeMs"] as? Int ?? 10_000) + 1000 : 1000
         if let message { object["message"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) }
         let data = try JSONSerialization.data(withJSONObject: object)
         guard data.count <= 2 * 1024 * 1024 else { throw Failure(errorDescription: "脚本输入超过 2 MiB") }
@@ -512,18 +514,19 @@ private enum ScriptWorker {
         let done = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in done.signal() }
         try process.run()
-        guard done.wait(timeout: .now() + .milliseconds(400)) == .success else {
+        guard done.wait(timeout: .now() + .milliseconds(wallTime)) == .success else {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             _ = done.wait(timeout: .now() + .milliseconds(150))
-            throw Failure(errorDescription: "脚本超过 400 ms")
+            throw Failure(errorDescription: "脚本网络或执行超过 \(wallTime) ms wall time")
         }
         try output.seek(toOffset: 0)
-        guard process.terminationStatus == 0, let bytes = try output.read(upToCount: 2 * 1024 * 1024 + 1),
+        guard let bytes = try output.read(upToCount: 2 * 1024 * 1024 + 1),
               bytes.count <= 2 * 1024 * 1024,
               let result = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
             throw Failure(errorDescription: "脚本执行组件返回了无效结果")
         }
         if let error = result["error"] as? String { throw Failure(errorDescription: error, capturedLogs: logs(result)) }
+        guard process.terminationStatus == 0 else { throw Failure(errorDescription: "脚本执行组件异常退出 (\(process.terminationStatus))") }
         if let message, message.phase != .webSocket {
             guard (try JSONDecoder().decode(Response.self, from: bytes)).message != nil else {
                 throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message")

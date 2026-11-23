@@ -4,11 +4,15 @@ Uses a copied bundle, fresh preferences and PM_SUPPORT_DIR. Never talks to an
 already-running personal instance or enables the system proxy.
 """
 import argparse
+import base64
+from datetime import datetime, timedelta, timezone
 import http.client
 import json
 import os
 from pathlib import Path
 import socket
+import socketserver
+import select
 import stat
 import subprocess
 import sys
@@ -26,7 +30,7 @@ from test_cli import (
 
 def rpc(endpoint, token, message, *, authorization=True, origin=None, method="POST", host=None):
     parsed = urlsplit(endpoint)
-    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=8)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=15)
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
                "MCP-Protocol-Version": "2025-06-18"}
     if authorization:
@@ -55,6 +59,210 @@ def call(endpoint, token, name, arguments=None, *, is_error=False):
         return json.loads(text)
     except ValueError:
         return text
+
+
+class RecordingUpstream(socketserver.BaseRequestHandler):
+    """HTTP CONNECT upstream which records tunnels and relays to the test origin."""
+    def handle(self):
+        self.request.settimeout(5)
+        header = bytearray()
+        while b"\r\n\r\n" not in header:
+            chunk = self.request.recv(4096)
+            if not chunk:
+                return
+            header.extend(chunk)
+            require(len(header) <= 32768, "upstream CONNECT header too large")
+        head, tail = bytes(header).split(b"\r\n\r\n", 1)
+        require(head.startswith(b"CONNECT "), f"upstream expected CONNECT, got {head!r}")
+        self.server.tunnels.append(head.split(b"\r\n", 1)[0].decode())
+        with socket.create_connection((LOOPBACK, self.server.origin_port), timeout=5) as origin:
+            self.request.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            if tail:
+                origin.sendall(tail)
+            peers = [self.request, origin]
+            while True:
+                ready, _, _ = select.select(peers, [], [], 5)
+                if not ready:
+                    return
+                for peer in ready:
+                    chunk = peer.recv(65536)
+                    if not chunk:
+                        return
+                    (origin if peer is self.request else self.request).sendall(chunk)
+
+
+def check_inclusive_proxy(binary, env, endpoint, token, proxy_port, origin_port, directory):
+    dns = call(endpoint, token, "rules", {"tool": "dns", "action": "add", "rule": {
+        "enabled": True, "hostPattern": "*.routing.pm.test", "ip": LOOPBACK}})["rule"]["id"]
+    with socketserver.ThreadingTCPServer((LOOPBACK, 0), RecordingUpstream) as upstream:
+        upstream.daemon_threads = True
+        upstream.origin_port = origin_port
+        upstream.tunnels = []
+        worker = threading.Thread(target=upstream.serve_forever, daemon=True)
+        worker.start()
+        base = f"http://api.routing.pm.test:{origin_port}"
+        try:
+            configuration = {"enabled": True, "mode": "HTTP", "host": LOOPBACK, "port": upstream.server_address[1],
+                "routingMode": "inclusive", "includedTargets": [base + "/selected/*"], "bypassHosts": []}
+            path = directory / "inclusive-proxy.json"
+            path.write_text(json.dumps(configuration), encoding="utf-8")
+            echoed = json.loads(command(binary, env, "external-proxy", "set", "--input", str(path)))
+            require(echoed["routingMode"] == "inclusive" and echoed["includedTargets"] == configuration["includedTargets"],
+                    "inclusive configuration did not round-trip through CLI")
+            require(proxy_request(proxy_port, base + "/selected/item")[0] == 200, "inclusive selected path failed")
+            require(len(upstream.tunnels) == 1, "selected inclusive path did not reach the upstream")
+            require(proxy_request(proxy_port, base + "/not-selected/item")[0] == 200, "inclusive direct path failed")
+            require(len(upstream.tunnels) == 1, "same-host unmatched path incorrectly used upstream")
+            require(proxy_request(proxy_port, f"http://outside.routing.pm.test:{origin_port}/selected/item")[0] == 200,
+                    "unlisted host direct request failed")
+            require(len(upstream.tunnels) == 1, "unlisted URL host incorrectly used upstream")
+            echoed = call(endpoint, token, "external_proxy", {"action": "set", "config": {
+                "includedTargets": ["*.routing.pm.test"]}})
+            require(echoed["includedTargets"] == ["*.routing.pm.test"], "MCP inclusive target round-trip failed")
+            require(proxy_request(proxy_port, base + "/host-glob")[0] == 200 and len(upstream.tunnels) == 2,
+                    "inclusive host wildcard was not used")
+            call(endpoint, token, "external_proxy", {"action": "set", "config": {
+                "routingMode": "bypass", "bypassHosts": ["api.routing.pm.test"]}})
+            require(proxy_request(proxy_port, base + "/bypass")[0] == 200 and len(upstream.tunnels) == 2,
+                    "bypass route did not remain direct")
+            call(endpoint, token, "external_proxy", {"action": "set", "config": {"routingMode": "all"}})
+            require(proxy_request(proxy_port, base + "/all")[0] == 200 and len(upstream.tunnels) == 3,
+                    "all mode incorrectly applied the old bypass list")
+            require(proxy_request(proxy_port, f"http://{LOOPBACK}:{origin_port}/localhost-direct")[0] == 200
+                    and len(upstream.tunnels) == 3, "localhost exception was lost in all mode")
+            call(endpoint, token, "external_proxy", {"action": "set", "config": {
+                "routingMode": "inclusive", "includedTargets": []}}, is_error=True)
+            passed("inclusive CLI/MCP round-trip, matched/unmatched URL routing, host glob, all/bypass and localhost exception")
+        finally:
+            call(endpoint, token, "external_proxy", {"action": "disable"})
+            call(endpoint, token, "rules", {"tool": "dns", "action": "delete", "id": dns})
+            upstream.shutdown()
+            worker.join()
+
+
+def rule_identity(tool, row):
+    return row["bundleID"].lower() if tool == "sslApplications" else row["id"]
+
+
+def owned_ids(value):
+    result = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "id":
+                try:
+                    result.add(str(uuid.UUID(child)).upper())
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            else:
+                result.update(owned_ids(child))
+    elif isinstance(value, list):
+        for child in value:
+            result.update(owned_ids(child))
+    return result
+
+
+def check_rule_verbs(binary, env, endpoint, token, origin_port):
+    with socket.socket() as reservation:
+        reservation.bind((LOOPBACK, 0))
+        reverse_port = reservation.getsockname()[1]
+    fixtures = {
+        "mapLocal": {"pattern": "https://label.pm.test/*", "target": ""},
+        "mapRemote": {"pattern": "https://label.pm.test/*", "target": "https://target.pm.test/"},
+        "blockList": {"pattern": "https://label.pm.test/*"},
+        "allowList": {"pattern": "https://label.pm.test/*"},
+        "sslProxyingList": {"pattern": "label.pm.test"},
+        "sslApplications": {"bundleID": "com.example.cli.source", "name": "Source app", "action": "decrypt"},
+        "dns": {"hostPattern": "label.pm.test", "ip": LOOPBACK},
+        "customCertificates": {"hostPattern": "label.pm.test", "certificatePath": "/tmp/fixture-cert.pem", "privateKeyPath": "/tmp/fixture-key.pem"},
+        "breakpoints": {},
+        "rewrite": {"name": "Group", "rules": []},
+        "latency": {"name": "Network", "milliseconds": 10},
+        "protobuf": {"name": "Mapping"},
+        "reverse": {"name": "Route", "listenPort": reverse_port, "remoteHost": LOOPBACK, "remotePort": origin_port},
+    }
+    for tool, fields in fixtures.items():
+        folder = call(endpoint, token, "folders", {"tool": tool, "action": "create", "name": "Rule verb fixture"})["id"]
+        fields = dict(fields, enabled=False)
+        source = call(endpoint, token, "rules", {"tool": tool, "action": "add", "rule": fields, "folderId": folder})["rule"]
+        source_id = rule_identity(tool, source)
+        renamed = json.loads(command(binary, env, "rules", tool, "rename", "--id", source_id, "--name", "Renamed fixture"))["rule"]
+        if tool in {"mapLocal", "mapRemote", "blockList", "allowList", "sslProxyingList"}:
+            require(renamed["comment"] == "Renamed fixture" and renamed["pattern"] == source["pattern"], f"{tool}: rename altered matching fields")
+        elif tool == "breakpoints":
+            require(renamed["rule"]["name"] == "Renamed fixture", "breakpoint rename did not target predicate name")
+        else:
+            require(renamed["name"] == "Renamed fixture", f"{tool}: rename did not target model label")
+        arguments = ["rules", tool, "duplicate", "--id", source_id, "--name", "Copied fixture"]
+        if tool == "sslApplications":
+            command(binary, env, *arguments, exit_code=2)
+            arguments += ["--bundle-id", "com.example.cli.target"]
+        copy = json.loads(command(binary, env, *arguments))["rule"]
+        copy_id = rule_identity(tool, copy)
+        require(copy_id != source_id and owned_ids(source).isdisjoint(owned_ids(copy)), f"{tool}: duplicate reused source IDs")
+        members = call(endpoint, token, "rules", {"tool": tool, "action": "list", "folderId": folder})
+        require({rule_identity(tool, row) for row in members} == {source_id, copy_id}, f"{tool}: duplicate lost folder membership")
+        call(endpoint, token, "rules", {"tool": tool, "action": "enable", "id": source_id})
+        call(endpoint, token, "rules", {"tool": tool, "action": "disable", "id": source_id})
+        if tool == "reverse":
+            require(copy["enabled"] is False, "reverse copy attempted to bind duplicate port")
+        call(endpoint, token, "rules", {"tool": tool, "action": "delete", "id": copy_id})
+        command(binary, env, "rules", tool, "delete", "--id", source_id)
+        call(endpoint, token, "folders", {"tool": tool, "action": "delete", "id": folder})
+
+    folder = call(endpoint, token, "folders", {"tool": "rewrite", "action": "create", "name": "Nested script fixture"})["id"]
+    group = call(endpoint, token, "rules", {"tool": "rewrite", "action": "add", "folderId": folder,
+        "rule": {"name": "Original group", "enabled": False}})["rule"]
+    child = call(endpoint, token, "rules", {"tool": "rewrite", "action": "add", "groupId": group["id"], "folderId": folder,
+        "rule": {"enabled": False}})["rule"]
+    renamed = call(endpoint, token, "rules", {"tool": "rewrite", "action": "rename", "id": child["id"], "name": "Nested label"})["rule"]
+    require(renamed["rule"]["name"] == "Nested label", "nested rule auto-resolution failed")
+    group_before = call(endpoint, token, "rules", {"tool": "rewrite", "action": "get", "id": group["id"]})
+    group_copy = call(endpoint, token, "rules", {"tool": "rewrite", "action": "duplicate", "id": group["id"]})["rule"]
+    require(owned_ids(group_before).isdisjoint(owned_ids(group_copy)), "group copy retained a nested UUID")
+    child_copy = json.loads(command(binary, env, "rules", "rewrite", "duplicate", "--id", child["id"], "--group-id", group["id"]))["rule"]
+    require(owned_ids(child).isdisjoint(owned_ids(child_copy)), "child copy retained predicate UUID")
+    listed = call(endpoint, token, "rules", {"tool": "rewrite", "action": "list", "groupId": group["id"]})
+    require(len(listed) == 2, "nested duplicate was not inserted into its source group")
+    call(endpoint, token, "rules", {"tool": "rewrite", "action": "delete", "id": group_copy["id"]})
+    call(endpoint, token, "rules", {"tool": "rewrite", "action": "delete", "id": group["id"]})
+    call(endpoint, token, "folders", {"tool": "rewrite", "action": "delete", "id": folder})
+    passed("standalone rule rename/duplicate for every rule tool, folder inheritance and nested script ID regeneration")
+
+
+def check_native_logs(binary, env, endpoint, token, proxy_port, origin_url):
+    for index in range(105):
+        require(proxy_request(proxy_port, origin_url + f"/native-logs/{index}")[0] == 200, "native log fixture failed")
+    all_logs = json.loads(command(binary, env, "export", "logs", "all"))
+    require(all_logs["version"] == 1 and len(all_logs["records"]) > 100, "logs export retained the flow query's 100-row limit")
+    require("pinnedDomains" in all_logs and "selected" in all_logs, "native logs lost session metadata")
+    latest = json.loads(command(binary, env, "export", "flows", "--format", "json", "--limit", "1"))
+    require(len(latest) == 1, "flows pagination was changed by logs export")
+    dns = call(endpoint, token, "rules", {"tool": "dns", "action": "add", "rule": {
+        "hostPattern": "*.logs.pm.test", "ip": LOOPBACK}})["rule"]["id"]
+    port = urlsplit(origin_url).port
+    try:
+        for domain in ["alpha.logs.pm.test", "beta.logs.pm.test", "alpha.logs.pm.test"]:
+            require(proxy_request(proxy_port, f"http://{domain}:{port}/grouped-log")[0] == 200, "domain log fixture failed")
+        bundle = json.loads(command(binary, env, "export", "logs", "domains", "--domains", "*.logs.pm.test"))
+        require(bundle["format"] == "proxymirror-domain-logs", "domain logs did not return a grouped native bundle")
+        require({group["domain"] for group in bundle["sessions"]} == {"alpha.logs.pm.test", "beta.logs.pm.test"}, "domain grouping/filtering failed")
+        require(sum(len(group["session"]["records"]) for group in bundle["sessions"]) == 3, "domain grouping lost or duplicated a flow")
+        for group in bundle["sessions"]:
+            require(group["session"]["version"] == 1 and all(row["host"] == group["domain"] for row in group["session"]["records"]),
+                    "group is not a complete native session for its domain")
+        mcp_bundle = call(endpoint, token, "export_logs", {"scope": "domains", "domains": ["beta.logs.pm.test"]})
+        require(len(mcp_bundle["sessions"]) == 1 and len(mcp_bundle["sessions"][0]["session"]["records"]) == 1,
+                "MCP independent domain log export mismatch")
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat().replace("+00:00", "Z")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+        command(binary, env, "export", "logs", "all", "--from", tomorrow, exit_code=5)
+        command(binary, env, "export", "logs", "all", "--to", yesterday, exit_code=5)
+        command(binary, env, "export", "logs", "all", "--from", tomorrow, "--to", yesterday, exit_code=2)
+        command(binary, env, "export", "logs", "all", "--limit", "1", exit_code=2)
+        command(binary, env, "export", "flows", "--from", tomorrow, exit_code=2)
+        passed("independent complete native logs (>100 records), domain bundles, MCP export and time boundaries")
+    finally:
+        call(endpoint, token, "rules", {"tool": "dns", "action": "delete", "id": dns})
 
 
 def run_suite(source, directory, identifier, log_path):
@@ -135,6 +343,10 @@ def run_suite(source, directory, identifier, log_path):
                 command(binary, env, "rules", "blockList", "delete", "--id", rule_id)
                 require(call(endpoint, token, "rules", {"tool": "blockList", "action": "list"}) == [], "deleted rule still present")
                 passed("MCP rule CRUD, global/folder switches, and CLI shared rule state")
+
+                check_inclusive_proxy(binary, env, endpoint, token, proxy_port, origin.server_port, directory)
+                check_rule_verbs(binary, env, endpoint, token, origin.server_port)
+                check_native_logs(binary, env, endpoint, token, proxy_port, origin_url)
 
                 messages = [request, {"jsonrpc": "2.0", "method": "notifications/initialized"},
                             {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "proxy_address", "arguments": {}}}]

@@ -81,10 +81,13 @@ struct TextViewer: View {
 
     private static let maxRender = 1 * 1024 * 1024
     @State private var rendered: Rendered?
+    @State private var memoryEpoch: UInt64 = 0
+    @ObservedObject private var settings = AppSettings.shared
 
     private struct Input: Equatable {
         let revision: UInt64
         let pretty: Bool
+        let memoryEpoch: UInt64
     }
 
     private struct Rendered: Sendable {
@@ -93,21 +96,15 @@ struct TextViewer: View {
     }
 
     var body: some View {
-        let input = Input(revision: revision, pretty: pretty)
-        ScrollView {
-            Group {
-                if let attr = rendered?.formatted {
-                    Text(attr)
-                        .font(.system(size: 11, design: .monospaced))
-                } else {
-                    Text(rendered?.plain ?? "")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.primary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .textSelection(.enabled)
+        let input = Input(revision: revision, pretty: pretty, memoryEpoch: memoryEpoch)
+        let formatted = rendered?.formatted
+        let displayedText = formatted.map { String($0.characters) } ?? rendered?.plain ?? ""
+        ScrollView(settings.wordWrap ? [.vertical] : [.horizontal, .vertical]) {
+            CodeText(text: displayedText, attributed: formatted, wordWrap: settings.wordWrap,
+                     showInvisibles: settings.showInvisibles)
+                .fixedSize(horizontal: !settings.wordWrap, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
         }
         .task(id: input) {
             let worker = Task.detached(priority: .userInitiated) {
@@ -118,8 +115,9 @@ struct TextViewer: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { rendered = result }
+            if !Task.isCancelled, input.memoryEpoch == memoryEpoch { rendered = result }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in rendered = nil; memoryEpoch &+= 1 }
     }
 
     private static func render(_ data: Data, pretty: Bool) -> Rendered {
@@ -144,6 +142,9 @@ struct ImageViewer: View {
     let revision: UInt64
     @State private var preview: Thumbnail?
     @State private var failed = false
+    @State private var memoryEpoch: UInt64 = 0
+
+    private struct PreviewInput: Equatable { let revision: UInt64; let memoryEpoch: UInt64 }
 
     private struct Thumbnail: Sendable {
         let image: CGImage
@@ -171,7 +172,8 @@ struct ImageViewer: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: complete ? revision : nil) {
+        .task(id: complete ? PreviewInput(revision: revision, memoryEpoch: memoryEpoch) : nil) {
+            let epoch = memoryEpoch
             guard complete else { return }
             preview = nil
             failed = false
@@ -181,11 +183,12 @@ struct ImageViewer: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled {
+            if !Task.isCancelled, epoch == memoryEpoch {
                 preview = result
                 failed = result == nil
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in preview = nil; failed = false; memoryEpoch &+= 1 }
     }
 
     private static func thumbnail(_ data: Data) -> Thumbnail? {

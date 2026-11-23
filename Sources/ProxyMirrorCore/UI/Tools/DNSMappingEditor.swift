@@ -8,6 +8,7 @@ struct DNSMappingEditor: View {
     @State private var host = ""
     @State private var address = ""
     @State private var error: String?
+    @State private var folderDraft = RuleFolderEditingDraft()
 
     private var validHost: Bool {
         let name = host.hasPrefix("*.") ? String(host.dropFirst(2)) : host
@@ -26,12 +27,28 @@ struct DNSMappingEditor: View {
                 ForEach($rules) { $rule in
                     HStack {
                         Toggle("启用规则", isOn: $rule.enabled).labelsHidden()
-                        Text(rule.hostPattern)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(rule.name.flatMap { $0.isEmpty ? nil : $0 } ?? rule.hostPattern)
+                            if let name = rule.name, !name.isEmpty {
+                                Text(rule.hostPattern).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer()
                         Text(rule.ip).foregroundStyle(.secondary)
                     }
                     .tag(rule.id)
                 }
+            }
+            if selection.count == 1, let id = selection.first, let index = rules.firstIndex(where: { $0.id == id }) {
+                TextField("选中规则名称（可选）", text: Binding(
+                    get: { rules[index].name ?? "" },
+                    set: { rules[index].name = $0.isEmpty ? nil : $0 }
+                ))
+                HStack {
+                    TextField("选中规则主机", text: $rules[index].hostPattern)
+                    TextField("选中规则 IP", text: $rules[index].ip)
+                }
+                RuleFolderPicker(tool: "dns", ruleID: id.uuidString, draft: $folderDraft).id(id)
             }
             HStack {
                 TextField("主机或 *.example.com", text: $host)
@@ -50,6 +67,7 @@ struct DNSMappingEditor: View {
                     var backup = store.backup()
                     backup.dns = rules
                     do {
+                        backup.organization = try folderDraft.merging(into: backup.organization ?? RuleOrganizationStore.shared.snapshot(), tool: "dns", keeping: Set(rules.map { $0.id.uuidString }))
                         try store.install(backup)
                         dismiss()
                     } catch let failure {
@@ -60,12 +78,14 @@ struct DNSMappingEditor: View {
             }
         }
         .padding(18)
-        .frame(width: 590, height: 340)
-        .onAppear { rules = InterceptionConfig.shared.dnsSpoof.value; host = initialHost }
+        .frame(width: 650, height: 440)
+        .onAppear { rules = InterceptionConfig.shared.dnsSpoof.value; host = initialHost; folderDraft = RuleFolderEditingDraft() }
     }
 
     private func append() {
-        rules.append(DNSSpoofRule(hostPattern: host.lowercased(), ip: address))
+        let rule = DNSSpoofRule(hostPattern: host.lowercased(), ip: address)
+        rules.append(rule)
+        selection = [rule.id]
         host = ""
         address = ""
     }

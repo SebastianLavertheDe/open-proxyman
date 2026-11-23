@@ -3,6 +3,8 @@ import SwiftUI
 /// The message list and its preview keep independent scroll positions.
 struct WSFramesView: View {
     @ObservedObject var tx: Transaction
+    @ObservedObject private var presentationSettings = AppSettings.shared
+    @State private var memoryEpoch: UInt64 = 0
     var direction: WSFrame.Direction? = nil
 
     @State private var selectedID: UUID?
@@ -35,6 +37,7 @@ struct WSFramesView: View {
         let transaction: ObjectIdentifier
         let request: UInt64?
         let response: UInt64?
+        let memoryEpoch: UInt64
     }
 
     private struct SearchInput: Equatable {
@@ -46,13 +49,8 @@ struct WSFramesView: View {
         let responseGeneration: UInt64
         let count: Int
         let recovered: Bool
+        let memoryEpoch: UInt64
     }
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter
-    }()
 
     private static let hexCopyLimit = 8 * 1024 * 1024
 
@@ -64,12 +62,12 @@ struct WSFramesView: View {
         let responseDeflate = oldSession && direction != .upstream
             ? WebSocketDeflate.negotiated(in: tx.responseHeaders, direction: .downstream) : nil
         let recovery = RecoveryInput(transaction: ObjectIdentifier(tx), request: requestDeflate == nil ? nil : tx.requestBodyRevision,
-                                     response: responseDeflate == nil ? nil : tx.responseBodyRevision)
+                                     response: responseDeflate == nil ? nil : tx.responseBodyRevision, memoryEpoch: memoryEpoch)
         let allFrames = recovered.flatMap { $0.input == recovery ? $0.frames : nil } ?? captured
         let searchInput = filter.isEmpty ? nil : SearchInput(transaction: ObjectIdentifier(tx), query: filter,
             request: tx.requestBodyRevision, response: tx.responseBodyRevision,
             requestGeneration: tx.requestBodyGeneration, responseGeneration: tx.responseBodyGeneration,
-            count: allFrames.count, recovered: recovered?.input == recovery)
+            count: allFrames.count, recovered: recovered?.input == recovery, memoryEpoch: memoryEpoch)
         let searched = searchResult.flatMap { $0.input == searchInput ? $0.result : nil }
         let searching = searchInput != nil && searched == nil
         let wantedDirection = direction ?? directionFilter.direction
@@ -117,7 +115,7 @@ struct WSFramesView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { recovered = (recovery, frames) }
+            if !Task.isCancelled, recovery.memoryEpoch == memoryEpoch { recovered = (recovery, frames) }
         }
         .task(id: searchInput) {
             guard let input = searchInput else { searchResult = nil; return }
@@ -132,10 +130,17 @@ struct WSFramesView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { searchResult = (input, result) }
+            if !Task.isCancelled, input.memoryEpoch == memoryEpoch { searchResult = (input, result) }
         }
         .onChange(of: selected?.id) { _ in cancelCopy() }
         .onDisappear { cancelCopy() }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in
+            cancelCopy()
+            recovered = nil
+            searchResult = nil
+            searchWorker = WSMessageSearch.Worker()
+            memoryEpoch &+= 1
+        }
     }
 
     private var listControls: some View {
@@ -164,18 +169,19 @@ struct WSFramesView: View {
                         .help(frame.directionGlyph)
                         .accessibilityLabel(frame.direction == .upstream ? "发送" : "接收")
                     Text(frame.previewText.isEmpty ? frame.opcodeName : frame.previewText)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(PresentationFonts.swiftUIFont(size: 11))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
             TableColumn("时间") { frame in
-                Text(Self.timeFormatter.string(from: frame.timestamp))
-                    .font(.system(size: 11, design: .monospaced))
+                Text(PresentationTime.string(from: frame.timestamp))
+                    .font(PresentationFonts.swiftUIFont(size: 11))
                     .lineLimit(1)
             }
-            .width(92)
+            .width(presentationSettings.showFullDate ? (presentationSettings.use24HourClock ? 180 : 210) : (presentationSettings.use24HourClock ? 92 : 120))
         }
+        .tableStyle(.inset(alternatesRowBackgrounds: presentationSettings.showAlternatingRows))
         .accessibilityLabel("WebSocket 消息列表")
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let frame = rows.first(where: { ids.contains($0.id) }) {
@@ -331,6 +337,7 @@ struct WSFramesView: View {
 private struct WSMessageTree: View {
     let data: Data
     @State private var tree: JSONTreeNode?
+    @State private var memoryEpoch: UInt64 = 0
 
     var body: some View {
         Group {
@@ -348,20 +355,23 @@ private struct WSMessageTree: View {
                 }
             }
         }
-        .task {
+        .task(id: memoryEpoch) {
+            let epoch = memoryEpoch
             let worker = Task.detached(priority: .userInitiated) { JSONTreeService.build(from: data) }
             let result = await withTaskCancellationHandler {
                 await worker.value
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { tree = result }
+            if !Task.isCancelled, epoch == memoryEpoch { tree = result }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in tree = nil; memoryEpoch &+= 1 }
     }
 }
 
 /// JSON 树递归视图（对齐 Proxyman JSON 树配色）
 struct JSONTreeNodesView: View {
+    @ObservedObject private var presentationSettings = AppSettings.shared
     let node: JSONTreeNode
     @State private var expanded: Bool
 
@@ -380,7 +390,7 @@ struct JSONTreeNodesView: View {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 8, weight: .bold))
                         Text("\(node.key) : \(node.kindName) (\(node.childCount))")
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(PresentationFonts.swiftUIFont(size: 11))
                             .foregroundColor(ProxymanTheme.jsonKey)
                     }
                 }
@@ -398,10 +408,10 @@ struct JSONTreeNodesView: View {
             } else {
                 HStack(spacing: 4) {
                     Text("\(node.key) :")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(PresentationFonts.swiftUIFont(size: 11))
                         .foregroundColor(ProxymanTheme.jsonKey)
                     Text(node.valuePreview)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(PresentationFonts.swiftUIFont(size: 11))
                         .foregroundColor(colorFor(node))
                         .textSelection(.enabled)
                 }

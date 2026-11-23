@@ -3,6 +3,18 @@ import Foundation
 struct ScriptEnvironmentConfig: Codable, Equatable {
     var variables: [String: String] = [:]
     var includeSystemEnvironment = false
+    var networkWallTimeMilliseconds = 10_000
+    var networkRequestTimeoutMilliseconds = 5_000
+
+    init() {}
+    private enum CodingKeys: String, CodingKey { case variables, includeSystemEnvironment, networkWallTimeMilliseconds, networkRequestTimeoutMilliseconds }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        variables = try values.decodeIfPresent([String: String].self, forKey: .variables) ?? [:]
+        includeSystemEnvironment = try values.decodeIfPresent(Bool.self, forKey: .includeSystemEnvironment) ?? false
+        networkWallTimeMilliseconds = min(30_000, max(1000, try values.decodeIfPresent(Int.self, forKey: .networkWallTimeMilliseconds) ?? 10_000))
+        networkRequestTimeoutMilliseconds = min(networkWallTimeMilliseconds, max(100, try values.decodeIfPresent(Int.self, forKey: .networkRequestTimeoutMilliseconds) ?? 5_000))
+    }
 }
 
 /// Configuration and shared state belong to the host, never to a disposable worker.
@@ -27,6 +39,10 @@ enum ScriptingRuntimeSettings {
     }
 
     static func save(_ value: ScriptEnvironmentConfig) throws {
+        guard (1000...30_000).contains(value.networkWallTimeMilliseconds),
+              (100...value.networkWallTimeMilliseconds).contains(value.networkRequestTimeoutMilliseconds) else {
+            throw RuntimeError("脚本网络总等待需在 1–30 秒内，单请求超时需在 100 毫秒到总等待之间")
+        }
         guard value.variables.count <= 256,
               value.variables.allSatisfy({ !$0.key.isEmpty && $0.key.utf8.count <= 256 && $0.value.utf8.count <= 8192 }) else {
             throw RuntimeError("环境变量最多 256 项，名称上限 256 字节，值上限 8 KiB")
@@ -50,7 +66,15 @@ enum ScriptingRuntimeSettings {
         guard (try JSONSerialization.data(withJSONObject: environment)).count <= 256 * 1024 else {
             throw RuntimeError("环境变量总量超过 256 KiB")
         }
-        return ["environment": environment, "sharedState": state, "modules": try addons()]
+        let settingsPort = Int(AppSettings.shared.port)
+        let host = AppSettings.shared.lanAddress
+        return ["environment": environment, "sharedState": state, "modules": try addons(),
+                "networkEnabled": true,
+                "network": ["wallTimeMs": settings.networkWallTimeMilliseconds,
+                            "requestTimeoutMs": settings.networkRequestTimeoutMilliseconds,
+                            "responseLimit": 1024 * 1024, "blockedProxyPort": settingsPort,
+                            "blockedProxyHosts": host.isEmpty ? [] : [host]]]
+
     }
 
     /// Failed scripts never commit state, including scripts terminated for timeout.

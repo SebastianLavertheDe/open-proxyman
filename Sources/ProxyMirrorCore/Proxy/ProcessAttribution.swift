@@ -419,6 +419,8 @@ enum ClientApplicationIcons {
         return cache
     }()
 
+    static func clearCache() { cache.removeAllObjects() }
+
     static func image(bundleID: String?, bundleURL: URL?) -> NSImage? {
         guard let bundleID, !bundleID.isEmpty else { return nil }
         let key = (bundleURL?.path ?? bundleID) as NSString

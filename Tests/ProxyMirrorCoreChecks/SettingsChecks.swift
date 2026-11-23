@@ -4,6 +4,10 @@ import ProxyMirrorSystemProxy
 
 func checkSettings(_ test: CoreAssertions) {
     checkNetworkAccessPolicy(test)
+    do {
+        try checkExternalInclusiveRouting(test)
+        try checkRuleMutations(test)
+    } catch { test.expect(false, "External routing/rule mutation checks: \(error.localizedDescription)") }
     checkSystemBypassSettings(test)
     let original: [String: Any] = ["HTTPEnable": 0, "HTTPProxy": "original", "HTTPPort": 8888]
     let current: [String: Any] = [

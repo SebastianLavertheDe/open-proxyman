@@ -45,7 +45,7 @@ async function run(source, overrides = {}) {
   result = await run("mockResponse({status:200,body:'{" + '"mock":true' + "}'});");
   assert.equal(result.mock.body,'{"mock":true}');
   result = await run("console.log(typeof fetch, typeof process.exit); require('fs');");
-  assert.match(result.error,/找不到 addon/); assert.deepEqual(result.logs,['[log] undefined undefined']);
+  assert.match(result.error,/找不到 addon/); assert.deepEqual(result.logs,['[log] function undefined']);
   result = await run("require('../../outside');"); assert.match(result.error,/路径超出/);
   result = await run("throw new Error('failed script');"); assert.match(result.error,/failed script/);
   assert.equal(result.sharedState,undefined,'errors must not return state to commit');

@@ -66,6 +66,7 @@ struct BreakpointRule: Codable, Hashable, Identifiable {
 struct DNSSpoofRule: Codable, Hashable, Identifiable {
     var id: UUID = UUID()
     var enabled: Bool = true
+    var name: String?
     var hostPattern: String = ""        // 支持 *.example.com
     var ip: String = ""
 
@@ -96,6 +97,21 @@ struct ExternalProxyConfig: Codable, Hashable {
     var password: String = ""
     var bypassHosts: [String]?
     var pacURL: String?
+    /// nil retains the historical bypass-list behavior when reading old backups.
+    var routingMode: RoutingMode?
+    var includedTargets: [String]?
+
+    enum RoutingMode: String, Codable, CaseIterable {
+        case all, bypass, inclusive
+        var title: String {
+            switch self {
+            case .all: return "所有目标"
+            case .bypass: return "排除直连列表"
+            case .inclusive: return "仅包含列表"
+            }
+        }
+    }
+    var effectiveRoutingMode: RoutingMode { routingMode ?? .bypass }
 
     enum Mode: String, Codable, CaseIterable {
         case http = "HTTP"

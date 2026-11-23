@@ -7,6 +7,12 @@ struct SourceSidebar: View {
         var initialMember: SourceFolderMember?
     }
 
+    private struct SavedFolderRequest: Identifiable {
+        let id = UUID()
+        var folder: SavedRequestFolder?
+        var parent: UUID?
+    }
+    @State private var savedFolderRequest: SavedFolderRequest?
     @ObservedObject var store: TrafficStore
     @EnvironmentObject var appState: AppState
     @FocusState private var searchFocused: Bool
@@ -44,7 +50,10 @@ struct SourceSidebar: View {
         .sheet(item: $folderRequest) { request in
             SourceFolderEditor(store: store, folder: request.folder, initialMember: request.initialMember)
         }
-        .alert("来源文件夹", isPresented: Binding(
+        .sheet(item: $savedFolderRequest) { request in
+            SavedRequestFolderEditor(store: store, folder: request.folder, initialParent: request.parent)
+        }
+        .alert("文件夹操作", isPresented: Binding(
             get: { folderError != nil },
             set: { if !$0 { folderError = nil } }
         )) {
@@ -77,6 +86,18 @@ struct SourceSidebar: View {
         }
     }
 
+    private func savedFolderEntries(parent: UUID?, depth: Int = 0) -> [(folder: SavedRequestFolder, depth: Int)] {
+        guard depth < 32 else { return [] }
+        return store.savedRequestFolders.filter { $0.parentID == parent }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            .flatMap { folder in
+                let row = matchesSearch(store.savedRequestFolderPath(folder.id)) ? [(folder, depth)] : []
+                return row + savedFolderEntries(parent: folder.id, depth: depth + 1)
+            }
+    }
+    private func savedOperation(_ action: () throws -> Void) {
+        do { try action() } catch { folderError = error.localizedDescription }
+    }
+
     private func folderMembership(_ member: SourceFolderMember) -> some View {
         Menu("来源文件夹") {
             ForEach(store.sourceFolders) { folder in
@@ -101,8 +122,34 @@ struct SourceSidebar: View {
             }
             sourceButton(.saved) {
                 sourceSymbol("tray.and.arrow.down.fill", tint: .blue)
-                Text("Saved")
+                Text("Saved（未分组）")
                 countBadge(store.saved.count)
+            }
+            .contextMenu {
+                Button("新建请求文件夹…") { savedFolderRequest = SavedFolderRequest() }
+                Button("将当前选择复制到这里", action: { savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: nil) } })
+                    .disabled(store.selectedTransactions.isEmpty)
+            }
+            ForEach(savedFolderEntries(parent: nil), id: \.folder.id) { entry in
+                sourceButton(.savedFolder(entry.folder.id), indent: 30 + CGFloat(entry.depth) * 12) {
+                    sourceSymbol("folder.fill", tint: .yellow)
+                    Text(entry.folder.name).lineLimit(1).help(store.savedRequestFolderPath(entry.folder.id))
+                    countBadge(store.savedRequests(in: entry.folder.id).count)
+                }
+                .contextMenu {
+                    Button("新建子文件夹…") { savedFolderRequest = SavedFolderRequest(parent: entry.folder.id) }
+                    Button("重命名 / 更改父级…") { savedFolderRequest = SavedFolderRequest(folder: entry.folder) }
+                    Button("将当前选择复制到这里") {
+                        savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: entry.folder.id) }
+                    }.disabled(store.selectedTransactions.isEmpty)
+                    if store.isBrowsingSavedRequests, store.activeSavedRequestFolderID != entry.folder.id {
+                        Button("将当前选择移动到这里") {
+                            savedOperation { try store.transferSavedRequests(ids: store.selectedIDs, from: store.activeSavedRequestFolderID, to: entry.folder.id, copy: false) }
+                        }.disabled(store.selectedIDs.isEmpty)
+                    }
+                    Divider()
+                    Button("删除文件夹，请求移回未分组") { savedOperation { try store.deleteSavedRequestFolder(entry.folder.id) } }
+                }
             }
             if let archiveName = store.archiveName {
                 sourceButton(.archive) {
@@ -266,6 +313,7 @@ struct SourceSidebar: View {
     private var sidebarFooter: some View {
         HStack(spacing: 7) {
             Menu {
+                Button("新建 Saved 请求文件夹…") { savedFolderRequest = SavedFolderRequest() }
                 Button("新建来源文件夹…") { folderRequest = FolderRequest() }
                 Button("全部流量") { store.filterMode = .all; search = "" }
                 Button("生成示例流量") { appState.store.addSampleData() }

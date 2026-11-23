@@ -57,8 +57,11 @@ enum LocalControl {
       ProxyMirror rules export --output 路径 [--tool 工具]
       ProxyMirror rules preview --input 路径 [--mode merge|replace]
       ProxyMirror rules apply --input 路径 --preview-token 令牌 [--mode merge|replace]
-      ProxyMirror rules 工具 list|get|add|update|delete|enable|disable [--id ID] [--input JSON文件]
-      ProxyMirror export flows|logs --format har|json|csv|session [筛选选项] [--output 路径]
+      ProxyMirror rules 工具 list|get|add|update|delete|enable|disable [--id ID] [--group-id 规则集UUID] [--input JSON文件]
+      ProxyMirror rules 工具 rename --id ID --name 名称 [--group-id 规则集UUID]
+      ProxyMirror rules 工具 duplicate --id ID [--name 名称] [--bundle-id 新应用ID] [--folder-id UUID]
+      ProxyMirror export flows --format har|json|csv|session [筛选选项] [--output 路径]
+      ProxyMirror export logs [all|domains] [--domains 主机,主机通配] [--from ISO8601] [--to ISO8601] [--output 路径]
       ProxyMirror flow --id UUID
       ProxyMirror code --id UUID --language curl|httpie|python|javascript|…
       ProxyMirror tools list|enable|disable [--tool 工具]
@@ -78,6 +81,8 @@ enum LocalControl {
       --limit 数量     返回最近的 N 条，默认 100，最大 1000
 
     将 --output 设为 - 可将结果写入标准输出。
+    export logs 默认导出全部保留流量的原生会话，domains 生成按域名分组的会话包；from/to 按请求开始时间筛选（含两端），不使用流量查询的 100 条分页上限。
+    rename 不改变匹配条件：经典规则使用 comment，其他规则使用 name/内层 URLRule.name。duplicate 生成新 ID 并保留文件夹归属，反向代理副本默认禁用。
     规则导出工具支持 mapLocal、mapRemote、blockList、allowList、sslProxyingList、sslApplications、customCertificates、dns、breakpoints、rewrite、latency、noCaching、reverse、external、h2c、protobuf、settings、organization。
     """
 

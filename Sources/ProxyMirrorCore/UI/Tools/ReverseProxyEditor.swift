@@ -31,6 +31,7 @@ struct ReverseProxyEditor: View {
     @ObservedObject private var controller = ReverseProxyController.shared
     @State private var drafts: [Draft] = []
     @State private var error: String?
+    @State private var folderDraft = RuleFolderEditingDraft()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -60,7 +61,7 @@ struct ReverseProxyEditor: View {
         }
         .padding(20)
         .frame(width: 700)
-        .onAppear { drafts = controller.rules.map(Draft.init) }
+        .onAppear { drafts = controller.rules.map(Draft.init); folderDraft = RuleFolderEditingDraft() }
     }
 
     private func row(_ draft: Binding<Draft>) -> some View {
@@ -79,6 +80,7 @@ struct ReverseProxyEditor: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel("移除规则")
             }
+            RuleFolderPicker(tool: "reverse", ruleID: value.id.uuidString, draft: $folderDraft).id(value.id)
             HStack(spacing: 8) {
                 Text("127.0.0.1")
                 TextField("本地端口", text: draft.localPort).frame(width: 75)
@@ -109,7 +111,9 @@ struct ReverseProxyEditor: View {
 
     private func save() {
         do {
-            try controller.save(drafts.map { try $0.validated() })
+            let rules = try drafts.map { try $0.validated() }
+            let organization = try folderDraft.merging(into: RuleOrganizationStore.shared.snapshot(), tool: "reverse", keeping: Set(rules.map { $0.id.uuidString }))
+            try controller.save(rules, organization: organization)
             dismiss()
         } catch let failure {
             error = failure.localizedDescription

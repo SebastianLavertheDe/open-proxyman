@@ -169,11 +169,13 @@ final class ReverseProxyController: ObservableObject {
         if changed, let engine { start(engine: engine) }
     }
 
-    func save(_ edited: [ReverseProxyRule]) throws {
+    func save(_ edited: [ReverseProxyRule], organization: RuleOrganization? = nil) throws {
+        let organization = organization ?? RuleOrganizationStore.shared.snapshot()
+        if let issue = organization.validationError { throw RuleOrganizationStore.OrganizationError(issue) }
         var routes: [UInt16: ReverseProxyRoute] = [:]
         for rule in edited {
             let route = try ReverseProxyRoute(rule)
-            guard rule.enabled, RuleOrganizationStore.shared.ruleIsEnabled(tool: "reverse", id: rule.id) else { continue }
+            guard rule.enabled, organization.ruleIsEnabled(tool: "reverse", ruleID: rule.id.uuidString) else { continue }
             guard routes[route.listenPort] == nil else { throw ReverseProxyError.duplicatePort(route.listenPort) }
             routes[route.listenPort] = route
         }
@@ -190,6 +192,7 @@ final class ReverseProxyController: ObservableObject {
             }
             var backup = RulesStore.shared.backup()
             backup.reverse = edited
+            backup.organization = organization
             try RulesStore.shared.install(backup)
         } catch {
             for listener in staged.values { listener.close() }

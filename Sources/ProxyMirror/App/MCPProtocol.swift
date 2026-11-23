@@ -89,6 +89,8 @@ enum MCPProtocol {
                 valid = validNumber(value) && (value as? NSNumber).map { $0.doubleValue.isFinite && $0.doubleValue.rounded() == $0.doubleValue } == true
             case "boolean": valid = (value as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() } == true
             case "object": valid = value is [String: Any]
+            case "array":
+                valid = (value as? [String]).map { $0.count <= (field["maxItems"] as? Int ?? 256) } == true
             default: valid = false
             }
             guard valid else { throw LocalControlError.usage("Invalid type for \(key)") }
@@ -126,13 +128,15 @@ enum MCPProtocol {
             tool("query_flows", "Query captured flows in capture order; afterId supports incremental polling. limit defaults to 100.", filters),
             tool("get_flow", "Read full captured request/response, bodies (base64), timings, PID, rules, comments and protocol details.", ["id": text], required: ["id"]),
             tool("export_flows", "Export matching flows as HAR, JSON records, CSV or native session. Captured data may contain secrets.", exports),
+            tool("export_logs", "Export the complete retained traffic as native sessions, without flow pagination. scope=all returns one SessionFile; scope=domains returns a domain bundle of independently decodable SessionFiles. from/to filter request start times inclusively using ISO 8601 timestamps.",
+                 ["scope": choices(["all", "domains"]), "domains": ["type": "array", "items": ["type": "string"], "maxItems": 256], "from": text, "to": text, "selected": boolean]),
             tool("copy_as_code", "Generate runnable request code. Use curl, httpie, python, javascript or one of the application's supported language targets.", ["id": text, "language": choices(RequestCode.Format.allCases.map(\.rawValue) + ["javascript", "node", "objc", "python-requests"])], required: ["id"]),
-            tool("rules", "List/get/add/update/delete/enable/disable individual rules. tool: mapLocal/mapRemote/blockList/allowList/sslProxyingList/sslApplications/customCertificates/dns/breakpoints/rewrite/latency/protobuf/reverse. For add, supply a rule object; classic rules need pattern, target and comment default empty. Get/list existing rules for schema. Updates merge fields and retain IDs. Bulk changes use CLI rules preview/apply.",
-                 ["tool": text, "action": choices(["list", "get", "add", "update", "delete", "enable", "disable"]), "id": text, "folderId": text, "rule": ["type": "object"]], required: ["tool", "action"], readOnly: false),
+            tool("rules", "List/get/add/update/delete/enable/disable/rename/duplicate individual rules. tool: mapLocal/mapRemote/blockList/allowList/sslProxyingList/sslApplications/customCertificates/dns/breakpoints/rewrite/latency/protobuf/reverse. For add, supply a rule object; classic rules need pattern, target and comment default empty. Get/list existing rules for schema. Use groupId to address nested rewrite rules; a unique nested ID can also be addressed directly. rename uses name, preserving match fields. duplicate regenerates all owned IDs and preserves folder memberships; SSL application copies require a new bundleId. Reverse copies start disabled to avoid port conflicts. Updates merge fields and retain IDs. Bulk changes use CLI rules preview/apply.",
+                 ["tool": text, "action": choices(["list", "get", "add", "update", "delete", "enable", "disable", "rename", "duplicate"]), "id": text, "folderId": text, "groupId": text, "name": text, "bundleId": text, "rule": ["type": "object"]], required: ["tool", "action"], readOnly: false),
             tool("folders", "Manage nested rule folders. Deleting a folder keeps its rules. assign without folderId removes a rule from its folder.",
                  ["tool": text, "action": choices(["list", "create", "rename", "move", "delete", "enable", "disable", "assign"]), "id": text, "name": text, "parentId": text, "folderId": text, "ruleId": text], required: ["tool", "action"], readOnly: false),
             tool("tools", "List tools and their global state, or enable/disable one tool without changing its individual rules.", ["action": choices(["list", "enable", "disable"]), "tool": text], readOnly: false),
-            tool("external_proxy", "Get, set or disable the upstream proxy (HTTP/HTTPS/SOCKS5/PAC). config merges existing fields; password is redacted in replies.", ["action": choices(["get", "set", "disable"]), "config": ["type": "object"]], readOnly: false),
+            tool("external_proxy", "Get, set or disable the upstream proxy (HTTP/HTTPS/SOCKS5/PAC). config merges existing fields. routingMode is all/bypass/inclusive (omitted preserves bypass behavior); includedTargets contains host globs or HTTP(S) URL globs used only by inclusive mode. Nonmatching targets and localhost are direct. Password is redacted in replies.", ["action": choices(["get", "set", "disable"]), "config": ["type": "object"]], readOnly: false),
             tool("set_recording", "Enable or disable recording while retaining captured traffic.", ["enabled": boolean], required: ["enabled"], readOnly: false),
             tool("http_version", "Read HTTP version mode, or set HTTP/2 negotiation for new connections.", ["http2": boolean], readOnly: false),
             tool("launch", "Launch a terminal/browser/Electron application with local proxy configuration. Uses a dedicated browser profile. Requires a running listener.",

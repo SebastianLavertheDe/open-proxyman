@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// 应用设置（UserDefaults 持久化）
 final class AppSettings: ObservableObject {
@@ -148,4 +149,30 @@ final class AppSettings: ObservableObject {
         get { d.bool(forKey: "ui.showMinimap") }
         set { d.set(newValue, forKey: "ui.showMinimap"); objectWillChange.send() }
     }
+
+    var monospacedFontFamily: String {
+        get { d.string(forKey: "ui.monospacedFontFamily") ?? "" }
+        set { d.set(newValue, forKey: "ui.monospacedFontFamily"); objectWillChange.send() }
+    }
+    var codeTabWidth: Int {
+        get { min(16, max(1, d.object(forKey: "ui.codeTabWidth") as? Int ?? 4)) }
+        set { d.set(min(16, max(1, newValue)), forKey: "ui.codeTabWidth"); objectWillChange.send() }
+    }
+    var use24HourClock: Bool {
+        get { d.object(forKey: "ui.use24HourClock") as? Bool ?? true }
+        set { d.set(newValue, forKey: "ui.use24HourClock"); objectWillChange.send() }
+    }
+    var showFullDate: Bool {
+        get { d.bool(forKey: "ui.showFullDate") }
+        set { d.set(newValue, forKey: "ui.showFullDate"); objectWillChange.send() }
+    }
+    var showAlternatingRows: Bool {
+        get { d.object(forKey: "ui.showAlternatingRows") as? Bool ?? true }
+        set { d.set(newValue, forKey: "ui.showAlternatingRows"); objectWillChange.send() }
+    }
+    var defaultCopyFormat: RequestCode.Format {
+        get { d.string(forKey: "export.defaultCopyFormat").flatMap(RequestCode.Format.init(rawValue:)) ?? .curl }
+        set { d.set(newValue.rawValue, forKey: "export.defaultCopyFormat"); objectWillChange.send() }
+    }
+
 }

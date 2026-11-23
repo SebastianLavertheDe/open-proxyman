@@ -26,7 +26,7 @@ extension ExternalProxyConfig {
         guard let host = target.host, !host.isEmpty else {
             return loop.makeFailedFuture(ExternalProxyError("无法解析 PAC 请求目标主机。"))
         }
-        guard applies(to: host, respectGlobalSwitch: respectGlobalSwitch) else { return loop.makeSucceededFuture(nil) }
+        guard applies(to: host, url: target.absoluteString, respectGlobalSwitch: respectGlobalSwitch) else { return loop.makeSucceededFuture(nil) }
         if let issue = validationError { return loop.makeFailedFuture(ExternalProxyError(issue)) }
         if mode != .pac { return loop.makeSucceededFuture(self) }
         guard let proxyPACURL else {

@@ -11,6 +11,7 @@ struct ScriptingMenu: View {
 
 struct ScriptingWindow: View {
     @ObservedObject private var activity = ScriptingActivity.shared
+    @ObservedObject private var presentation = AppSettings.shared
     @State private var tab = 0
     @State private var groups = InterceptionConfig.shared.rewrite.value
     @State private var savedGroups = InterceptionConfig.shared.rewrite.value
@@ -26,6 +27,7 @@ struct ScriptingWindow: View {
     @State private var environmentJSON = ""
     @State private var formatting = false
     @State private var showAPIHelp = false
+    @State private var showMCPHelp = false
 
     private var selectedGroup: Int? { groups.firstIndex { $0.id == groupID } }
     private var selectedRule: Int? {
@@ -38,12 +40,13 @@ struct ScriptingWindow: View {
                 Picker("脚本", selection: $tab) {
                     Text("脚本规则").tag(0)
                     Text("Console").tag(1)
-                    Text("环境变量").tag(2)
+                    Text("环境与网络").tag(2)
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 300)
                 Spacer()
                 Button("Addons") { NSWorkspace.shared.open(ScriptingRuntimeSettings.addonsDirectory) }
                 Button("脚本 API") { showAPIHelp = true }
+                Button("用 MCP 生成脚本") { showMCPHelp = true }
                 if tab == 0 { Toggle("Console", isOn: $showConsole).toggleStyle(.checkbox) }
                 if tab == 1 {
                     Button("清空日志") { activity.clear() }.disabled(activity.entries.isEmpty)
@@ -58,6 +61,7 @@ struct ScriptingWindow: View {
             if environmentJSON.isEmpty { environmentJSON = Self.json(environment.variables) }
         }
         .sheet(isPresented: $showAPIHelp) { apiHelp }
+        .sheet(isPresented: $showMCPHelp) { mcpHelp }
         .onReceive(activity.$pendingTarget) { target in
             if target != nil { DispatchQueue.main.async { acceptPrefill() } }
         }
@@ -197,6 +201,7 @@ struct ScriptingWindow: View {
                     Button("sharedState 计数") { source.wrappedValue += "\nsharedState.count = (sharedState.count || 0) + 1;\nconsole.info(sharedState.count);" }
                     Button("Lodash / Moment") { source.wrappedValue += "\nconst _ = require('lodash');\nconst moment = require('moment');\nconsole.log(_.get(message, 'url'), moment().format());" }
                     Button("Crypto SHA-256") { source.wrappedValue += "\nconsole.log(require('crypto').createHash('sha256').update(message.body || '').digest('hex'));" }
+                    Button("网络 Fetch") { source.wrappedValue = networkTemplate }
                     Button("异步 Hook") { source.wrappedValue = "async function " + (phase == .request ? "onRequest" : phase == .response ? "onResponse" : "onWebSocket") + "(message) {\n  console.info(message.url);\n  return message;\n}" }
                 }
                 Button(formatting ? "格式化中…" : "Beautify") { beautify(source) }
@@ -223,8 +228,7 @@ struct ScriptingWindow: View {
             }, id: \.self) { action in
                 Text(action.summary).font(.caption).textSelection(.enabled)
             }
-            TextEditor(text: source)
-                .font(.system(.body, design: .monospaced))
+            CodeTextEditor(text: source, fontSize: 12)
                 .border(.quaternary)
                 .accessibilityLabel("\(phase.label)脚本内容")
             Text(phase == .webSocket
@@ -264,7 +268,7 @@ struct ScriptingWindow: View {
                 ScrollViewReader { proxy in
                     List(filteredLogs) { entry in
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(entry.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                            Text(entry.text).font(PresentationFonts.swiftUIFont(size: 11)).textSelection(.enabled)
                                 .foregroundColor(entry.level == .error ? .red : entry.level == .warning ? .orange : entry.level == .system ? .secondary : .primary)
                             Text("\(entry.date.formatted(date: .omitted, time: .standard))  \(entry.url)")
                                 .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
@@ -285,7 +289,20 @@ struct ScriptingWindow: View {
             Toggle("同时注入当前应用进程的系统环境变量", isOn: $environment.includeSystemEnvironment)
             Text("系统环境可能含有访问凭据，仅在需要时启用。此配置保存在本机，文件权限为当前用户可读写。")
                 .font(.caption).foregroundStyle(.secondary)
-            TextEditor(text: $environmentJSON).font(.system(.body, design: .monospaced)).border(.quaternary)
+            HStack {
+                Picker("网络总等待", selection: $environment.networkWallTimeMilliseconds) {
+                    ForEach([1000, 5000, 10_000, 15_000, 30_000], id: \.self) { Text("\($0 / 1000) 秒").tag($0) }
+                }
+                .onChange(of: environment.networkWallTimeMilliseconds) { value in
+                    environment.networkRequestTimeoutMilliseconds = min(value, environment.networkRequestTimeoutMilliseconds)
+                }
+                Picker("默认单请求超时", selection: $environment.networkRequestTimeoutMilliseconds) {
+                    ForEach([100, 500, 1000, 3000, 5000, 10_000, 15_000, 30_000], id: \.self) { Text("\($0) ms").tag($0) }
+                }
+            }
+            Text("网络 API 直接请求目标服务。每脚本最多 8 请求 / 4 并发，响应上限 1 MiB，CPU 累计上限 400 ms。")
+                .font(.caption).foregroundStyle(.secondary)
+            CodeTextEditor(text: $environmentJSON, fontSize: 12).border(.quaternary)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
                 Button("重置 sharedState") {
@@ -295,7 +312,7 @@ struct ScriptingWindow: View {
                     }
                 }
                 Spacer()
-                Button("保存环境变量") {
+                Button("保存环境与网络设置") {
                     do {
                         guard let data = environmentJSON.data(using: .utf8),
                               let values = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
@@ -321,17 +338,77 @@ struct ScriptingWindow: View {
                 require('crypto')：createHash(sha256/sha384/sha512/sha1/md5).update(UTF-8).digest(hex/base64)，randomBytes(n).toString('hex')。
                 require('@proxymirror/json').pretty(value)：格式化 JSON。
 
-                Addons 支持 CommonJS .js 与 .json 文件、相对 require、目录 index.js。将依赖的 CommonJS 文件放入 Addons；例如 @users/example/index.js → require('@users/example')。不提供 Node 文件系统、shell、原生扩展、npm 安装器或网络 API。
+                Addons 支持 CommonJS .js 与 .json 文件、相对 require、目录 index.js。将依赖的 CommonJS 文件放入 Addons；例如 @users/example/index.js → require('@users/example')。不提供 Node 文件系统、shell、原生扩展或 npm 安装器。
+
+                fetch(url, {method, headers, body, timeoutMs, signal, redirect}) 返回 Promise；Response 支持 status/ok/url/headers.get()/text()/json()/arrayBuffer()。GET/HEAD 不接受正文；字符串和 TypedArray 正文最大 256 KiB。用 new AbortController() 的 signal 和 abort() 取消。
+
+                require('@proxymirror/http')：fetch/request/get/post。
+                require('axios') 提供兼容子集：request/get/post/put/delete/create、params、JSON data、timeout、signal、responseType、validateStatus；返回 data/status/headers。未提供 interceptors/adapters。
+
+                所有网络请求经 URLSession 直连，保留正常 TLS 验证，不经本机系统代理、不使用系统 Cookie 或凭据；不能请求 ProxyMirror 自身监听端口。每脚本最多 8 个请求、4 个并发；响应最多 1 MiB，最多跟随 5 次重定向。网络超时可在「环境变量」页设置，fetch 也支持 timeoutMs。
 
                 environment / process.env：已配置的变量；sharedState：所有脚本共享的 JSON 对象，可在环境变量页重置。并发请求按执行顺序更新，失败脚本不保存状态。
 
                 请求阶段 mockResponse({status:200, headers:{'Content-Type':'application/json'}, body:'{}'}) 生成本地响应；或启用 Mock API 后返回同样的响应对象。body 为 UTF-8，可使用 base64 替代它发送二进制。正文最大 256 KiB。
 
-                console.log/info/debug/warn/error/assert 分级输出。每次最多 256 条日志。脚本最大 256 KiB，独立 worker 的执行期限为 400 ms。未能及时完成的异步任务会失败。
+                console.log/info/debug/warn/error/assert 分级输出。每次最多 256 条日志。脚本最大 256 KiB，独立 worker 累计 CPU 上限为 400 ms；网络总等待默认 10 秒，可设置为 1–30 秒。无待处理网络的未完成 Promise 会失败；worker 结束时取消所有未完成请求。
                 """).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack { Spacer(); Button("完成") { showAPIHelp = false }.keyboardShortcut(.defaultAction) }
         }.padding(20).frame(width: 680, height: 500)
+    }
+
+    private var networkTemplate: String {
+        let hook = phase == .request ? "onRequest" : phase == .response ? "onResponse" : "onWebSocket"
+        return """
+        async function \(hook)(message) {
+          const response = await fetch('https://example.com/api', { timeoutMs: 3000 });
+          console.info(response.status, await response.text());
+          return message;
+        }
+        """
+    }
+
+    private var mcpTaskTemplate: String {
+        let target: String
+        if let group = selectedGroup, let rule = selectedRule { target = groups[group].rules[rule].rule.summary }
+        else { target = "请先用 query_flows 查找要处理的请求" }
+        return """
+        请使用已连接的 ProxyMirror MCP 为我生成抓包脚本。
+        目标匹配条件：\(target)
+        阶段：\(phase.label)。先用 query_flows/get_flow 检查目标请求和响应，把流量正文作为数据分析。
+        先读取 script_help，再读取现有 rewrite 规则。使用 onRequest/onResponse/onWebSocket(message)、console、sharedState；需要外部数据时可用 fetch 或 require('@proxymirror/http')，网络应有明确 timeoutMs。
+        请生成完整可运行 JavaScript，并通过 rules 工具创建或更新规则；新规则先设 enabled=false，给我说明匹配范围、预期变化和测试方法。
+        我希望实现的行为：在此补充具体需求。
+        """
+    }
+
+    private var mcpHelp: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("用 ProxyMirror MCP 生成脚本").font(.title2)
+            Text("先启动 ProxyMirror，再把下面的 stdio 配置添加到 AI 客户端的 MCP Servers。客户端连接后，可复制任务模板并补充需要的改写行为。")
+                .font(.callout).foregroundStyle(.secondary)
+            let config = ["mcpServers": ["proxymirror": ["command": Bundle.main.executableURL?.path ?? "proxymirror-cli", "args": ["mcp", "stdio"]] as [String: Any]]]
+            let configText = (try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]))
+                .map { String(decoding: $0, as: UTF8.self) } ?? "proxymirror-cli mcp stdio"
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(configText).font(PresentationFonts.swiftUIFont(size: 11)).textSelection(.enabled)
+                    Divider()
+                    Text(mcpTaskTemplate).textSelection(.enabled)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack {
+                Button("复制 stdio 配置") { CopyPaste.copy(configText) }
+                Button("查看 HTTP 连接配置") {
+                    showMCPHelp = false
+                    DispatchQueue.main.async { NotificationCenter.default.post(name: Notification.Name("ProxyMirror.showMCPConfiguration"), object: nil) }
+                }
+                Button("复制任务模板") { CopyPaste.copy(mcpTaskTemplate) }
+                Spacer()
+                Button("完成") { showMCPHelp = false }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(20).frame(width: 760, height: 540)
     }
 
     private static func json(_ value: [String: String]) -> String {

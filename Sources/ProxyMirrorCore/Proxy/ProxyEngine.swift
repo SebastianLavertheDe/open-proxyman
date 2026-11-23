@@ -1,6 +1,7 @@
 import Foundation
 import NIOCore
 import NIOPosix
+import NIOHTTP2
 import NIOSSL
 import NIOTLS
 import Darwin
@@ -84,14 +85,16 @@ final class ProxyEngine: @unchecked Sendable {
         clientsLock.lock()
         acceptingClients = true
         clientsLock.unlock()
-        func bootstrap(approvedPeer: String?) -> ServerBootstrap {
+        func bootstrap(policy: NetworkAccessPolicy?) -> ServerBootstrap {
             ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
             .childChannelInitializer { [weak self] channel in
                 guard let self else { return channel.eventLoop.makeFailedFuture(ProxyError.shutdown) }
-                if let approvedPeer, channel.remoteAddress?.ipAddress != approvedPeer {
-                    return channel.eventLoop.makeFailedFuture(ProxyError.unapprovedDevice)
+                if let policy {
+                    guard let peer = channel.remoteAddress?.ipAddress, policy.allows(peer) else {
+                        return channel.eventLoop.makeFailedFuture(ProxyError.unapprovedDevice)
+                    }
                 }
                 guard self.track(channel) else { return channel.eventLoop.makeFailedFuture(ProxyError.shutdown) }
                 let conn = ConnState(engine: self)
@@ -100,17 +103,18 @@ final class ProxyEngine: @unchecked Sendable {
                 conn.proxyHandler = proxy
                 conn.snifferHandler = sniffer
                 return channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandlers([sniffer, proxy])
+                    try channel.pipeline.syncOperations.addHandlers([SOCKS5ProxyHandshake(conn: conn), sniffer, proxy])
                 }
             }
         }
 
         let channel: Channel
         do {
-            channel = try bootstrap(approvedPeer: nil).bind(host: "127.0.0.1", port: Int(port)).wait()
+            channel = try bootstrap(policy: nil).bind(host: "127.0.0.1", port: Int(port)).wait()
             if let lan {
                 do {
-                    lanChannel = try bootstrap(approvedPeer: lan.device).bind(host: lan.address,
+                    guard let policy = lan.peerPolicy else { throw ProxyError.invalidLANAccess }
+                    lanChannel = try bootstrap(policy: policy).bind(host: lan.address,
                         port: channel.localAddress?.port ?? Int(port)).wait()
                 } catch {
                     try? channel.close().wait()
@@ -196,7 +200,7 @@ enum ProxyError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .shutdown: return "代理已停止"
-        case .invalidLANAccess: return "选择本机局域网 IPv4 地址，并填写设备的 IPv4 地址。"
+        case .invalidLANAccess: return "选择明确的本机局域网地址，并填写至少一个有效的设备 IP 或 CIDR 范围。"
         case .unapprovedDevice: return "此设备未加入代理访问名单"
         }
     }
@@ -205,13 +209,28 @@ enum ProxyError: LocalizedError {
 struct LANAccess: Equatable {
     let address: String
     let device: String
+    let allowedPeerRanges: [String]
+
+    init(address: String, device: String, allowedPeerRanges: [String] = []) {
+        self.address = address
+        self.device = device
+        self.allowedPeerRanges = allowedPeerRanges
+    }
+
+    var peerPolicy: NetworkAccessPolicy? {
+        let ranges = allowedPeerRanges.isEmpty ? (device.isEmpty ? [] : [device]) : allowedPeerRanges
+        guard !ranges.isEmpty else { return nil }
+        return try? NetworkAccessPolicy(ranges: ranges)
+    }
 
     var valid: Bool {
-        guard Self.addresses.contains(address), device != address else { return false }
-        var parsed = in_addr()
-        guard inet_pton(AF_INET, device, &parsed) == 1 else { return false }
-        let first = UInt32(bigEndian: parsed.s_addr) >> 24
-        return first > 0 && first != 127 && first < 224
+        guard Self.addresses.contains(address), let local = NumericIPAddress(address), local.isUnicast,
+              !local.isLoopback, let policy = peerPolicy, !policy.ranges.isEmpty else { return false }
+        if allowedPeerRanges.isEmpty {
+            guard local.bytes.count == 4, let peer = NumericIPAddress(device), peer.bytes.count == 4, peer.isUnicast,
+                  !peer.isLoopback, peer.description != local.description else { return false }
+        }
+        return true
     }
 
     static var addresses: [String] {
@@ -222,15 +241,20 @@ struct LANAccess: Equatable {
         for item in sequence(first: list, next: { $0.pointee.ifa_next }) {
             let flags = item.pointee.ifa_flags
             guard flags & UInt32(IFF_UP) != 0, flags & UInt32(IFF_LOOPBACK) == 0,
-                  let address = item.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET)
-            else { continue }
+                  let address = item.pointee.ifa_addr,
+                  [UInt8(AF_INET), UInt8(AF_INET6)].contains(address.pointee.sa_family) else { continue }
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count),
                            nil, 0, NI_NUMERICHOST) == 0 {
-                result.insert(String(cString: host))
+                let value = String(cString: host)
+                if let parsed = NumericIPAddress(value), parsed.isUnicast, !parsed.isLoopback { result.insert(value) }
             }
         }
-        return result.sorted()
+        return result.sorted { lhs, rhs in
+            let lhsV4 = NumericIPAddress(lhs)?.bytes.count == 4
+            let rhsV4 = NumericIPAddress(rhs)?.bytes.count == 4
+            return lhsV4 == rhsV4 ? lhs < rhs : lhsV4
+        }
     }
 }
 
@@ -250,6 +274,8 @@ final class ConnState {
     var resolvedConnectPort = 443
     var clientApplication: ProcessAppInfo?
     var transparentFlow: TransparentProxyFlow?
+    var http2WebSocket: HTTP2WebSocketRequest?
+    var isSOCKS5 = false
     var sslRules = RulesSnapshot()
 
     init(engine: ProxyEngine, reverseRoute: ReverseProxyRoute? = nil) {
@@ -362,7 +388,10 @@ final class SniPeekHandler: ChannelInboundHandler, RemovableChannelHandler {
     private func finishDecision(_ context: ChannelHandlerContext, host: String?) {
         decided = true
         state.awaitingCertificate = false
-        state.proxyHandler?.clientHelloResolved(mitmHost: host)
+        state.proxyHandler?.clientHelloResolved(mitmHost: host, socksHTTP: state.isSOCKS5 &&
+            ["GET ", "POST ", "PUT ", "PATCH ", "DELETE ", "HEAD ", "OPTIONS ", "TRACE ", "QUERY "].contains {
+                String(decoding: helloBytes.prefix(8), as: UTF8.self).hasPrefix($0)
+            })
         state.proxyHandler?.refreshReads()
         for bytes in buffered {
             context.fireChannelRead(wrapInboundOut(bytes))
@@ -473,9 +502,10 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         }
 
         func rule(for phase: BreakpointRule.Phase) -> BreakpointRule? {
-            guard BreakpointManager.enabledSnapshot.value else { return nil }
+            guard BreakpointManager.enabledSnapshot.value, RuleOrganizationStore.shared.isEnabled("breakpoints") else { return nil }
             return InterceptionConfig.shared.breakpoints.value.first {
-                $0.enabled && $0.rule.enabled && $0.phase == phase &&
+                $0.enabled && RuleOrganizationStore.shared.ruleIsEnabled(tool: "breakpoints", id: $0.id) &&
+                    $0.rule.enabled && $0.phase == phase &&
                     $0.rule.matches(method: method, scheme: scheme, host: host, path: path, query: query, fullURL: url)
             }
         }
@@ -523,6 +553,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private var upstreamResolver: TimedDNSResolver?
     private var upstreamDialAt: Date?
     private var upstreamConnectedAt: Date?
+    private var http2DownstreamStreamID: Int?
     private var upstreamConnection: ProxyConnectionDetails?
     private var upstreamReusable = false
 
@@ -561,6 +592,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
     // CONNECT 上下文
     private var connectTx: Transaction?
+    private var socksReplyPending = false
     private var wsUpstreamInterceptor: WSRelayInterceptor?
     private var wsDownstreamInterceptor: WSRelayInterceptor?
     private var connectAttributionTimeout: Scheduled<Void>?
@@ -574,6 +606,15 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     init(conn: ConnState, tunnelRules: @escaping () -> RulesSnapshot = { RulesStore.shared.snapshot() }) {
         self.conn = conn
         self.tunnelRules = tunnelRules
+    }
+
+    func handlerAdded(context: ChannelHandlerContext) {
+        clientChannel = context.channel
+        if conn.http2WebSocket != nil {
+            context.channel.getOption(HTTP2StreamChannelOptions.streamID).whenSuccess { streamID in
+                self.http2DownstreamStreamID = Int(streamID)
+            }
+        }
     }
 
     func channelActive(context: ChannelHandlerContext) {
@@ -597,7 +638,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        guard conn.transparentFlow != nil, (event as? ChannelEvent) == .inputClosed else {
+        guard conn.transparentFlow != nil || conn.http2WebSocket != nil, (event as? ChannelEvent) == .inputClosed else {
             context.fireUserInboundEventTriggered(event)
             return
         }
@@ -605,8 +646,10 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         switch mode {
         case .readingHead, .tlsPending, .resolvingConnect:
             closeClient()
-        case .tunnelRelay, .wsRelay:
+        case .tunnelRelay:
             upstreamChannel?.close(mode: .output, promise: nil)
+        case .wsRelay:
+            finishWebSocketUpload()
         case .inFlight, .requestPaused, .responsePaused:
             if (reqRemainingCL ?? 0) > 0 || reqChunked != nil { closeClient() }
         default:
@@ -641,7 +684,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             if let interceptor = wsUpstreamInterceptor {
                 interceptor.feed(Data(copyOf(bb)))
             } else {
-                upstreamChannel?.writeAndFlush(NIOAny(bb), promise: nil)
+                writeWebSocketUpstream(bb)
                 bodyCapture?.append(bb.readableBytesView, direction: .upstream, webSocket: true)
             }
         case .closed:
@@ -717,20 +760,21 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
         let recording = conn.engine.recordingEnabled
         let tx = Transaction(captureBudget: recording ? .live : nil)
-        tx.method = req.method
-        tx.scheme = https ? "https" : "http"
+        tx.method = conn.http2WebSocket == nil ? req.method : "CONNECT"
+        tx.scheme = conn.http2WebSocket?.scheme ?? (https ? "https" : "http")
         tx.host = host
         tx.port = conn.transparentFlow?.port ?? port
         tx.path = pathOnly
         tx.query = query
-        tx.requestHeaders = req.headers
-        tx.requestVersion = req.version
+        tx.requestHeaders = conn.http2WebSocket?.captureHeaders(req.headers) ?? req.headers
+        tx.requestVersion = conn.http2WebSocket == nil ? req.version : "HTTP/2"
+        if conn.http2WebSocket != nil { tx.responseVersion = "HTTP/2" }
         tx.captureLimit = recording ? conn.engine.captureLimit : 0
         tx.peerPort = UInt16(clientChannel?.remoteAddress?.port ?? 0)
         tx.clientAddress = clientChannel?.remoteAddress?.ipAddress
         tx.setClientApplication(conn.clientApplication)
         conn.transparentFlow?.mark(tx)
-        tx.isTLSIntercepted = conn.reverseRoute == nil && https
+        tx.isTLSIntercepted = conn.http2WebSocket != nil || (conn.reverseRoute == nil && https)
         tx.originalURL = conn.reverseRoute?.clientURL(target: originalRequest.target)
         tx.state = .awaiting
         self.tx = tx
@@ -764,7 +808,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             tx.requestBodyComplete = true
         }
 
-        keepAlive = !HTTPClientWantsClose(req)
+        keepAlive = conn.http2WebSocket == nil && !HTTPClientWantsClose(req)
         // Block → Allow → Map Local → Map Remote → No Caching
         let rules = RulesStore.shared.snapshot()
         let url = tx.fullURL
@@ -834,8 +878,12 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             effectiveHeaders.remove(name: "If-Modified-Since")
             effectiveHeaders.remove(name: "If-Unmodified-Since")
         }
+        if UserDefaults.standard.bool(forKey: "proxy.appendDiagnosticHeaders") {
+            effectiveHeaders.set(name: "X-ProxyMirror-Request-ID", value: tx.id.uuidString)
+            effectiveHeaders.set(name: "X-ProxyMirror-Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development")
+        }
         let effectiveReq = HTTPRequestHead(method: req.method, target: effectivePath, version: req.version, headers: effectiveHeaders)
-        tx.requestHeaders = effectiveHeaders
+        tx.requestHeaders = conn.http2WebSocket?.captureHeaders(effectiveHeaders) ?? effectiveHeaders
         tx.resolvedAddress = InterceptionConfig.shared.mappedIP(for: tx.host)
         simulation = LatencyConditions.snapshot().sample(for: tx.host)
         let delay = simulation.requestDelay
@@ -1004,12 +1052,35 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                 loop.execute { [weak self] in
                     guard let self, self.breakpointGate?.id == id else { return }
                     if script.phase == .request { self.scriptingOperationName = result.graphqlOperationName }
-                    self.finishInterception(id: id, head: result.head, body: result.body ?? body, logs: result.logs)
+                    if script.phase == .request, let mock = result.mockResponse {
+                        self.finishMockInterception(id: id, head: result.head, body: result.body ?? body,
+                                                    mock: mock, logs: result.logs)
+                    } else {
+                        self.finishInterception(id: id, head: result.head, body: result.body ?? body, logs: result.logs)
+                    }
                 }
             }
         } else {
             finishInterception(id: id, head: head, body: body, logs: [])
         }
+    }
+
+    private func finishMockInterception(id: UUID, head: BreakpointHead, body: Data,
+                                        mock: ScriptingMockResponse, logs: [String]) {
+        guard breakpointGate?.id == id, let tx, let gate = takeBreakpoint(), case .request(let req) = head else { return }
+        if let label = gate.label { tx.breakpointRules.append(label) }
+        if !logs.isEmpty { tx.appendScriptingLogs(logs) }
+        tx.requestHeaders = conn.http2WebSocket?.captureHeaders(req.headers) ?? req.headers
+        keepAlive = conn.http2WebSocket == nil && !HTTPClientWantsClose(req) && gate.following.isEmpty
+        let complete = !req.headers.contains("Transfer-Encoding") &&
+            (Int(req.headers.value(of: "Content-Length") ?? "0") ?? -1) == body.count
+        tx.requestBodyComplete = complete
+        if !body.isEmpty { tx.appendRequestBody(body) }
+        mode = .inFlight
+        finishWithSynthesizedResponse(tx: tx, status: mock.status, reason: TrafficStore.reason(for: mock.status),
+            contentType: mock.headers.value(of: "Content-Type") ?? "text/plain; charset=utf-8",
+            body: ByteBuffer(bytes: mock.body), contentLength: mock.body.count, extraHeaders: mock.headers)
+        refreshReads()
     }
 
     private func finishInterception(id: UUID, head: BreakpointHead, body: Data, logs: [String]) {
@@ -1019,7 +1090,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         case .request(let req):
             if let label { tx.breakpointRules.append(label) }
             if !logs.isEmpty { tx.appendScriptingLogs(logs) }
-            tx.requestHeaders = req.headers
+            tx.requestHeaders = conn.http2WebSocket?.captureHeaders(req.headers) ?? req.headers
             routeRequest(req, transaction: tx)
             if !body.isEmpty, mode == .inFlight || mode == .resolvingLocal {
                 receiveClientBytes(ByteBuffer(bytes: body))
@@ -1073,6 +1144,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         var headOut = Data("HTTP/1.1 \(status) \(reason)\r\n".utf8)
         headOut.append(tx.responseHeaders.rawBytes)
         headOut.append(Data("\r\n".utf8))
+        if let request = conn.http2WebSocket { tx.responseHeaders = request.captureHeaders(tx.responseHeaders, response: true) }
         writeDownstream(ByteBuffer(bytes: headOut), paced: false)
         if let file, let channel = clientChannel {
             respHeadParsed = true
@@ -1192,14 +1264,16 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         let intercept = conn.transparentFlow != nil ? conn.allowsMITM(host: tx.host) : conn.shouldMITM(host: tx.host)
         if !intercept, rejectTunnelIfNeeded(tx, sendResponse: conn.transparentFlow == nil) { return }
         publish(tx)
-        if conn.transparentFlow == nil { writeRaw("HTTP/1.1 200 Connection Established\r\n\r\n") }
+        let sniff = intercept || (conn.isSOCKS5 && tx.port == 80)
+        socksReplyPending = conn.isSOCKS5 && !sniff
+        if conn.transparentFlow == nil, !socksReplyPending { writeRaw("HTTP/1.1 200 Connection Established\r\n\r\n") }
 
         let earlyBytes = earlyConnectBytes
         earlyConnectBytes.removeAll(keepingCapacity: true)
         earlyConnectByteCount = 0
 
         // A transparent flow may only carry an IP until its TLS ClientHello supplies SNI.
-        if intercept {
+        if sniff {
             mode = .tlsPending
             conn.snifferArmed = true
             refreshReads()
@@ -1211,15 +1285,15 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     }
 
     /// sniffer 决策完成（与 sniffer 同线程同步调用，先于缓冲数据回放）
-    fileprivate func clientHelloResolved(mitmHost: String?) {
-        if mitmHost != nil {
+    fileprivate func clientHelloResolved(mitmHost: String?, socksHTTP: Bool = false) {
+        if mitmHost != nil || socksHTTP {
             mode = .readingHead
             headParser = RequestHeadParser()
-            mitmActive = true
+            mitmActive = !socksHTTP
             if let tx = connectTx {
                 let sink = conn.engine.sink
                 onMain {
-                    tx.isTLSIntercepted = true
+                    tx.isTLSIntercepted = !socksHTTP
                     tx.state = .completed
                     tx.duration = Date().timeIntervalSince(tx.startedAt)
                     sink?.transactionUpdated(tx)
@@ -1358,10 +1432,15 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         upstreamConnectedAt = connected
         let dns = upstreamResolver?.milliseconds
         let tcp = upstreamDialAt.map { max(0, connected.timeIntervalSince($0) * 1000 - (dns ?? 0)) }
-        let details = ProxyConnectionDetails(address: channel.remoteAddress?.ipAddress, dnsMilliseconds: dns,
+        var details = ProxyConnectionDetails(address: channel.remoteAddress?.ipAddress, dnsMilliseconds: dns,
                                              tcpMilliseconds: tcp, externalProxy: upstreamOrigin?.externalLabel)
+        details.downstreamStream = http2DownstreamStreamID
         upstreamConnection = details
         if mode == .tunnelConnecting {
+            if socksReplyPending {
+                socksReplyPending = false
+                writeRaw("HTTP/1.1 200 Connection Established\r\n\r\n")
+            }
             mode = .tunnelRelay
             if let tx = connectTx {
                 let sink = conn.engine.sink
@@ -1445,6 +1524,10 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         if let channel, upstreamChannel !== channel { return }
         switch mode {
         case .tunnelConnecting, .tunnelRelay:
+            if socksReplyPending {
+                socksReplyPending = false
+                writeRaw("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+            }
             if let tx = connectTx {
                 let sink = conn.engine.sink
                 onMain {
@@ -1462,6 +1545,16 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         case .responsePaused:
             if breakpointGate?.submitted == true { breakpointGate?.sourceClosed = true }
             else { failBreakpoint("断点等待期间上游连接中断") }
+        case .wsRelay:
+            if let transaction = tx {
+                let sink = conn.engine.sink
+                onMain {
+                    transaction.errorText = "WebSocket 限速写入失败：\(error.localizedDescription)"
+                    transaction.state = .failed
+                    sink?.transactionUpdated(transaction)
+                }
+            }
+            closeWebSocketRelay()
         default:
             break
         }
@@ -1472,10 +1565,12 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         upstreamChannel = nil
         upstreamReusable = false
         switch mode {
-        case .tunnelRelay, .wsRelay:
+        case .tunnelRelay:
             bodyCapture?.flush()
             mode = .closed
             closeDownstreamAfterWrites()
+        case .wsRelay:
+            finishWebSocketDownload()
         case .inFlight:
             if respHeadParsed && (respChunked == nil && respRemainingCL == nil && !respCloseDelimited) {
                 finishRequest()
@@ -1612,20 +1707,72 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         return { @Sendable (block: @escaping @Sendable () -> Void) in target.eventLoop.execute(block) }
     }
 
+    /// Both ordinary WS bytes and scripted replacements use the same bounded
+    /// upload queue. HTTP/2 stream reads pause when this queue is backpressured.
+    private func writeWebSocketUpstream(_ bytes: ByteBuffer) {
+        guard let channel = upstreamChannel, channel.isActive else { return }
+        let rate = simulation.bandwidth.uploadKbps
+        let pause = simulation.bodyPause.sample()
+        if (rate != nil || pause > 0), uploadPacer == nil {
+            uploadPacer = BytePacingQueue(loop: channel.eventLoop, onBackpressure: { [weak self] _ in
+                self?.refreshReads()
+            }, onFailure: { [weak self] error in
+                self?.upstreamFailed(error, channel: channel)
+            })
+        }
+        if let uploadPacer {
+            uploadPacer.write(bytes, kilobitsPerSecond: rate, pauseMs: pause) { channel.writeAndFlush($0) }
+        } else { channel.writeAndFlush(bytes, promise: nil) }
+    }
+
     /// WebSocket 脚本管道的有效字节写出（两条方向各自的引擎循环上调用）
     private func relayWebSocketBytes(_ data: Data, direction: WSFrame.Direction) {
         let buffer = ByteBuffer(bytes: [UInt8](data))
         if direction == .upstream {
-            upstreamChannel?.writeAndFlush(NIOAny(buffer), promise: nil)
+            writeWebSocketUpstream(buffer)
             bodyCapture?.append(data, direction: .upstream, webSocket: true)
         } else {
-            writeDownstream(buffer, paced: false)
+            writeDownstream(buffer, paced: true)
             bodyCapture?.append(data, direction: .downstream, webSocket: true)
         }
     }
 
+    private func finishWebSocketUpload() {
+        let finish: @Sendable () -> Void = { [weak self] in
+            guard let self, self.mode == .wsRelay else { return }
+            let shutdown = { [weak self] in
+                guard let self, self.mode == .wsRelay else { return }
+                self.upstreamChannel?.close(mode: .output, promise: nil)
+            }
+            // The interceptor has already cancelled its 5s script timeout.
+            // A legitimate low-bandwidth transfer may take much longer.
+            if let pacer = self.uploadPacer { pacer.afterWrites(shutdown) }
+            else { shutdown() }
+        }
+        if let interceptor = wsUpstreamInterceptor { interceptor.finish(finish) }
+        else { finish() }
+    }
+
+    private func finishWebSocketDownload() {
+        let finish: @Sendable () -> Void = { [weak self] in
+            guard let self, self.mode == .wsRelay else { return }
+            self.bodyCapture?.flush()
+            // afterDownstreamWrites includes the pacing barrier and then a
+            // socket-write acknowledgement, including the H2 adapter's lastWrite.
+            self.afterDownstreamWrites { [weak self] _ in
+                guard let self, self.mode == .wsRelay else { return }
+                self.mode = .closed
+                self.closeClient()
+            }
+        }
+        if let interceptor = wsDownstreamInterceptor { interceptor.finish(finish) }
+        else { finish() }
+    }
+
     private func closeWebSocketRelay() {
         guard mode == .wsRelay else { return }
+        wsUpstreamInterceptor?.cancel()
+        wsDownstreamInterceptor?.cancel()
         mode = .closed
         tryCloseUpstream()
         closeDownstreamAfterWrites()
@@ -1641,7 +1788,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             if let interceptor = wsDownstreamInterceptor {
                 interceptor.feed(Data(copyOf(bb)))
             } else {
-                writeDownstream(bb, paced: false)
+                writeDownstream(bb, paced: true)
                 bodyCapture?.append(bb.readableBytesView, direction: .downstream, webSocket: true)
             }
             return
@@ -1704,13 +1851,17 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
         // 101 协议升级（WebSocket 等）
         if resp.status == 101 {
+            if let request = conn.http2WebSocket, !request.accepts(resp) {
+                finishRequestWithFailure("上游 WebSocket 握手校验失败")
+                return
+            }
             bodyCapture?.upgradeToWebSocket(headers: resp.headers)
             let sink = conn.engine.sink
             onMain {
-                tx.responseVersion = resp.version
-                tx.statusCode = resp.status
-                tx.statusReason = resp.reason
-                tx.responseHeaders = resp.headers
+                tx.responseVersion = self.conn.http2WebSocket == nil ? resp.version : "HTTP/2"
+                tx.statusCode = self.conn.http2WebSocket == nil ? resp.status : 200
+                tx.statusReason = self.conn.http2WebSocket == nil ? resp.reason : ""
+                tx.responseHeaders = self.conn.http2WebSocket?.captureHeaders(resp.headers, response: true, webSocket: true) ?? resp.headers
                 tx.isWebSocket = true
                 tx.state = .completed
                 tx.duration = Date().timeIntervalSince(self.responseStart)
@@ -1750,6 +1901,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             }
             sendResponseHead(resp, headers: resp.headers, pauseMs: simulation.responseDelay)
             mode = .wsRelay
+            if downstreamInputClosed { finishWebSocketUpload() }
             refreshReads()
             return
         }
@@ -1775,10 +1927,10 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         let contentType = resp.headers.value(of: "Content-Type") ?? ""
         let headerAt = Date()
         onMain {
-            tx.responseVersion = resp.version
+            tx.responseVersion = self.conn.http2WebSocket == nil ? resp.version : "HTTP/2"
             tx.statusCode = resp.status
-            tx.statusReason = resp.reason
-            tx.responseHeaders = resp.headers
+            tx.statusReason = self.conn.http2WebSocket == nil ? resp.reason : ""
+            tx.responseHeaders = self.conn.http2WebSocket?.captureHeaders(resp.headers, response: true) ?? resp.headers
             tx.contentType = contentType
             tx.tHeaderAt = headerAt
             sink?.transactionUpdated(tx)
@@ -2028,6 +2180,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     }
 
     func channelUnregistered(context: ChannelHandlerContext) {
+        wsUpstreamInterceptor?.cancel(); wsUpstreamInterceptor = nil
+        wsDownstreamInterceptor?.cancel(); wsDownstreamInterceptor = nil
         mapLocalSender?.cancel()
         mapLocalSender = nil
         bodyCapture?.finishSSE(complete: false)
@@ -2172,8 +2326,12 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             readClient = mitmActive && downstreamShutdownStarted
             readUpstream = false
         }
-        try? client.syncOptions?.setOption(ChannelOptions.autoRead,
-                                          value: readClient && (!downstreamInputClosed || downstreamShutdownStarted))
+        let clientReads = readClient && (!downstreamInputClosed || downstreamShutdownStarted)
+        let wasReading = try? client.syncOptions?.getOption(ChannelOptions.autoRead)
+        try? client.syncOptions?.setOption(ChannelOptions.autoRead, value: clientReads)
+        if conn.http2WebSocket != nil, clientReads, wasReading != true {
+            client.eventLoop.execute { if client.isActive { client.read() } }
+        }
         try? upstreamChannel?.syncOptions?.setOption(ChannelOptions.autoRead, value: readUpstream)
     }
 }

@@ -9,6 +9,7 @@ struct MainWindow: View {
     @State private var showFilterEditor = false
     @State private var showTrafficSearch = false
     @State private var showListenDetails = false
+    @AppStorage("ui.showResourceUsage") private var showResourceUsage = true
 
     var body: some View {
         NavigationSplitView(columnVisibility: Binding(
@@ -38,8 +39,12 @@ struct MainWindow: View {
             showTrafficSearch = true
             DispatchQueue.main.async { trafficFilterFocused = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pmOpenProtobuf)) { _ in openWindow(id: "protobuf") }
         .onChange(of: appState.proxyStartError) { if let text = $0 { message = text } }
         .onChange(of: appState.systemProxyMessage) { if let text = $0, !text.hasPrefix("正在") { message = text } }
+        .onChange(of: appState.showDiff) { showing in
+            if showing { openWindow(id: "traffic-diff"); appState.showDiff = false }
+        }
         .onAppear { if let text = store.savedError { message = text } }
         .onChange(of: store.savedError) { if let text = $0 { message = text } }
         .alert("ProxyMirror", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
@@ -88,11 +93,8 @@ struct MainWindow: View {
         .sheet(isPresented: $appState.showLatencyEditor) {
             LatencyConditionsView()
         }
-        .sheet(isPresented: $appState.showDiff, onDismiss: appState.dismissComparison) {
-            if appState.diffTargets.count == 2 {
-                TrafficDiffView(left: appState.diffTargets[0], right: appState.diffTargets[1])
-            }
-        }
+        .sheet(isPresented: $appState.showFactoryReset) { FactoryResetView() }
+        .sheet(isPresented: $appState.showGistPublish) { GistPublishView(transactions: store.selectedTransactions) }
         .sheet(item: Binding(get: { appState.certificateGuide.map(GuidePlatformBox.init(value:)) },
                              set: { appState.certificateGuide = $0?.value })) {
             CertificateGuideSheet(platform: $0.value)
@@ -235,12 +237,10 @@ struct MainWindow: View {
                 ProxyStatusPopover()
             }
         }
-        .customizationBehavior(.disabled)
 
         ToolbarItem(id: "right-space", placement: .primaryAction) {
             Spacer()
         }
-        .customizationBehavior(.disabled)
         ToolbarItem(id: "system-proxy", placement: .primaryAction) {
             Button(action: toggleSystemProxy) {
                 Label("系统代理", systemImage: appState.systemProxyActive ? "globe.badge.chevron.backward" : "globe")
@@ -302,7 +302,7 @@ struct MainWindow: View {
             Button(action: appState.clearTraffic) { Label("清除", systemImage: "trash") }
                 .buttonStyle(FooterButtonStyle())
             Button { showFilterEditor = true } label: {
-                let count = store.filter.conditions.conditions.count
+                let count = store.filter.conditions.conditionCount
                 Label(count == 0 ? "过滤器" : "过滤器（\(count)）", systemImage: "line.3.horizontal.decrease")
             }
             .buttonStyle(FooterButtonStyle())
@@ -328,10 +328,16 @@ struct MainWindow: View {
                     }
             }
             Spacer(minLength: 6)
-            let counts = transferred()
-            Text("↑ \(counts.request) ↓ \(counts.response)")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.secondary)
+            Text("\(store.selectedIDs.count)/\(store.visible.count)")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).help("所选 / 当前过滤后的请求数")
+            if showResourceUsage {
+                ResourceUsageView(store: appState.store).lineLimit(1).minimumScaleFactor(0.85)
+            } else {
+                let counts = transferred()
+                Text("↑ \(counts.request) ↓ \(counts.response)")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
             Text(appState.systemProxyActive ? "代理已覆盖" : listenFooter)
                 .font(.system(size: 11, weight: .medium))
                 .padding(.horizontal, 6).padding(.vertical, 2)
@@ -340,14 +346,6 @@ struct MainWindow: View {
         .font(.system(size: 12))
         .padding(.horizontal, 7)
         .frame(height: ProxymanTheme.bottomBarHeight)
-        .overlay {
-            if !showTrafficSearch && store.filter.searchText.isEmpty {
-                Text("选中 \(store.selectedIDs.count)/\(store.visible.count) 行")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .allowsHitTesting(false)
-            }
-        }
         .background(ProxymanTheme.inspectorChrome)
         .overlay(alignment: .top) { Rectangle().fill(ProxymanTheme.paneDivider).frame(height: 1) }
     }
@@ -487,15 +485,27 @@ private struct CommentEditor: View {
 private struct CommandPalette: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     @State private var search = ""
+    private let windows = ["Diff 流量对比": "traffic-diff", "Scripting 脚本与 Console": "scripting", "断点队列与模板": "breakpoints",
+        "Protobuf Schema 与映射": "protobuf", "流量汇总": "flow-summary", "自定义 Previewer 预览器": "custom-previewers",
+        "Automation 自动化": "automation", "规则文件夹": "rule-folders", "软件更新": "updates"]
 
     var body: some View {
         VStack(spacing: 10) {
             TextField("搜索工具", text: $search).textFieldStyle(.roundedBorder)
-            List(ToolKind.allCases.filter { search.isEmpty || $0.rawValue.localizedCaseInsensitiveContains(search) }) { tool in
-                Button(tool.rawValue) {
-                    dismiss()
-                    DispatchQueue.main.async { appState.openTool(tool) }
+            List {
+                ForEach(ToolKind.allCases.filter { search.isEmpty || $0.rawValue.localizedCaseInsensitiveContains(search) }) { tool in
+                    Button(tool.rawValue) {
+                        dismiss()
+                        DispatchQueue.main.async { appState.openTool(tool) }
+                    }
+                }
+                ForEach(windows.keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { title in
+                    Button(title) {
+                        dismiss()
+                        if let id = windows[title] { DispatchQueue.main.async { openWindow(id: id) } }
+                    }
                 }
             }
             Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)

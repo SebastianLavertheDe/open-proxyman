@@ -19,6 +19,7 @@ enum HTTPProtobuf {
     }
 }
 
+@MainActor
 struct HTTPProtobufView: View {
     let data: Data
     let revision: UInt64
@@ -27,14 +28,18 @@ struct HTTPProtobufView: View {
     let truncated: Bool
     let isError: Bool
     let decodedEncoding: String?
+    var target = ""
+    var isRequest = false
     var rawHead: RawMessageHead? = nil
     var rawTrailers = HTTPHeaders()
+    @ObservedObject private var rules = ProtobufRuleStore.shared
     @State private var output: (key: DecodeKey, value: Decoded)?
 
     private struct DecodeKey: Equatable {
         let revision: UInt64
         let generation: UInt64
         let isError: Bool
+        let mapping: UUID
     }
 
     private enum Decoded: Sendable {
@@ -44,7 +49,7 @@ struct HTTPProtobufView: View {
 
     var body: some View {
         let key = complete && !truncated && !data.isEmpty
-            ? DecodeKey(revision: revision, generation: generation, isError: isError) : nil
+            ? DecodeKey(revision: revision, generation: generation, isError: isError, mapping: rules.revision) : nil
         let decoded = output.flatMap { $0.key == key ? $0.value : nil }
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -89,8 +94,14 @@ struct HTTPProtobufView: View {
         }
         .task(id: key) {
             guard let key else { return }
+            let resolution = rules.resolution(for: target, isRequest: isRequest)
             let worker = Task.detached(priority: .userInitiated) { () -> Decoded in
-                do { return .rendered(try GRPCProtobuf.describeHTTP(data, isError: isError)) }
+                do {
+                    if let resolution {
+                        return .rendered(GRPCProtobuf.HTTPDescription(text: try ProtobufPayload.describe(data, resolution: resolution), type: resolution.type))
+                    }
+                    return .rendered(try GRPCProtobuf.describeHTTP(data, isError: isError))
+                }
                 catch { return .failure(error.localizedDescription) }
             }
             let value = await withTaskCancellationHandler {
@@ -98,7 +109,11 @@ struct HTTPProtobufView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { output = (key, value) }
+            if !Task.isCancelled {
+                output = (key, value)
+                if case .failure(let message) = value { rules.log("\(target)：\(message)", isError: true) }
+                else if let resolution { rules.log("\(resolution.ruleName)：已解码 \(isRequest ? "请求" : "响应")。") }
+            }
         }
     }
 

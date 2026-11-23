@@ -112,7 +112,7 @@ enum ExportService {
             return entry
         }
 
-        return [
+        let har: [String: Any] = [
             "log": [
                 "version": "1.2",
                 "creator": ["name": "ProxyMirror",
@@ -120,6 +120,7 @@ enum ExportService {
                 "entries": entries,
             ]
         ]
+        return AppSettings.shared.redactSensitiveHeaders ? ExportRedaction.har(har) : har
     }
 
     private static func harHeaders(_ headers: HTTPHeaders) -> [[String: String]] {
@@ -155,14 +156,16 @@ enum ExportService {
             return "curl --proxy 'http://127.0.0.1:\(AppSettings.shared.port)' 'https://\(_escape(authority))'"
         }
         var parts = ["curl '\(_escape(tx.fullURL))'"]
+        if AppSettings.shared.appendProxyToCommands { parts.append("--proxy 'http://127.0.0.1:\(AppSettings.shared.port)'") }
         let body = tx.requestBody
         if tx.method != "GET" || !body.isEmpty {
             let method = tx.method.utf8.allSatisfy { (65...90).contains($0) } ? tx.method : "'\(_escape(tx.method))'"
             parts.append("-X \(method)")
         }
         let skipped = ["host", "content-length", "connection", "accept-encoding", "transfer-encoding", "trailer", "proxy-authorization", "proxy-connection"]
-        for p in tx.requestHeaders.pairs where !skipped.contains(p.name.lowercased()) {
-            let header = p.value.isEmpty ? p.name + ";" : p.name + ": " + p.value
+        let headers = ExportRedaction.headers(tx.requestHeaders.pairs.map { ($0.name, $0.value) }, redact: AppSettings.shared.redactSensitiveHeaders)
+        for (name, value) in headers where !skipped.contains(name.lowercased()) {
+            let header = value.isEmpty ? name + ";" : name + ": " + value
             parts.append("-H '\(_escape(header))'")
         }
         if !body.isEmpty {
@@ -183,8 +186,13 @@ enum ExportService {
     static func httpieCommand(_ tx: Transaction) -> String {
         let request = ComposeService.request(from: tx)
         let omitted = ["host", "content-length", "connection", "transfer-encoding", "trailer", "proxy-authorization"]
-        var args = ["http", "'\(_escape(request.method))'", "'\(_escape(request.url))'"]
-        args += request.headers.filter { !omitted.contains($0.0.lowercased()) }
+        var args = ["http"]
+        if AppSettings.shared.appendProxyToCommands {
+            let proxy = "http://127.0.0.1:\(AppSettings.shared.port)"
+            args += ["--proxy=http:'\(_escape(proxy))'", "--proxy=https:'\(_escape(proxy))'"]
+        }
+        args += ["'\(_escape(request.method))'", "'\(_escape(request.url))'"]
+        args += ExportRedaction.headers(request.headers, redact: AppSettings.shared.redactSensitiveHeaders).filter { !omitted.contains($0.0.lowercased()) }
             .map { "'\(_escape($0.0 + ": " + $0.1))'" }
         let command = args.joined(separator: " ")
         if let body = request.body, !body.isEmpty {
@@ -208,7 +216,11 @@ enum RepeatService {
     private static var ready: [Request] = []
 
     static func resend(_ tx: Transaction, proxyPort: UInt16? = nil, onResult: @escaping (Transaction) -> Void) {
-        guard let request = ComposeService.replayRequest(from: tx) else { return }
+        guard var request = ComposeService.replayRequest(from: tx) else { return }
+        if AppSettings.shared.noCacheOnRepeat {
+            request.headers.removeAll { ["cache-control", "pragma", "if-none-match", "if-modified-since"].contains($0.0.lowercased()) }
+            request.headers += [("Cache-Control", "no-cache, no-store"), ("Pragma", "no-cache")]
+        }
         pending.append(Request(parsed: request, proxyPort: proxyPort, onResult: onResult))
         startPending()
     }

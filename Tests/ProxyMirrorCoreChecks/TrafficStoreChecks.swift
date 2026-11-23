@@ -4,6 +4,7 @@ import Combine
 
 @MainActor
 func checkTrafficStore(_ test: CoreAssertions) throws {
+    try checkDiffAndFilters(test)
     let directory = try makeCheckDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let folderFile = directory.appendingPathComponent("SourceFolders.json")
@@ -41,6 +42,20 @@ func checkTrafficStore(_ test: CoreAssertions) throws {
     store.followLatest = true
     test.equal(store.selectedIDs, [pending.id], "Follow Latest chooses latest visible row")
     test.equal(split.visible.map(\.id), [good.id, pending.id, other.id], "Split filter stays independent")
+
+    split.selectManually([good.id])
+    split.selectManually([pending.id])
+    split.selectManually([other.id])
+    test.expect(split.canNavigateBackward && !split.canNavigateForward, "Selection history records manual visits")
+    split.navigateSelectionHistory(-1)
+    test.equal(split.selectedID, pending.id, "History navigates to the previous visited request")
+    split.navigateSelectionHistory(-1)
+    test.equal(split.selectedID, good.id, "History supports multiple backward steps")
+    split.navigateSelectionHistory(1)
+    test.equal(split.selectedID, pending.id, "History moves forward after going backward")
+    split.selectManually([good.id])
+    test.expect(!split.canNavigateForward, "A new selection replaces the forward branch")
+
 
     store.resetFilters()
     let folder = try store.saveSourceFolder(name: " Fixture ",

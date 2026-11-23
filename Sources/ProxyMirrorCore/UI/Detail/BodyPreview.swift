@@ -141,6 +141,9 @@ struct BodyPreview: View {
     @State private var page = 0
     @State private var rendered: Rendered?
     @State private var copyTask: Task<Void, Never>?
+    @AppStorage("ui.wordWrap") private var wordWrap = true
+    @AppStorage("ui.showInvisibles") private var showInvisibles = false
+    @AppStorage("ui.showMinimap") private var showMinimap = false
 
     private struct Source: Equatable {
         let generation: UInt64
@@ -190,11 +193,23 @@ struct BodyPreview: View {
                 .id(ScrollAnchor.pageTop)
             }
             if let rendered, rendered.input.source == source, rendered.input.page == selected {
-                Text(rendered.text)
-                    .font(.system(size: format == .hex ? 10 : 11, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
+                HStack(alignment: .top, spacing: 4) {
+                    if wordWrap || format == .hex {
+                        previewText(rendered.text)
+                    } else {
+                        ScrollView(.horizontal) { previewText(rendered.text).fixedSize(horizontal: true, vertical: false) }
+                    }
+                    if showMinimap && pages > 1 {
+                        VStack(spacing: 2) {
+                            ForEach(0..<pages, id: \.self) { index in
+                                Button { page = index } label: {
+                                    Rectangle().fill(index == selected ? Color.accentColor : Color.secondary.opacity(0.35))
+                                        .frame(width: 28, height: max(2, min(8, 180 / CGFloat(pages))))
+                                }.buttonStyle(.plain).help("转到第 \(index + 1) 页")
+                            }
+                        }.padding(4).accessibilityLabel("正文分页缩略导航")
+                    }
+                }
             } else if !data.isEmpty {
                 ProgressView().controlSize(.small)
                     .padding(.horizontal, 10)
@@ -227,6 +242,15 @@ struct BodyPreview: View {
         }
         .onChange(of: selected) { _ in scrollToPageTop?() }
         .onDisappear(perform: cancelCopy)
+    }
+
+    private func previewText(_ text: String) -> some View {
+        Text(showInvisibles && format == .text ? text.replacingOccurrences(of: " ", with: "·")
+            .replacingOccurrences(of: "\t", with: "→   ").replacingOccurrences(of: "\n", with: "¬\n") : text)
+            .font(.system(size: format == .hex ? 10 : 11, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
     }
 
     private func copyPreview() {

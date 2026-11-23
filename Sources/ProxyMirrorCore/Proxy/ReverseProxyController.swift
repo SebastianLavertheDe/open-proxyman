@@ -124,11 +124,21 @@ final class ReverseProxyController: ObservableObject {
 
     private weak var engine: ProxyEngine?
     private var listeners: [UInt16: ReversePortListener] = [:]
+    private var organizationChanges: AnyCancellable?
+
+    init() {
+        organizationChanges = NotificationCenter.default.publisher(for: .ruleOrganizationChanged).sink { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let engine = self.engine else { return }
+                self.start(engine: engine)
+            }
+        }
+    }
 
     func start(engine: ProxyEngine) {
         stop()
         self.engine = engine
-        let enabled = rules.filter(\.enabled)
+        let enabled = rules.filter { $0.enabled && RuleOrganizationStore.shared.ruleIsEnabled(tool: "reverse", id: $0.id) }
         let localPorts = Set(enabled.map(\.listenPort)).union([engine.port])
         for rule in enabled {
             do {
@@ -153,11 +163,17 @@ final class ReverseProxyController: ObservableObject {
         engine = nil
     }
 
+    func reloadRules() {
+        let changed = rules != InterceptionConfig.shared.reverse.value
+        rules = InterceptionConfig.shared.reverse.value
+        if changed, let engine { start(engine: engine) }
+    }
+
     func save(_ edited: [ReverseProxyRule]) throws {
         var routes: [UInt16: ReverseProxyRoute] = [:]
         for rule in edited {
             let route = try ReverseProxyRoute(rule)
-            guard rule.enabled else { continue }
+            guard rule.enabled, RuleOrganizationStore.shared.ruleIsEnabled(tool: "reverse", id: rule.id) else { continue }
             guard routes[route.listenPort] == nil else { throw ReverseProxyError.duplicatePort(route.listenPort) }
             routes[route.listenPort] = route
         }
@@ -172,7 +188,9 @@ final class ReverseProxyController: ObservableObject {
                     staged[port] = try bind(port, engine: engine)
                 }
             }
-            guard RulesFileIO.save(edited, "reverse.json") else { throw ReverseProxyError.save }
+            var backup = RulesStore.shared.backup()
+            backup.reverse = edited
+            try RulesStore.shared.install(backup)
         } catch {
             for listener in staged.values { listener.close() }
             throw error

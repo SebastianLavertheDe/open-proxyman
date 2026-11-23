@@ -116,6 +116,38 @@ func runHTTP2LoopbackTests() {
         check(left?.connectionDetails?.tlsMilliseconds != nil && left?.connectionDetails?.alpn == "h2" &&
               left?.connectionDetails?.upstreamStream != nil, "HTTP/2: TLS phase and upstream stream ID recorded")
 
+        engine.captureLimit = 1024 * 1024
+        let savedExtendedScripts = InterceptionConfig.shared.rewrite.value
+        InterceptionConfig.shared.rewrite.set([RewriteRuleSet(rules: [RewriteRule(
+            rule: URLRule(method: "CONNECT", host: "allowed.pm.test", path: "/rfc8441"),
+            actions: [.script(phase: .webSocket,
+                source: #"if (message.direction === "send" && message.opcode === 1 && message.body === "before") return "after";"#)]),
+        ])])
+        let extended = try runClient("rfc8441")
+        InterceptionConfig.shared.rewrite.set(savedExtendedScripts)
+        for (name, value) in extended where value.error != nil { print("RFC8441 fixture \(name): \(value.error ?? "")") }
+        eq(extended["rfc8441"]?.status, 200, "RFC8441: extended CONNECT receives HTTP/2 200")
+        eq(extended["rfc8441"]?.ruleResult, "enable-connect=1", "RFC8441: client observes SETTINGS_ENABLE_CONNECT_PROTOCOL")
+        eq(extended["rfc8441"]?.text, "after", "RFC8441: a real frame script rewrites the final text before END_STREAM")
+        eq(extended["rfc8441"]?.bodySize, 196_608, "RFC8441: a bidirectional WS frame crosses the initial stream/connection windows")
+        eq(extended["sibling"]?.text, "/rfc8441-sibling", "RFC8441: ordinary HTTP stream shares the connection")
+        eq(extended["cancel"]?.text, "true", "RFC8441: RST_STREAM cancels the origin without closing sibling streams")
+        let extendedCapture = sink.records.last { $0.path == "/rfc8441" && !$0.isTunnel }
+        check(extendedCapture?.method == "CONNECT" && extendedCapture?.requestVersion == "HTTP/2" &&
+              extendedCapture?.responseVersion == "HTTP/2" && extendedCapture?.statusCode == 200 &&
+              extendedCapture?.isWebSocket == true, "RFC8441: capture preserves downstream CONNECT/H2 semantics")
+        check(extendedCapture?.upstreamProtocol == "HTTP/1.1" && extendedCapture?.connectionDetails?.downstreamStream != nil,
+              "RFC8441: capture records actual upstream protocol and downstream stream ID")
+        check(extendedCapture?.requestHeaders.value(of: "Sec-WebSocket-Key") == nil &&
+              extendedCapture?.responseHeaders.value(of: "Sec-WebSocket-Accept") == nil &&
+              extendedCapture?.responseHeaders.value(of: "Connection") == nil,
+              "RFC8441: origin-only handshake headers are absent from downstream capture")
+        check(extendedCapture?.websocketFrames.contains { $0.direction == .upstream && $0.kind == .close } == true &&
+              extendedCapture?.websocketFrames.contains { $0.direction == .downstream && $0.kind == .close } == true,
+              "RFC8441: frame capture retains the bidirectional close handshake")
+
+        engine.captureLimit = 4096
+
         let localFile = URL(fileURLWithPath: support).appendingPathComponent("http2-local.bin")
         let localBody = Data(repeating: 0x6C, count: 8 * 1024 * 1024)
         try localBody.write(to: localFile)

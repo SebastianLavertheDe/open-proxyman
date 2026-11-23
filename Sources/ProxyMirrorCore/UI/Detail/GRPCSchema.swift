@@ -72,6 +72,8 @@ struct GRPCSchema: Sendable {
         return isRequest ? method.input : method.output
     }
 
+    var messageTypes: [String] { messages.keys.sorted() }
+
     func contains(_ type: String) -> Bool { messages[Self.normalized(type)] != nil }
 
     fileprivate static let googleStatusType = "google.rpc.Status"

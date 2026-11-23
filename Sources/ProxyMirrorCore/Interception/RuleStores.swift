@@ -171,7 +171,8 @@ final class InterceptionConfig: @unchecked Sendable {
 
     func mappedIP(for host: String) -> String? {
         dnsSpoof.value.first {
-            $0.enabled && URLParser.isIPAddress($0.ip) && $0.matches(host: host)
+            $0.enabled && RuleOrganizationStore.shared.ruleIsEnabled(tool: "dns", id: $0.id)
+                && URLParser.isIPAddress($0.ip) && $0.matches(host: host)
         }?.ip
     }
 
@@ -180,9 +181,9 @@ final class InterceptionConfig: @unchecked Sendable {
         if let v = consolidated?.rewrite ?? RulesFileIO.load("rewrite.json") { rewrite.set(v) }
         if let v = consolidated?.breakpoints ?? RulesFileIO.load("breakpoint.json") { breakpoints.set(v) }
         if let v = consolidated?.dns ?? RulesFileIO.load("dns.json") { dnsSpoof.set(v) }
-        if let v: [ReverseProxyRule] = RulesFileIO.load("reverse.json") { reverse.set(v) }
-        if let v: ExternalProxyConfig = RulesFileIO.load("external.json") { externalProxy.set(v) }
-        if let v: H2CUpstreamConfig = RulesFileIO.load("h2c.json") { h2cUpstream.set(v) }
+        if let v = consolidated?.reverse ?? RulesFileIO.load("reverse.json") { reverse.set(v) }
+        if let v = consolidated?.external ?? RulesFileIO.load("external.json") { externalProxy.set(v) }
+        if let v = consolidated?.h2c ?? RulesFileIO.load("h2c.json") { h2cUpstream.set(v) }
     }
 
     func h2cEnabled(host: String) -> Bool {

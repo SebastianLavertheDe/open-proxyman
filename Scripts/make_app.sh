@@ -30,6 +30,15 @@ if (( TRANSPARENT )); then
   fi
 fi
 
+if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 && ( -z "${PM_DEVELOPER_ID:-}" || "${PM_DEVELOPER_ID:-}" == - ) ]]; then
+  echo 'PM_ENABLE_SPARKLE=1 需要 PM_DEVELOPER_ID；普通 ad-hoc 构建保留手动更新。' >&2
+  exit 2
+fi
+if [[ "${PM_ENABLE_SPARKLE:-0}" != 1 && ( -n "${PM_APPCAST_URL:-}" || -n "${PM_UPDATE_PUBLIC_KEY:-}" ) ]]; then
+  echo '配置签名更新源时需要同时设置 PM_ENABLE_SPARKLE=1。' >&2
+  exit 2
+fi
+
 DESTINATION="${PM_APP_PATH:-build_app/ProxyMirror.app}"
 PARENT="$(dirname "$DESTINATION")"
 mkdir -p "$PARENT"
@@ -76,6 +85,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<string>13.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>ProxyMirror 使用自动化打开带代理配置的 Terminal 或 iTerm 窗口。</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
@@ -126,6 +137,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 signature_args=(--force --sign -)
+if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 ]]; then
+  signature_args=(--force --sign "$PM_DEVELOPER_ID" --options runtime --timestamp)
+fi
 if (( TRANSPARENT )); then
   fingerprint=$(python3 Scripts/prepare_transparent_signing.py \
     "$APP" "$PM_DEVELOPER_ID" "$PM_APP_PROVISION_PROFILE" "$PM_EXTENSION_PROVISION_PROFILE")
@@ -151,6 +165,25 @@ done
 
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# Ship licenses for the embedded scripting libraries and Zstandard decoder.
+mkdir -p "$APP/Contents/Resources/ThirdParty"
+cp "ThirdParty/ScriptingLibraries.md" "$APP/Contents/Resources/ThirdParty/ScriptingLibraries.md"
+cp "Sources/ProxyMirrorZstd/LICENSE" "$APP/Contents/Resources/ThirdParty/Zstandard-LICENSE"
+
+if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 ]]; then
+  sparkle_framework=$(python3 - <<'PY'
+from pathlib import Path
+frameworks = [path for path in Path('.build/artifacts').rglob('Sparkle.framework')
+              if path.parent.name.startswith('macos-') and (path / 'Versions/B').is_dir()]
+if len(frameworks) != 1:
+    raise SystemExit('找不到唯一的 macOS Sparkle.framework，请先检查 SwiftPM artifact。')
+print(frameworks[0].resolve())
+PY
+  )
+  bash Scripts/embed_sparkle.sh "$APP" "$sparkle_framework" "$PM_DEVELOPER_ID"
+  python3 Scripts/configure_updates.py "$APP"
+fi
+
 # 图标（若存在）
 if [ -f "Resources/AppIcon.icns" ]; then
   cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
@@ -163,8 +196,19 @@ if (( TRANSPARENT )); then
   plutil -lint "$extension/Contents/Info.plist"
   codesign "${signature_args[@]}" --entitlements "$STAGING/extension.entitlements" "$extension"
   codesign --verify --strict "$extension"
-  signature_args+=(--entitlements "$STAGING/app.entitlements")
 fi
+
+# Terminal/iTerm launch uses Apple Events; preserve Network Extension entitlements.
+python3 - "$STAGING/app.entitlements" <<'PY'
+from pathlib import Path
+import plistlib
+import sys
+path = Path(sys.argv[1])
+entitlements = plistlib.loads(path.read_bytes()) if path.exists() else {}
+entitlements['com.apple.security.automation.apple-events'] = True
+path.write_bytes(plistlib.dumps(entitlements))
+PY
+signature_args+=(--entitlements "$STAGING/app.entitlements")
 
 codesign "${signature_args[@]}" --options runtime "$APP"
 codesign --verify --deep --strict "$APP"

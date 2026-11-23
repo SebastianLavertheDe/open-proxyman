@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import CryptoKit
@@ -56,6 +57,16 @@ enum LocalControl {
       ProxyMirror rules export --output 路径 [--tool 工具]
       ProxyMirror rules preview --input 路径 [--mode merge|replace]
       ProxyMirror rules apply --input 路径 --preview-token 令牌 [--mode merge|replace]
+      ProxyMirror rules 工具 list|get|add|update|delete|enable|disable [--id ID] [--input JSON文件]
+      ProxyMirror export flows|logs --format har|json|csv|session [筛选选项] [--output 路径]
+      ProxyMirror flow --id UUID
+      ProxyMirror code --id UUID --language curl|httpie|python|javascript|…
+      ProxyMirror tools list|enable|disable [--tool 工具]
+      ProxyMirror external-proxy get|set|disable [--input JSON文件]
+      ProxyMirror proxy-address
+      ProxyMirror factory-reset --confirm-reset [--delete-rules]
+      ProxyMirror install-path
+      ProxyMirror mcp config|stdio
 
     筛选选项
       --selected       只查当前视图选中的流量
@@ -63,15 +74,16 @@ enum LocalControl {
       --method 方法    按 HTTP 方法查找
       --status 状态码  按状态码查找，0 表示暂无状态
       --id UUID        按流量 ID 查找
+      --after-id UUID  只查该流量之后捕获的记录
       --limit 数量     返回最近的 N 条，默认 100，最大 1000
 
     将 --output 设为 - 可将结果写入标准输出。
-    规则导出工具支持 mapLocal、mapRemote、blockList、allowList、sslProxyingList、sslApplications、dns、breakpoints、rewrite、latency、noCaching、settings。
+    规则导出工具支持 mapLocal、mapRemote、blockList、allowList、sslProxyingList、sslApplications、customCertificates、dns、breakpoints、rewrite、latency、noCaching、reverse、external、h2c、protobuf、settings、organization。
     """
 
     private struct Request: Codable {
         enum Command: String, Codable {
-            case status, traffic, exportHAR = "export-har"
+            case status, traffic, exportHAR = "export-har", automation
             case ruleExport = "rules-export", rulePreview = "rules-preview", ruleApply = "rules-apply"
         }
 
@@ -87,13 +99,21 @@ enum LocalControl {
         var ruleMode: RuleBackup.ImportMode?
         var ruleData: Data?
         var previewToken: String?
+        var automationData: Data?
+        var afterID: UUID?
 
         func validate() throws {
             guard version == 1 else { throw LocalControlError.failed("本机命令协议版本不兼容。请使用运行中的应用内的二进制文件。") }
             switch command {
+            case .automation:
+                guard let automationData, automationData.count <= RuleBackup.fileLimit,
+                      (try? JSONSerialization.jsonObject(with: automationData)) is [String: Any] else {
+                    throw LocalControlError.usage("自动化命令必须为 \(RuleBackup.fileLimit / 1024 / 1024) MiB 以内的 JSON 对象。")
+                }
+                return
             case .rulePreview, .ruleApply:
                 guard let ruleData, ruleData.count <= RuleBackup.fileLimit, ruleMode != nil else {
-                    throw LocalControlError.usage("规则导入需要不超过 2 MiB 的备份和导入方式。")
+                    throw LocalControlError.usage("规则导入需要不超过 \(RuleBackup.fileLimit / 1024 / 1024) MiB 的备份和导入方式。")
                 }
                 if command == .ruleApply {
                     guard let token = previewToken, token.utf8.count == 64,
@@ -214,12 +234,14 @@ enum LocalControl {
         case har([SessionRecord])
         case ruleBackup(RuleBackup)
         case ruleChanges(RuleChanges)
+        case raw(Data)
 
         func encode() throws -> Data {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             encoder.dateEncodingStrategy = .iso8601
             switch self {
+            case .raw(let data): return data
             case .status(let status): return try encoder.encode(status)
             case .traffic(let rows): return try encoder.encode(rows)
             case .ruleBackup(let backup): return try backup.exportData()
@@ -231,32 +253,84 @@ enum LocalControl {
         }
     }
 
+    private static var mcpServer: MCPServer?
+
     static func start() throws -> DispatchSourceRead {
-        try LocalControlSocket.start { data in
-            do {
-                let request = try JSONDecoder().decode(Request.self, from: data)
-                try request.validate()
-                let prepared: PreparedImport?
-                switch request.command {
-                case .ruleApply, .rulePreview:
-                    prepared = try request.ruleData.map(PreparedImport.init)
-                default: prepared = nil
-                }
-                let snapshot = try DispatchQueue.main.sync {
-                    try MainActor.assumeIsolated { try capture(request, prepared: prepared) }
-                }
-                let payload = try snapshot.encode()
-                guard payload.count < LocalControlSocket.responseLimit else {
-                    throw LocalControlError.failed("结果超出 64 MiB，请缩小筛选范围。")
-                }
-                var reply = Data([0])
-                reply.append(payload)
-                return reply
-            } catch let error as LocalControlError {
-                return error.encoded
-            } catch {
-                return LocalControlError.failed(error.localizedDescription).encoded
+        let source = try LocalControlSocket.start(handler: handle)
+        if UserDefaults.standard.object(forKey: "automation.mcpEnabled") as? Bool != false {
+            do { mcpServer = try MCPServer.start() }
+            catch { NSLog("[ProxyMirror] MCP 服务启动失败：%@", error.localizedDescription) }
+        }
+        return source
+    }
+
+    static func stopAutomation() {
+        mcpServer?.stop()
+        mcpServer = nil
+    }
+
+    /// Shared dispatch path for the Unix CLI and authenticated HTTP MCP tools.
+    static func handle(_ data: Data) -> Data {
+        do {
+            let request = try JSONDecoder().decode(Request.self, from: data)
+            try request.validate()
+            let prepared: PreparedImport?
+            switch request.command {
+            case .ruleApply, .rulePreview:
+                prepared = try request.ruleData.map(PreparedImport.init)
+            default: prepared = nil
             }
+            let snapshot = try DispatchQueue.main.sync {
+                try MainActor.assumeIsolated { try capture(request, prepared: prepared) }
+            }
+            let payload = try snapshot.encode()
+            guard payload.count < LocalControlSocket.responseLimit else {
+                throw LocalControlError.failed("结果超出 64 MiB，请缩小筛选范围。")
+            }
+            var reply = Data([0])
+            reply.append(payload)
+            return reply
+        } catch let error as LocalControlError {
+            return error.encoded
+        } catch {
+            return LocalControlError.failed(error.localizedDescription).encoded
+        }
+    }
+
+    static func automationRequest(_ object: [String: Any]) throws -> Data {
+        var request = Request(version: 1, command: .automation)
+        request.automationData = try JSONSerialization.data(withJSONObject: object)
+        return try JSONEncoder().encode(request)
+    }
+
+    @MainActor
+    static func installCLI() {
+        do { AppState.shared.systemProxyMessage = "命令行已安装：\(try AutomationControl.installCLI().path)；重新打开终端后可使用 proxymirror-cli。" }
+        catch { AppState.shared.systemProxyMessage = error.localizedDescription }
+    }
+
+    @MainActor
+    static func showMCPConfiguration() {
+        let alert = NSAlert()
+        alert.messageText = "ProxyMirror MCP"
+        if let configuration = MCPServer.configuration,
+           let data = try? AutomationControl.json(configuration) {
+            let text = String(decoding: data, as: UTF8.self)
+            alert.informativeText = "HTTP MCP 仅监听本机，连接令牌每次启动更新。也可使用 proxymirror-cli mcp stdio，无需保存令牌。"
+            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
+            let content = NSTextView(frame: scroll.bounds)
+            content.string = text
+            content.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            content.isEditable = false
+            scroll.documentView = content
+            scroll.hasVerticalScroller = true
+            alert.accessoryView = scroll
+            alert.addButton(withTitle: "复制配置")
+            alert.addButton(withTitle: "关闭")
+            if alert.runModal() == .alertFirstButtonReturn { CopyPaste.copy(text) }
+        } else {
+            alert.informativeText = "MCP 服务未启动。检查 automation.mcpEnabled 设置后重新启动应用。"
+            alert.runModal()
         }
     }
 
@@ -264,6 +338,12 @@ enum LocalControl {
     private static func capture(_ request: Request, prepared: PreparedImport?) throws -> Snapshot {
         let app = AppState.shared
         switch request.command {
+        case .automation:
+            guard let data = request.automationData,
+                  let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw LocalControlError.usage("无效的自动化命令。")
+            }
+            return .raw(try AutomationControl.execute(object, app: app))
         case .status: return .status(Status(app))
         case .ruleExport: return .ruleBackup(RuleBackup.snapshot(settings: app.settings).subset(request.ruleTool))
         case .rulePreview, .ruleApply:
@@ -286,9 +366,21 @@ enum LocalControl {
 
         let scope = request.selected ? app.activeStore.selectedTransactions : app.store.transactions
         if request.selected, scope.isEmpty { throw LocalControlError.noMatches("当前视图没有选中的流量。") }
-        let matched = scope.reversed().lazy.filter(request.matches).prefix(request.limit)
+        let afterSequence: Int?
+        if let afterID = request.afterID {
+            guard let reference = app.store.transactions.first(where: { $0.id == afterID }) else {
+                throw LocalControlError.noMatches("--after-id 引用的流量已不存在。")
+            }
+            afterSequence = reference.seq
+        } else { afterSequence = nil }
+        let eligible = scope.lazy.filter { tx in
+            request.matches(tx) && (afterSequence.map { tx.seq > $0 } ?? true)
+        }
+        let matched = afterSequence == nil
+            ? Array(eligible.reversed().prefix(request.limit).reversed())
+            : Array(eligible.prefix(request.limit))
         if request.command == .traffic {
-            return .traffic(matched.reversed().map(TrafficRow.init))
+            return .traffic(matched.map(TrafficRow.init))
         }
         guard !matched.isEmpty else { throw LocalControlError.noMatches("没有符合筛选条件的流量可导出。") }
 
@@ -297,7 +389,7 @@ enum LocalControl {
         guard bodySize <= 24 * 1024 * 1024 else {
             throw LocalControlError.failed("本次导出的正文超出 24 MiB，请缩小筛选范围。")
         }
-        return .har(matched.reversed().map(SessionRecord.init))
+        return .har(matched.map(SessionRecord.init))
     }
 
     private static func token(for data: Data, mode: RuleBackup.ImportMode, current: RuleBackup) throws -> String {
@@ -314,6 +406,12 @@ enum LocalControl {
             return 0
         }
         do {
+            if arguments.first == "install-path" {
+                guard arguments.count == 1 else { throw LocalControlError.usage("install-path 无需参数。") }
+                print(try AutomationControl.installCLI().path)
+                return 0
+            }
+            if arguments == ["mcp", "stdio"] { return MCPProtocol.runStandardIO() }
             let (request, output) = try parse(arguments)
             let requestBytes = try JSONEncoder().encode(request)
             guard requestBytes.count <= LocalControlSocket.requestLimit else {
@@ -345,6 +443,12 @@ enum LocalControl {
     }
 
     private static func parse(_ arguments: [String]) throws -> (Request, String?) {
+        if let (object, output) = try AutomationControl.parseCLI(arguments) {
+            var request = Request(version: 1, command: .automation)
+            request.automationData = try JSONSerialization.data(withJSONObject: object)
+            try request.validate()
+            return (request, output)
+        }
         if arguments.first == "rules" { return try parseRules(arguments.dropFirst()) }
         guard let name = arguments.first, let command = Request.Command(rawValue: name) else {
             throw LocalControlError.usage("未知命令。运行 ProxyMirror --help 查看用法。")
@@ -365,7 +469,7 @@ enum LocalControl {
                 request.selected = true
                 continue
             }
-            guard ["--url", "--method", "--status", "--id", "--limit", "--output"].contains(flag) else {
+            guard ["--url", "--method", "--status", "--id", "--after-id", "--limit", "--output"].contains(flag) else {
                 throw LocalControlError.usage("未知参数 \(flag)。")
             }
             guard let value = remaining.next(), !value.isEmpty, !value.hasPrefix("--") else {
@@ -377,6 +481,9 @@ enum LocalControl {
             case "--status":
                 guard let status = Int(value) else { throw LocalControlError.usage("--status 需要整数。") }
                 request.status = status
+            case "--after-id":
+                guard let id = UUID(uuidString: value) else { throw LocalControlError.usage("--after-id 需要有效的 UUID。") }
+                request.afterID = id
             case "--id":
                 guard let id = UUID(uuidString: value) else { throw LocalControlError.usage("--id 需要有效的 UUID。") }
                 request.id = id

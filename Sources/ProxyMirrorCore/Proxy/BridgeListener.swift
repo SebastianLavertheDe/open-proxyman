@@ -7,8 +7,8 @@ final class BridgeListener: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ProxyMirror.bridge", qos: .utility)
     private let listener: NWListener
     private let pairing = BridgeWire.Pairing()
-    private let device: IPv4Address
-    private let deviceAddress: String
+    private let policy: NetworkAccessPolicy
+    private var peerAddresses: [UUID: String] = [:]
     private let deliver: @MainActor @Sendable (BridgeWire.Capture, String) -> Void
     private var clients: [UUID: NWConnection] = [:]
     private var seen = Set<UUID>()
@@ -18,16 +18,21 @@ final class BridgeListener: @unchecked Sendable {
 
     var pairingCode: String { pairing.code }
 
-    init(address: String, device: String,
+    convenience init(address: String, device: String,
          deliver: @escaping @MainActor @Sendable (BridgeWire.Capture, String) -> Void) throws {
-        guard let local = IPv4Address(address), let device = IPv4Address(device) else {
+        guard NumericIPAddress(device) != nil else { throw ProxyError.invalidLANAccess }
+        try self.init(address: address, policy: NetworkAccessPolicy(ranges: [device]), deliver: deliver)
+    }
+
+    init(address: String, policy: NetworkAccessPolicy,
+         deliver: @escaping @MainActor @Sendable (BridgeWire.Capture, String) -> Void) throws {
+        guard let local = NumericIPAddress(address), local.isUnicast, !policy.ranges.isEmpty else {
             throw ProxyError.invalidLANAccess
         }
-        self.device = device
-        deviceAddress = device.debugDescription
+        self.policy = policy
         self.deliver = deliver
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(local), port: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(address), port: .any)
         listener = try NWListener(using: parameters)
         listener.service = NWListener.Service(name: pairing.name, type: BridgeWire.serviceType)
     }
@@ -47,17 +52,24 @@ final class BridgeListener: @unchecked Sendable {
             listener.cancel()
             for client in clients.values { client.cancel() }
             clients.removeAll()
+            peerAddresses.removeAll()
         }
     }
 
     private func accept(_ client: NWConnection) {
-        guard !stopped, clients.count < 8, pending < 8,
-              case .hostPort(.ipv4(let peer), _) = client.endpoint, peer == device else {
+        let address: String
+        switch client.endpoint {
+        case .hostPort(.ipv4(let peer), _): address = peer.debugDescription
+        case .hostPort(.ipv6(let peer), _): address = peer.debugDescription
+        default: client.cancel(); return
+        }
+        guard !stopped, clients.count < 8, pending < 8, policy.allows(address) else {
             client.cancel()
             return
         }
         let id = UUID()
         clients[id] = client
+        peerAddresses[id] = address
         client.start(queue: queue)
         client.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self] data, _, _, error in
             guard let self, self.clients[id] != nil else { return }
@@ -85,9 +97,10 @@ final class BridgeListener: @unchecked Sendable {
             }
             self.seenOrder.append(capture.header.id)
             if self.seenOrder.count > 1024 { self.seen.remove(self.seenOrder.removeFirst()) }
+            guard let peer = self.peerAddresses[id] else { self.finish(id); return }
             self.pending += 1
             Task { @MainActor in
-                self.deliver(capture, self.deviceAddress)
+                self.deliver(capture, peer)
                 self.queue.async {
                     self.pending -= 1
                     self.clients[id]?.send(content: Data([1]), completion: .contentProcessed { _ in
@@ -99,6 +112,7 @@ final class BridgeListener: @unchecked Sendable {
     }
 
     private func finish(_ id: UUID) {
+        peerAddresses.removeValue(forKey: id)
         clients.removeValue(forKey: id)?.cancel()
     }
 }

@@ -13,6 +13,7 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
             try checkRules(assertions)
             try checkCustomCertificateBackup(assertions)
             try checkTunnelRuleEnforcement(assertions)
+            try checkWorkbench(assertions)
         case .trafficStore: try checkTrafficStore(assertions)
         case .composeAndPersistence:
             try checkComposeAndPersistence(assertions)
@@ -21,13 +22,16 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
         case .settings:
             checkSettings(assertions)
             try checkSettingsRuntime(assertions)
+            checkUpdateConfiguration(assertions)
         case .grpc: try checkGRPC(assertions)
         case .capture: checkCapture(assertions)
         case .contentCoding:
             checkContentCoding(assertions)
             checkInspectionBodies(assertions)
             checkDetailInspection(assertions)
-        case .deviceAutomation: checkDeviceAutomation(assertions)
+        case .deviceAutomation:
+            checkDeviceAutomation(assertions)
+            try checkProtocolAutomation(assertions)
         case .sse:
             checkSSE(assertions)
             try checkSSEInspection(assertions)

@@ -1,5 +1,9 @@
 // swift-tools-version: 5.9
 import PackageDescription
+import Foundation
+
+// Distribution builds may opt into the signed Sparkle update framework.
+let includeSparkle = ProcessInfo.processInfo.environment["PM_ENABLE_SPARKLE"] == "1"
 
 let package = Package(
     name: "ProxyMirror",
@@ -20,7 +24,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.60.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.25.0"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", exact: "1.38.0"),
-    ],
+    ] + (includeSparkle ? [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")] : []),
     targets: [
         // 核心库：代理引擎 + 数据层 + 系统集成 + UI 组件
         .target(
@@ -28,6 +32,8 @@ let package = Package(
             dependencies: [
                 "ProxyMirrorAuthorizedInstaller",
                 "ProxyMirrorSystemProxy",
+                "ProxyMirrorZstd",
+                "ProxyMirrorProtocolSupport",
                 .product(name: "ProxyMirrorBridgeKit", package: "ProxyMirrorBridgeKit"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "Crypto", package: "swift-crypto"),
@@ -38,16 +44,20 @@ let package = Package(
                 .product(name: "NIOTLS", package: "swift-nio"),
                 .product(name: "NIOHTTP2", package: "swift-nio-http2"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
-            ],
+            ] + (includeSparkle ? [.product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS]))] : []),
             path: "Sources/ProxyMirrorCore"
         ),
         // 应用壳
         .executableTarget(
             name: "ProxyMirror",
             dependencies: ["ProxyMirrorCore"],
-            path: "Sources/ProxyMirror"
+            path: "Sources/ProxyMirror",
+            linkerSettings: includeSparkle ? [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                                                         "-Xlinker", "-headerpad_max_install_names"], .when(platforms: [.macOS]))] : []
         ),
         .executableTarget(name: "ProxyMirrorScriptWorker"),
+        .target(name: "ProxyMirrorZstd", exclude: ["LICENSE", "UPSTREAM.md"]),
+        .target(name: "ProxyMirrorProtocolSupport"),
         .target(name: "ProxyMirrorAuthorizedInstaller"),
         .target(name: "ProxyMirrorSystemProxy"),
         .executableTarget(name: "ProxyMirrorSystemProxyHelper", dependencies: ["ProxyMirrorSystemProxy"]),

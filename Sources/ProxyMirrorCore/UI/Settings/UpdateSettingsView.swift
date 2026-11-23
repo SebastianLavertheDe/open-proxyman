@@ -1,0 +1,48 @@
+import SwiftUI
+
+@MainActor
+struct UpdateSettingsView: View {
+    @ObservedObject private var updates = AppUpdateController.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("更新与变更日志").font(.title2)
+            Text("ProxyMirror \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建")")
+                .foregroundStyle(.secondary)
+            Text(updates.status).fixedSize(horizontal: false, vertical: true)
+            Toggle("自动检查更新", isOn: Binding(
+                get: { updates.automaticallyChecksForUpdates },
+                set: { updates.setAutomaticallyChecksForUpdates($0) }
+            )).disabled(!updates.automaticUpdatesAvailable)
+            if let checked = updates.lastUpdateCheck {
+                Text("上次检查：\(checked.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let feed = updates.configuredFeed {
+                Text("更新源：\(feed.absoluteString)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            HStack {
+                Button(updates.checkMenuTitle) { updates.checkForUpdates() }
+                    .disabled(!updates.canCheckForUpdates)
+                Button("变更日志…") { updates.openReleaseNotes() }
+            }
+            if !updates.automaticUpdatesAvailable {
+                Link("项目 Releases", destination: AppUpdateController.releasesURL)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(22).frame(width: 560, height: 310)
+        .onAppear { updates.startIfConfigured() }
+    }
+}
+
+/// Insert in an app-info CommandGroup; state changes keep the menu's enabled state current.
+@MainActor
+struct AppUpdateMenuItems: View {
+    @ObservedObject private var updates = AppUpdateController.shared
+    var body: some View {
+        Button(updates.checkMenuTitle) { updates.checkForUpdates() }
+            .disabled(!updates.canCheckForUpdates)
+        Button("变更日志…") { updates.openReleaseNotes() }
+    }
+}

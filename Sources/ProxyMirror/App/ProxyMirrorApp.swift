@@ -5,6 +5,8 @@ struct ProxyMirrorMainApp: App {
     @NSApplicationDelegateAdaptor(ProxyMirrorLifecycle.self) private var lifecycle
     @StateObject private var appState = AppState.shared
     @AppStorage(ProxyMirrorAppearance.key) private var appearance = ProxyMirrorAppearance.system
+    @AppStorage("ui.showMenuBarIcon") private var showMenuBarIcon = false
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         WindowGroup("ProxyMirror") {
@@ -37,6 +39,17 @@ struct ProxyMirrorMainApp: App {
         }
         .defaultSize(width: 1020, height: 610)
 
+        toolScenes
+
+        MenuBarExtra("ProxyMirror", systemImage: "network", isInserted: $showMenuBarIcon) {
+            Button(appState.proxyRunning ? "停止监听" : "启动监听", action: appState.toggleProxy)
+            Button(appState.recordingEnabled ? "暂停录制" : "恢复录制", action: appState.toggleRecording)
+            Divider()
+            Text("127.0.0.1:\(appState.settings.port)")
+            Button("显示 ProxyMirror") { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil) }
+            Button("退出") { NSApp.terminate(nil) }
+        }
+
         // 双击/独立详情窗口
         WindowGroup("Request Detail", id: "request-detail", for: String.self) { $id in
             DetachedDetailView(txID: id)
@@ -46,11 +59,55 @@ struct ProxyMirrorMainApp: App {
         .windowResizability(.contentMinSize)
     }
 
+    @SceneBuilder
+    private var toolScenes: some Scene {
+        Window("流量对比", id: "traffic-diff") {
+            TrafficDiffWorkspaceView(appState: appState)
+                .preferredColorScheme(appearance.colorScheme)
+        }.defaultSize(width: 1100, height: 680)
+
+        Window("流量汇总", id: "flow-summary") {
+            FlowSummaryView(store: appState.activeStore)
+                .preferredColorScheme(appearance.colorScheme)
+        }.defaultSize(width: 700, height: 500)
+
+        Window("自定义预览器", id: "custom-previewers") {
+            CustomPreviewerManagerView().preferredColorScheme(appearance.colorScheme)
+        }.defaultSize(width: 840, height: 540)
+
+        Window("Protobuf", id: "protobuf") {
+            ProtobufRulesView().preferredColorScheme(appearance.colorScheme)
+        }.defaultSize(width: 920, height: 600)
+
+        Window("规则文件夹", id: "rule-folders") {
+            RuleOrganizationView().preferredColorScheme(appearance.colorScheme)
+        }.defaultSize(width: 900, height: 580)
+
+        Window("自动化", id: "automation") {
+            AutomationDashboardView().preferredColorScheme(appearance.colorScheme)
+        }.defaultSize(width: 820, height: 580)
+
+        Window("软件更新", id: "updates") { UpdateSettingsView() }
+            .defaultSize(width: 560, height: 360)
+
+        Window("ProxyMirror 使用指南", id: "help-guide") { HelpGuideView() }
+            .defaultSize(width: 780, height: 520)
+
+    }
+
     @CommandsBuilder
     private var proxyCommands: some Commands {
+        CommandGroup(after: .appInfo) { AppUpdateMenuItems() }
         CommandGroup(after: .newItem) {
             Button("打开会话或 HAR…") { appState.openSession() }.keyboardShortcut("o")
             Button("导入 Charles 会话…") { appState.importCharlesSession() }
+            Menu("最近打开") {
+                ForEach(NSDocumentController.shared.recentDocumentURLs, id: \.self) { url in
+                    Button(url.lastPathComponent) { appState.openSession(url) }
+                }
+                Divider()
+                Button("清除菜单") { NSDocumentController.shared.clearRecentDocuments(nil) }
+            }
             Button("保存会话…") { appState.saveSession() }.keyboardShortcut("s")
             Button("保存所选为会话…") { appState.saveSession(onlySelection: true) }
                 .disabled(appState.activeStore.selectedIDs.isEmpty)
@@ -70,6 +127,13 @@ struct ProxyMirrorMainApp: App {
                 appState.copyText(appState.activeStore.selectedTransactions.map(ExportService.httpieCommand).joined(separator: "\n"))
             }
             .disabled(appState.activeStore.selectedIDs.isEmpty)
+            Menu("复制为代码") {
+                ForEach(RequestCode.Format.allCases, id: \.self) { format in
+                    Button(format.title) {
+                        if let tx = appState.activeStore.selectedTransaction { appState.copyText(RequestCode.generate(tx, format: format)) }
+                    }.disabled(appState.activeStore.selectedTransaction.map { !RequestCode.supported(format, for: $0) } ?? true)
+                }
+            }
         }
         // View 菜单（对齐 Proxyman View）
         CommandGroup(after: .sidebar) {
@@ -100,6 +164,9 @@ struct ProxyMirrorMainApp: App {
             Button("切换分屏") { appState.toggleSplit() }
             Button("详情停靠在底部") { appState.dockRight = false }
             Button("详情停靠在右侧") { appState.dockRight = true }
+            Button("窗口始终置顶") {
+                if let window = NSApp.keyWindow { window.level = window.level == .floating ? .normal : .floating }
+            }
         }
         // Flow 菜单（对齐 Proxyman Flow）
         CommandMenu("数据流") {
@@ -109,8 +176,9 @@ struct ProxyMirrorMainApp: App {
                 .disabled(appState.activeStore.selectedIDs.isEmpty)
             Button("对比所选响应…") { appState.openComparison() }
                 .disabled(appState.activeStore.selectedIDs.count != 2)
-            Button("打开对比池（\(appState.diffPool.count)/2）…") { appState.openComparison(usePool: true) }
-                .disabled(appState.diffPool.count != 2)
+            Button("打开对比池（\(appState.diffPool.count)）…") { openWindow(id: "traffic-diff") }
+            Button("加入对比池") { appState.addToDiffPool(appState.activeStore.selectedTransactions) }
+                .keyboardShortcut("y", modifiers: .command).disabled(appState.activeStore.selectedIDs.isEmpty)
             Button("清空对比池") { appState.clearDiffPool() }.disabled(appState.diffPool.isEmpty)
             Button("Edit and Repeat…") { appState.editSelected(sendAndRepeat: true) }
                 .keyboardShortcut("R", modifiers: [.command, .shift])
@@ -126,6 +194,7 @@ struct ProxyMirrorMainApp: App {
                     .disabled(appState.activeStore.selectedIDs.isEmpty)
                 Button("as CSV") { ExportService.exportCSV(appState.activeStore.selectedTransactions) }
                     .disabled(appState.activeStore.selectedIDs.isEmpty)
+                Button("发布到 GitHub Gist…") { appState.showGistPublish = true }
             }
             .disabled(appState.activeStore.selectedIDs.isEmpty)
             Divider()
@@ -194,12 +263,37 @@ struct ProxyMirrorMainApp: App {
                 Button("停止应用内捕获") { appState.stopBridgeCapture() }
             }
             Button("自定义流量列…") { appState.showColumnEditor = true }
+            Button("自定义预览器…") { openWindow(id: "custom-previewers") }
+            Button("Protobuf Schema 与映射…") { openWindow(id: "protobuf") }
+            Button("流量汇总…") { openWindow(id: "flow-summary") }
+            Button("自动化 Dashboard…") { openWindow(id: "automation") }
+            ToolsEnableMenu()
+            Button("管理规则文件夹…") { openWindow(id: "rule-folders") }
             Button("自定义工具栏…") {
                 NSApp.windows.first { $0.isVisible && $0.toolbar?.allowsUserCustomization == true }?
                     .toolbar?.runCustomizationPalette(nil)
             }
         }
         CommandMenu("证书") { CertificateMenuContent() }
+        CommandGroup(replacing: .help) {
+            Button("入门、故障排查与数据恢复…") { openWindow(id: "help-guide") }
+            Button("安装 proxymirror-cli 到 PATH…") { LocalControl.installCLI() }
+            Button("查看 MCP 连接配置") { LocalControl.showMCPConfiguration() }
+            Button("软件更新设置…") { openWindow(id: "updates") }
+            Divider()
+            Button("复制调试信息") { appState.copyText(AppDiagnostics.debugInfo()) }
+            Button("打开用户数据文件夹") { AppDiagnostics.openDataFolder() }
+            Button("打开备份文件夹") { AppDiagnostics.openDataFolder(backups: true) }
+            Button("备份规则与设置") {
+                do { let url = try AppDiagnostics.backup(); NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                catch { appState.systemProxyMessage = error.localizedDescription }
+            }
+            Toggle("调试模式", isOn: Binding(get: { UserDefaults.standard.bool(forKey: "diagnostics.debugMode") },
+                set: { UserDefaults.standard.set($0, forKey: "diagnostics.debugMode"); DiagnosticLog.record("debug mode enabled") }))
+            Button("显示诊断日志") { NSWorkspace.shared.activateFileViewerSelecting([DiagnosticLog.fileURL]) }
+            Button("恢复系统代理") { appState.stopSystemProxy() }.disabled(!appState.systemProxyActive || appState.systemProxyBusy)
+            Button("恢复默认设置…") { appState.showFactoryReset = true }
+        }
     }
 }
 
@@ -208,6 +302,7 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
     private var localControl: DispatchSourceRead?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppUpdateController.shared.startIfConfigured()
         do {
             localControl = try LocalControl.start()
         } catch {
@@ -217,6 +312,7 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         localControl?.cancel()
+        LocalControl.stopAutomation()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -246,7 +342,7 @@ struct DetachedDetailView: View {
            let id = UUID(uuidString: String(parts[1])),
            let tx = appState.detachedTransaction(workspace: workspace, id: id) {
             VStack(spacing: 0) {
-                DetailContentView(tx: tx, store: appState.store)
+                DetailContentView(tx: tx, store: appState.store, navigationEnabled: false)
             }
             .frame(minWidth: 720, minHeight: 480)
             .navigationTitle(tx.host)

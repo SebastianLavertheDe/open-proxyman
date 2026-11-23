@@ -35,6 +35,8 @@ struct ComposeRequestView: View {
     @State private var task: ComposeService.RequestTask?
     @State private var importingCurl = false
     @State private var curlText = ""
+    @State private var timeoutSeconds = 60
+    @State private var followRedirects = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -60,10 +62,8 @@ struct ComposeRequestView: View {
                         }
                         .pickerStyle(.segmented)
                         Menu("模板") {
-                            Button("GET") { load(.init(method: "GET", url: "", headers: [], body: nil)) }
-                            Button("POST JSON") {
-                                load(.init(method: "POST", url: "",
-                                           headers: [("Content-Type", "application/json")], body: Data("{}".utf8)))
+                            ForEach(ComposeService.Template.allCases) { template in
+                                Button(template.rawValue) { load(template.request(url: url)) }
                             }
                             Button("导入 cURL…") { importingCurl = true }
                         }
@@ -74,6 +74,17 @@ struct ComposeRequestView: View {
                             }
                         }
                         .disabled(appState.composeHistory.isEmpty)
+                    }
+                    HStack {
+                        Picker("超时", selection: $timeoutSeconds) {
+                            Text("不限制").tag(0); Text("15 秒").tag(15); Text("30 秒").tag(30); Text("60 秒").tag(60)
+                            if ![0, 15, 30, 60].contains(timeoutSeconds) { Text("\(timeoutSeconds) 秒").tag(timeoutSeconds) }
+                        }.frame(width: 165)
+                        Toggle("跟随重定向", isOn: $followRedirects)
+                    }
+                    if url.hasPrefix("ws://") || url.hasPrefix("wss://") {
+                        Text("WebSocket：正文作为首条消息发送，收到一条消息后关闭。WSS 使用系统证书信任。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     if rawMode {
                         editor("HTTP 报文", text: $rawText)
@@ -121,6 +132,7 @@ struct ComposeRequestView: View {
         .padding(16)
         .frame(width: 780, height: 520)
         .onAppear {
+            if appState.composeHistory.isEmpty { appState.composeHistory = ComposeService.loadHistory() }
             if let transaction {
                 if let request = ComposeService.replayRequest(from: transaction) {
                     load(request)
@@ -165,6 +177,8 @@ struct ComposeRequestView: View {
 
     private func load(_ request: ComposeService.ParsedRequest) {
         method = request.method
+        timeoutSeconds = request.timeoutSeconds
+        followRedirects = request.followRedirects
         if var components = URLComponents(string: request.url) {
             query = components.percentEncodedQuery ?? ""
             components.percentEncodedQuery = nil
@@ -180,7 +194,12 @@ struct ComposeRequestView: View {
     }
 
     private func parsed() -> ComposeService.ParsedRequest? {
-        if rawMode { return ComposeService.parse(rawText) }
+        if rawMode {
+            var request = ComposeService.parse(rawText)
+            request?.timeoutSeconds = timeoutSeconds
+            request?.followRedirects = followRedirects
+            return request
+        }
         guard var components = URLComponents(string: url.trimmingCharacters(in: .whitespacesAndNewlines)),
               components.host != nil else { return nil }
         if !query.isEmpty {
@@ -191,6 +210,8 @@ struct ComposeRequestView: View {
         let raw = "\(method) \(target) HTTP/1.1\n\(headers)\n\n\(bodyText)"
         guard var request = ComposeService.parse(raw) else { return nil }
         if let binaryBody { request.body = binaryBody }
+        request.timeoutSeconds = timeoutSeconds
+        request.followRedirects = followRedirects
         return request
     }
 
@@ -220,12 +241,13 @@ struct ComposeRequestView: View {
         let proxyPort = direct ? nil : ProxyEngine.shared.port
         appState.composeHistory.insert(request, at: 0)
         if appState.composeHistory.count > 20 { appState.composeHistory.removeLast() }
+        ComposeService.saveHistory(appState.composeHistory)
         task = ComposeService.execute(request, proxyPort: proxyPort) { tx in
             task = nil
             result = tx
             if proxyPort == nil || tx.state == .failed { appState.store.add(tx) }
         }
-        if task == nil { error = "URL 必须使用 http 或 https。" }
+        if task == nil { error = "URL 必须使用 http、https、ws 或 wss；WebSocket 方法为 GET。" }
     }
 }
 
@@ -245,12 +267,20 @@ struct RulesEditorView: View {
     @State private var newHeaders = ""
     @State private var editing: ProxyRule?
     @State private var error: String?
+    @State private var folders: [RuleFolder] = []
+    @State private var folderAssignments: [UUID: String] = [:]
 
     var body: some View {
         VStack(spacing: 10) {
             HStack {
                 Text(kind.rawValue).font(.system(size: 13, weight: .semibold))
                 Spacer()
+                Menu("移到文件夹") {
+                    Button("未分组") { for id in selection { folderAssignments[id] = "" } }
+                    ForEach(folders) { folder in
+                        Button(folderPath(folder)) { for id in selection { folderAssignments[id] = folder.id.uuidString } }
+                    }
+                }.disabled(selection.isEmpty)
                 Button("编辑") { if let currentRule { edit(currentRule) } }.disabled(currentRule == nil)
                 Button { move(-1) } label: { Image(systemName: "arrow.up") }
                     .help("提前执行").disabled(currentIndex == nil || currentIndex == 0)
@@ -293,7 +323,36 @@ struct RulesEditorView: View {
         .onAppear {
             rules = bindingRules.wrappedValue
             newPattern = initialPattern
+            if let toolKey { folders = RuleOrganizationStore.shared.folders(tool: toolKey) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .ruleOrganizationChanged)) { _ in
+            if let toolKey { folders = RuleOrganizationStore.shared.folders(tool: toolKey) }
+        }
+    }
+
+    private var toolKey: String? {
+        switch kind {
+        case .mapLocal: return RuleBackup.Section.mapLocal.rawValue
+        case .mapRemote: return RuleBackup.Section.mapRemote.rawValue
+        case .blockList: return RuleBackup.Section.blockList.rawValue
+        case .allowList: return RuleBackup.Section.allowList.rawValue
+        case .sslProxyingList: return RuleBackup.Section.sslProxyingList.rawValue
+        default: return nil
+        }
+    }
+
+    private func folderID(for rule: ProxyRule) -> UUID? {
+        if let pending = folderAssignments[rule.id] { return UUID(uuidString: pending) }
+        guard let toolKey else { return nil }
+        return RuleOrganizationStore.shared.folderID(ruleID: rule.id.uuidString, tool: toolKey)
+    }
+
+    private func folderPath(_ folder: RuleFolder) -> String {
+        var names = [folder.name], parent = folder.parentID, seen: Set<UUID> = [folder.id]
+        while let id = parent, let ancestor = folders.first(where: { $0.id == id }), seen.insert(id).inserted {
+            names.insert(ancestor.name, at: 0); parent = ancestor.parentID
+        }
+        return names.joined(separator: " / ")
     }
 
     private var bindingRules: Binding<[ProxyRule]> {
@@ -333,6 +392,9 @@ struct RulesEditorView: View {
                         }
                     }
                     Spacer()
+                    if let id = folderID(for: rule), let folder = folders.first(where: { $0.id == id }) {
+                        Label(folderPath(folder), systemImage: "folder").font(.caption).foregroundStyle(.secondary)
+                    }
                     if !rule.comment.isEmpty {
                         Text(rule.comment).font(.system(size: 11)).foregroundColor(.secondary)
                     }
@@ -445,6 +507,19 @@ struct RulesEditorView: View {
         case .allowList: config.allowList = rules
         case .sslProxyingList: config.sslProxyingList = rules
         case .compose, .dnsMapping, .reverseProxy, .sslApplications, .customCertificates: return
+        }
+        if let toolKey {
+            var organization = config.organization ?? RuleOrganizationStore.shared.snapshot()
+            let existing = Set(rules.map { $0.id.uuidString })
+            organization.assignments = organization.assignments.filter { key, _ in
+                !key.hasPrefix(toolKey + ":") || existing.contains(String(key.dropFirst(toolKey.count + 1)))
+            }
+            for (ruleID, folderID) in folderAssignments where existing.contains(ruleID.uuidString) {
+                let key = toolKey + ":" + ruleID.uuidString
+                if folderID.isEmpty { organization.assignments.removeValue(forKey: key) }
+                else { organization.assignments[key] = folderID }
+            }
+            config.organization = organization
         }
         try RulesStore.shared.install(config)
     }

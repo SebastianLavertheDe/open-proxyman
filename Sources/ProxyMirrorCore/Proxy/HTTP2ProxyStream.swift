@@ -8,16 +8,17 @@ func configureHTTP2Proxy(_ channel: Channel, engine: ProxyEngine, host: String, 
                          transparentFlow: TransparentProxyFlow? = nil) -> EventLoopFuture<Void> {
     let pool = HTTP2UpstreamPool(downstream: channel, listenerPort: engine.port)
     let client = channel.remoteAddress
-    return channel.configureHTTP2Pipeline(mode: .server, inboundStreamInitializer: { stream in
-        stream.eventLoop.makeCompletedFuture {
-            try stream.pipeline.syncOperations.addHandlers([
-                HTTP2HeaderValidation(),
-                HTTP2FramePayloadToHTTP1ServerCodec(),
-                HTTP2ProxyStream(engine: engine, pool: pool, authorityHost: host, authorityPort: port, client: client,
-                                 clientApplication: clientApplication, transparentFlow: transparentFlow),
-            ])
-        }
-    }).map { _ in () }
+    return channel.configureHTTP2Pipeline(mode: .server,
+        initialLocalSettings: nioDefaultSettings + [HTTP2Setting(parameter: .enableConnectProtocol, value: 1)],
+        inboundStreamInitializer: { stream in
+            stream.eventLoop.makeCompletedFuture {
+                try stream.pipeline.syncOperations.addHandlers([
+                    HTTP2HeaderValidation(),
+                    HTTP2ProxyStreamRouter(engine: engine, pool: pool, host: host, port: port, client: client,
+                        application: clientApplication, transparent: transparentFlow),
+                ])
+            }
+        }).map { _ in Void() }
 }
 
 final class HTTP2ProxyStream: ChannelInboundHandler {
@@ -249,6 +250,10 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             for name in ["if-none-match", "if-modified-since", "if-unmodified-since"] { headers.remove(name: name) }
         }
         removeResponseCacheHeaders = rules.noCaching
+        if UserDefaults.standard.bool(forKey: "proxy.appendDiagnosticHeaders") {
+            headers.replaceOrAdd(name: "x-proxymirror-request-id", value: tx.id.uuidString)
+            headers.replaceOrAdd(name: "x-proxymirror-version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development")
+        }
         tx.requestHeaders = Self.capturedHeaders(headers)
         tx.resolvedAddress = InterceptionConfig.shared.mappedIP(for: tx.host)
         simulation = LatencyConditions.snapshot().sample(for: tx.host)
@@ -299,8 +304,9 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
 
     private func startInterception(_ head: BreakpointHead, phase: BreakpointRule.Phase) -> Bool {
         guard let target = originalTarget, let downstream else { return false }
-        let rule = BreakpointManager.enabledSnapshot.value ? InterceptionConfig.shared.breakpoints.value.first {
-            $0.enabled && $0.rule.enabled && $0.phase == phase &&
+        let rule = BreakpointManager.enabledSnapshot.value && RuleOrganizationStore.shared.isEnabled("breakpoints") ? InterceptionConfig.shared.breakpoints.value.first {
+            $0.enabled && RuleOrganizationStore.shared.ruleIsEnabled(tool: "breakpoints", id: $0.id) &&
+                $0.rule.enabled && $0.phase == phase &&
                 $0.rule.matches(method: target.method, scheme: target.scheme, host: target.host,
                                 path: target.path, query: target.query, fullURL: target.url,
                                 graphqlName: graphqlOperation)
@@ -413,12 +419,36 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                 loop.execute { [weak self] in
                     guard let self, self.gate?.id == id else { return }
                     if script.phase == .request { self.graphqlOperation = result.graphqlOperationName }
-                    self.releaseInterception(id, head: result.head, body: result.body, logs: result.logs)
+                    if script.phase == .request, let mock = result.mockResponse {
+                        self.releaseMockInterception(id, head: result.head, body: result.body, mock: mock, logs: result.logs)
+                    } else {
+                        self.releaseInterception(id, head: result.head, body: result.body, logs: result.logs)
+                    }
                 }
             }
         } else {
             releaseInterception(id, head: head, body: edit?.body, logs: [])
         }
+    }
+
+    private func releaseMockInterception(_ id: UUID, head: BreakpointHead, body: Data?,
+                                         mock: ScriptingMockResponse, logs: [String]) {
+        guard gate?.id == id, let tx = transaction, let stage = takeInterception(), !responseEnded,
+              case .request(let edited) = head else { return }
+        if let label = stage.label { tx.breakpointRules.append(label) }
+        if !logs.isEmpty { tx.appendScriptingLogs(logs) }
+        tx.requestHeaders = edited.headers
+        if let body {
+            if !body.isEmpty { recordRequestBody(ByteBuffer(bytes: body)) }
+        } else {
+            for part in queuedRequest {
+                if case .body(.byteBuffer(let bytes)) = part { recordRequestBody(bytes) }
+            }
+        }
+        tx.requestBodyComplete = requestEnded
+        publish(tx)
+        sendLocal(status: mock.status, type: mock.headers.value(of: "Content-Type") ?? "text/plain; charset=utf-8",
+                  body: ByteBuffer(bytes: mock.body), contentLength: mock.body.count, headers: mock.headers)
     }
 
     private func releaseInterception(_ id: UUID, head: BreakpointHead, body: Data?, logs: [String]) {

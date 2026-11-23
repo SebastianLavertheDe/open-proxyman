@@ -6,9 +6,11 @@ import NIOSSL
 import NIOTLS
 
 extension ExternalProxyConfig {
-    func applies(to host: String) -> Bool {
-        guard enabled else { return false }
+    func applies(to host: String, respectGlobalSwitch: Bool = true) -> Bool {
+        guard enabled, !respectGlobalSwitch || RuleOrganizationStore.shared.isEnabled("external") else { return false }
         guard let host = ExternalProxyHost(host) else { return true }
+        // Local services are always reached directly, including IPv4-mapped IPv6 loopback.
+        guard !host.isLoopback else { return false }
         return !(bypassHosts ?? []).contains { pattern in
             let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.hasPrefix("*.") {
@@ -112,6 +114,14 @@ enum ExternalProxyConnector {
         guard let endpoint = ExternalProxyHost(config.host), let target = ExternalProxyHost(host),
               (1...65535).contains(port) else {
             return loop.makeFailedFuture(ExternalProxyError("外部代理目标地址无效。"))
+        }
+        if target.isLoopback {
+            guard port != localListenerPort else {
+                return loop.makeFailedFuture(ExternalProxyError("目标不能指向 ProxyMirror 自身监听端口。"))
+            }
+            return ClientBootstrap(group: loop).connectTimeout(timeout)
+                .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+                .channelInitializer(initialize).connect(host: target.name, port: port)
         }
         if endpoint.name == target.name && config.port == port {
             return loop.makeFailedFuture(ExternalProxyError("目标与外部代理地址相同。"))

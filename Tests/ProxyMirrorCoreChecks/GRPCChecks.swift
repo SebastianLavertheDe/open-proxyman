@@ -37,6 +37,7 @@ func checkGRPC(_ test: CoreAssertions) throws {
           "gRPC: trailers override initial status and decode status message")
 
     try checkGRPCWeb(test)
+    try checkNetworkProtobufTools(test, descriptor: schemaBytes)
 
     // A complete 1 MiB + 1 frame is listed but exceeds the decoding limit.
     let oversized = Data([0, 0, 0x10, 0, 1]) + Data(repeating: 0, count: GRPCFrames.maxPayload + 1)

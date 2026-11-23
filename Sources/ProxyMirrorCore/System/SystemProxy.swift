@@ -31,7 +31,7 @@ final class SystemProxyController {
             }
 
             let connection = NSXPCConnection(machServiceName: SystemProxyService.name, options: .privileged)
-            connection.remoteObjectInterface = NSXPCInterface(with: SystemProxyServiceProtocol.self)
+            connection.remoteObjectInterface = SystemProxyService.interface()
             connection.setCodeSigningRequirement(
                 SystemProxyService.requirement(identifier: SystemProxyService.name, hash: helperHash))
             let id = UUID()
@@ -46,7 +46,11 @@ final class SystemProxyController {
             }
             connection.resume()
             do {
-                try Self.request(on: connection) { $0.enable(Int(port), reply: $1) }
+                if let hosts = SystemProxyBypass.savedHosts {
+                    try Self.request(on: connection) { $0.enableWithBypass(Int(port), hosts: hosts, reply: $1) }
+                } else {
+                    try Self.request(on: connection) { $0.enable(Int(port), reply: $1) }
+                }
                 self.session = (id, connection)
             } catch {
                 connection.invalidate()
@@ -61,6 +65,14 @@ final class SystemProxyController {
             try Self.request(on: connection) { $0.restore(reply: $1) }
             self.session = nil
             connection.invalidate()
+        }
+    }
+
+    func updateBypass(_ hosts: [String]?, completion: @escaping (Bool, String) -> Void) {
+        run(completion: completion) {
+            guard let connection = self.session?.connection else { throw SystemProxyError("请先接管系统代理。") }
+            if let hosts, let issue = SystemProxyBypassList.validationError(hosts) { throw SystemProxyError(issue) }
+            try Self.request(on: connection) { $0.updateBypass(hosts, reply: $1) }
         }
     }
 

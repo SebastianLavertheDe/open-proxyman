@@ -43,7 +43,8 @@ struct RuleBackupView: View {
                         }
                         ForEach(backup.changes(from: previewBase, mode: mode)) { change in
                             let order = change.reordered ? " · 调整顺序" : ""
-                            Text("\(change.section.title) · 新增 \(change.added) · 覆盖 \(change.updated) · 移除 \(change.removed) · 相同 \(change.unchanged)\(order)")
+                            let configuration = change.configurationChanged == true ? " · 全局开关变化" : ""
+                            Text("\(change.section.title) · 新增 \(change.added) · 覆盖 \(change.updated) · 移除 \(change.removed) · 相同 \(change.unchanged)\(order)\(configuration)")
                         }
                         if backup.settings != nil {
                             Text("应用设置在下次启动时生效，也可前往设置手动应用。")
@@ -108,7 +109,7 @@ struct RuleBackupView: View {
         panel.nameFieldStringValue = "ProxyMirror Rules.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try file.exportData().write(to: url, options: .atomic)
+            try PrivateAppFile.write(file.exportData(), to: url)
             message = "已导出 \(url.lastPathComponent)"
         } catch {
             message = error.localizedDescription

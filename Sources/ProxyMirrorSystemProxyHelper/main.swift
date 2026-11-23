@@ -21,14 +21,14 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         // The listener also verifies the code signature of each incoming connection.
         guard connection.effectiveUserIdentifier == uid else { return false }
         let peer = Peer(service: self)
-        connection.exportedInterface = NSXPCInterface(with: SystemProxyServiceProtocol.self)
+        connection.exportedInterface = SystemProxyService.interface()
         connection.exportedObject = peer
         connection.invalidationHandler = { [weak self] in self?.disconnected(peer) }
         connection.resume()
         return true
     }
 
-    func enable(_ port: Int, for peer: Peer, reply: @escaping (String?) -> Void) {
+    func enable(_ port: Int, bypassHosts: [String]? = nil, for peer: Peer, reply: @escaping (String?) -> Void) {
         queue.async {
             do {
                 guard let port = UInt16(exactly: port), port >= 1024 else {
@@ -55,7 +55,11 @@ private final class Service: NSObject, NSXPCListenerDelegate {
                         throw error
                     }
                 }
-                try self.enable(port, owner: peer.id, holding: lock)
+                if let bypassHosts, let issue = SystemProxyBypassList.validationError(bypassHosts) {
+                    Darwin.close(lock)
+                    throw SystemProxyError(issue)
+                }
+                try self.enable(port, bypassHosts: bypassHosts, owner: peer.id, holding: lock)
                 reply(nil)
             } catch {
                 reply(error.localizedDescription)
@@ -63,8 +67,8 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         }
     }
 
-    private func enable(_ port: UInt16, owner: UUID, holding lock: Int32) throws {
-        let settings = SystemProxySettings(port: port, journal: SystemProxyService.journal)
+    private func enable(_ port: UInt16, bypassHosts: [String]?, owner: UUID, holding lock: Int32) throws {
+        let settings = SystemProxySettings(port: port, journal: SystemProxyService.journal, bypassHosts: bypassHosts)
         lease = Lease(owner: owner, settings: settings, lock: lock)
         do {
             try settings.enable()
@@ -80,6 +84,16 @@ private final class Service: NSObject, NSXPCListenerDelegate {
             guard let lease = self.lease else { reply(nil); return }
             guard lease.owner == peer.id else { reply("当前连接没有接管系统代理。"); return }
             reply(self.restoreLease())
+        }
+    }
+
+    func updateBypass(_ hosts: [String]?, for peer: Peer, reply: @escaping (String?) -> Void) {
+        queue.async {
+            guard let lease = self.lease, lease.owner == peer.id, !peer.closed else {
+                reply("当前连接没有接管系统代理。"); return
+            }
+            do { try lease.settings.updateBypass(hosts); reply(nil) }
+            catch { reply(error.localizedDescription) }
         }
     }
 
@@ -166,6 +180,14 @@ private final class Peer: NSObject, SystemProxyServiceProtocol {
 
     func enable(_ port: Int, reply: @escaping (String?) -> Void) {
         service.enable(port, for: self, reply: reply)
+    }
+
+    func enableWithBypass(_ port: Int, hosts: [String], reply: @escaping (String?) -> Void) {
+        service.enable(port, bypassHosts: hosts, for: self, reply: reply)
+    }
+
+    func updateBypass(_ hosts: [String]?, reply: @escaping (String?) -> Void) {
+        service.updateBypass(hosts, for: self, reply: reply)
     }
 
     func restore(reply: @escaping (String?) -> Void) {

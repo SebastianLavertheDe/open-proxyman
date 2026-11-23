@@ -2,6 +2,7 @@ import Foundation
 @testable import ProxyMirrorCore
 
 func checkComposeAndPersistence(_ test: CoreAssertions) throws {
+    try checkComposeExportFeatures(test)
     let bodyText = "a\r\nb\n\n汉字"
     let path = "/a%2Fb?id=1&id=2"
     let raw = "POST \(path) HTTP/1.1\r\nHost: example.test\r\nX-Sample: a\r\nX-Sample: b\r\n\r\n\(bodyText)"

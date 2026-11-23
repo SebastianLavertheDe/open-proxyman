@@ -87,11 +87,29 @@ final class ClientTLSIdentities: @unchecked Sendable {
     }
 
     func install(host: String, certificate: URL, privateKey: URL) throws {
+        try install(host: host, certificate: Self.read(certificate, upTo: 256 * 1024),
+                    key: Self.read(privateKey, upTo: 128 * 1024))
+    }
+
+    func install(host: String, p12: URL, password: String) throws {
+        let material = try CertificateFormats.load(certificate: p12, password: password)
+        try CertificateFormats.validate(material, purpose: .client, host: host)
+        try install(host: host, material: material)
+    }
+
+    func install(host: String, material: CertificateFormats.Material) throws {
+        try CertificateFormats.validate(material, purpose: .client, host: host)
+        guard let key = material.privateKeyPEM else { throw ClientTLSIdentityError("客户端身份缺少私钥。") }
+        try install(host: host, certificate: Data(material.certificatePEM.utf8), key: Data(key.utf8))
+    }
+
+    private func install(host: String, certificate: Data, key: Data) throws {
         guard let host = Self.hostPattern(host) else {
             throw ClientTLSIdentityError("请输入主机名、IP 或 *.example.com。")
         }
-        let certificate = try Self.read(certificate, upTo: 256 * 1024)
-        let key = try Self.read(privateKey, upTo: 128 * 1024)
+        guard certificate.count <= 256 * 1024, key.count <= 128 * 1024 else {
+            throw ClientTLSIdentityError("证书链或私钥超过大小上限。")
+        }
         let entry = try Self.parse(Stored(id: UUID(), host: host, certificate: certificate, key: key))
         let now = Date()
         guard entry.identity.validFrom <= now, entry.identity.expiry > now else {
@@ -142,6 +160,15 @@ final class ClientTLSIdentities: @unchecked Sendable {
         }
         guard cert.publicKey == comparableKey.publicKey else {
             throw ClientTLSIdentityError("证书链首张证书与私钥不匹配。")
+        }
+        if try CertificateFormats.isCertificateAuthority(cert) {
+            throw ClientTLSIdentityError("客户端身份必须使用叶子证书，不能使用 CA 私钥。")
+        }
+        if let usage = try cert.extensions.extendedKeyUsage, !usage.contains(.clientAuth), !usage.contains(.any) {
+            throw ClientTLSIdentityError("证书的扩展用途不允许 TLS 客户端认证。")
+        }
+        if let usage = try cert.extensions.keyUsage, !usage.digitalSignature {
+            throw ClientTLSIdentityError("客户端证书的 Key Usage 不允许数字签名。")
         }
         let identity = ClientTLSIdentity(id: value.id, certificateChain: chain, privateKey: key,
                                          validFrom: cert.notValidBefore, expiry: cert.notValidAfter)

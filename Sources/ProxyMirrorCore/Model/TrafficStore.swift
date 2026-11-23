@@ -85,6 +85,8 @@ final class TrafficStore: ObservableObject {
     let id = UUID()
     private let data: TrafficData
     private var mutations: AnyCancellable?
+    private var preferenceChanges: AnyCancellable?
+    private var hideAppleTraffic = UserDefaults.standard.bool(forKey: "ui.hideAppleTraffic")
     // Cache Combine's synthesized publisher so manual notifications don't repeat
     // field discovery. This also keeps @Published properties on the same publisher.
     private lazy var changePublisher = objectWillChange
@@ -121,7 +123,43 @@ final class TrafficStore: ObservableObject {
         }
     }
     /// 详情面板展示对象（最后点击的行；取消选择时保留详情）
-    @Published var selectedID: Transaction.ID?
+    private var selectionHistory: [UUID] = []
+    private var historyPosition = -1
+    private var navigatingHistory = false
+    @Published var selectedID: Transaction.ID? {
+        didSet {
+            guard !navigatingHistory, oldValue != selectedID, let selectedID else { return }
+            if historyPosition + 1 < selectionHistory.count {
+                selectionHistory.removeSubrange((historyPosition + 1)...)
+            }
+            selectionHistory.append(selectedID)
+            if selectionHistory.count > 200 { selectionHistory.removeFirst() }
+            historyPosition = selectionHistory.count - 1
+        }
+    }
+
+    var canNavigateBackward: Bool { historyTarget(direction: -1) != nil }
+    var canNavigateForward: Bool { historyTarget(direction: 1) != nil }
+
+    func navigateSelectionHistory(_ direction: Int) {
+        guard let index = historyTarget(direction: direction) else { return }
+        navigatingHistory = true
+        defer { navigatingHistory = false }
+        followLatest = false
+        historyPosition = index
+        selectedIDs = [selectionHistory[index]]
+        selectedID = selectionHistory[index]
+    }
+
+    private func historyTarget(direction: Int) -> Int? {
+        guard direction == -1 || direction == 1 else { return nil }
+        var index = historyPosition + direction
+        while selectionHistory.indices.contains(index) {
+            if let transaction = transactionInSource(selectionHistory[index]), isVisible(transaction) { return index }
+            index += direction
+        }
+        return nil
+    }
     /// 列表多选（⌘/Shift 点击）；变更时同步 selectedID 供详情面板使用
     @Published var selectedIDs: Set<Transaction.ID> = [] {
         didSet {
@@ -161,6 +199,15 @@ final class TrafficStore: ObservableObject {
          savedFile: URL = CertificateAuthority.applicationSupport.appendingPathComponent("Saved.proxymirror")) {
         data = original?.data ?? TrafficData(sourceFolderFile: sourceFolderFile, savedFile: savedFile)
         mutations = data.changed.sink { [weak self] change in self?.refreshSharedData(change) }
+        preferenceChanges = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+            .receive(on: RunLoop.main).sink { [weak self] _ in
+                guard let self else { return }
+                let hidden = UserDefaults.standard.bool(forKey: "ui.hideAppleTraffic")
+                guard hidden != self.hideAppleTraffic else { return }
+                self.hideAppleTraffic = hidden
+                self.visibilityChanged()
+                self.changePublisher.send()
+            }
     }
 
     func setWorkspaceVisible(_ visible: Bool) {
@@ -342,6 +389,11 @@ final class TrafficStore: ObservableObject {
     }
 
     private func isVisible(_ tx: Transaction) -> Bool {
+        if hideAppleTraffic {
+            let host = tx.host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            let appleDomains = ["apple.com", "icloud.com", "icloud-content.com", "mzstatic.com", "aaplimg.com", "apple-dns.net"]
+            if appleDomains.contains(where: { host == $0 || host.hasSuffix("." + $0) }) { return false }
+        }
         guard !tx.hideFromList,
               extraChips.isEmpty ? tx.matches(chip: activeChip) : extraChips.contains(where: { tx.matches(chip: $0) })
         else { return false }

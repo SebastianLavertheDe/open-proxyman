@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 enum TrafficColumn: Hashable, Identifiable {
-    case sequence, url, client, method, status, time, duration, request, response, ssl, edited, comment, tools
+    case sequence, url, client, method, status, time, duration, request, response, ssl, edited, comment, tools, graphql
     case custom(CustomTrafficColumn)
 
-    static let allCases: [Self] = [.sequence, .url, .client, .method, .status, .time, .duration, .request, .response, .ssl, .edited, .comment, .tools]
+    static let allCases: [Self] = [.sequence, .url, .client, .method, .status, .time, .duration, .request, .response, .ssl, .edited, .comment, .tools, .graphql]
 
     var id: String {
         if case .custom(let field) = self { return field.id.uuidString }
@@ -27,6 +27,7 @@ enum TrafficColumn: Hashable, Identifiable {
         case .edited: return "已编辑"
         case .comment: return "备注"
         case .tools: return "工具"
+        case .graphql: return "GraphQL 操作"
         case .custom(let field): return field.title
         }
     }
@@ -45,6 +46,7 @@ enum TrafficColumn: Hashable, Identifiable {
         case .edited: return 47
         case .comment: return 269
         case .tools: return 107
+        case .graphql: return 160
         case .custom: return 118
         }
     }
@@ -52,6 +54,7 @@ enum TrafficColumn: Hashable, Identifiable {
     var readsBody: Bool {
         switch self {
         case .request, .response: return true
+        case .graphql: return true
         case .custom(let field): return field.source == .requestJSON || field.source == .responseJSON
         default: return false
         }
@@ -72,6 +75,7 @@ enum TrafficColumn: Hashable, Identifiable {
         case .edited: return tx.originalURL == nil ? "0" : "1"
         case .comment: return tx.comment
         case .tools: return tx.ruleMatches.joined()
+        case .graphql: return tx.graphqlOperationName ?? ""
         case .custom(let field): return field.value(for: tx)
         }
     }
@@ -167,7 +171,7 @@ struct TrafficListView: View {
         let fields = (try? JSONDecoder().decode([CustomTrafficColumn].self, from: customData)) ?? []
         let custom = fields.map(TrafficColumn.custom)
         var columns = (TrafficColumn.allCases + custom).filter { !hidden.contains($0.id) || $0 == .url }
-        let priorities: [TrafficColumn] = [.tools, .comment, .edited, .ssl, .time, .request, .response, .duration, .client]
+        let priorities: [TrafficColumn] = [.graphql, .tools, .comment, .edited, .ssl, .time, .request, .response, .duration, .client]
             + Array(custom.reversed())
         let minimumURL = width < 400 ? 100 : minimumWidth(for: .url)
         func size(_ column: TrafficColumn) -> CGFloat {
@@ -416,9 +420,10 @@ struct TrafficListView: View {
         menu.addAction("复制 URL") { appState.copyText(targets.map(\.fullURL).joined(separator: "\n")) }
         menu.addAction("复制为 cURL") { appState.copyRequestsAsCurl(targets) }
         menu.addSubmenu(targets.count > 1 ? "复制此请求为代码" : "复制为代码", enabled: tx.canReplay) { submenu in
-            submenu.addAction("Python requests") { appState.copyText(RequestCode.pythonRequests(tx)) }
-            submenu.addAction("JavaScript fetch", enabled: RequestCode.supportsFetch(tx)) {
-                appState.copyText(RequestCode.javascriptFetch(tx))
+            for format in RequestCode.Format.allCases {
+                submenu.addAction(format.title, enabled: RequestCode.supported(format, for: tx)) {
+                    appState.copyText(RequestCode.generate(tx, format: format))
+                }
             }
         }
         menu.addItem(.separator())
@@ -433,6 +438,12 @@ struct TrafficRow: View {
     let columns: [(TrafficColumn, CGFloat)]
 
     var isSelected = false
+    @ObservedObject private var filterPalette = TrafficFilterPalette.shared
+    @AppStorage("ui.truncationStyle") private var truncationStyle = "middle"
+
+    private var truncation: Text.TruncationMode {
+        switch truncationStyle { case "head": return .head; case "tail": return .tail; default: return .middle }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -443,6 +454,7 @@ struct TrafficRow: View {
                 .accessibilityHidden(true)
             ForEach(columns, id: \.0) { column, width in
                 cell(column)
+                    .truncationMode(truncation)
                     .lineLimit(1)
                     .padding(.horizontal, 6)
                     .frame(width: width, alignment: .leading)
@@ -456,7 +468,7 @@ struct TrafficRow: View {
         .font(.system(size: 11, weight: .medium, design: .monospaced))
         .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.87))
         .contentShape(Rectangle())
-        .background(tx.highlightName.map { ProxymanTheme.highlightColor($0).opacity(0.28) } ?? .clear)
+        .background((tx.highlightName ?? filterPalette.highlight(for: tx)).map { ProxymanTheme.highlightColor($0).opacity(0.28) } ?? .clear)
         .accessibilityElement(children: .combine)
     }
 
@@ -467,7 +479,7 @@ struct TrafficRow: View {
             Text("\(tx.seq)").frame(maxWidth: .infinity, alignment: .trailing)
         case .url:
             HStack(spacing: 5) {
-                Text(tx.originalURL ?? tx.fullURL).truncationMode(.middle).strikethrough(tx.strikethrough)
+                Text(tx.originalURL ?? tx.fullURL).truncationMode(truncation).strikethrough(tx.strikethrough)
                     .help(tx.originalURL ?? tx.fullURL)
                 if tx.suspectedPinning {
                     Image(systemName: "lock.shield")
@@ -505,6 +517,7 @@ struct TrafficRow: View {
             }
         case .comment: Text(tx.comment).help(tx.comment)
         case .tools: Text(tx.ruleMatches.joined(separator: ", ")).help(tx.ruleMatches.joined(separator: ", "))
+        case .graphql: Text(tx.graphqlOperationName ?? "").help(tx.graphqlOperationName ?? "")
         case .custom(let field):
             let value = field.value(for: tx)
             Text(value.isEmpty ? "–" : value).help(value)

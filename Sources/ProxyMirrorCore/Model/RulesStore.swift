@@ -146,6 +146,7 @@ struct RulesSnapshot {
     var sslApplications: [SSLApplicationRule] = []
     var customCertificates: [CustomCertificateRule] = []
     var noCaching = false
+    var sslProxyingEnabled = true
 
     /// 测试/工具用：直接构造快照（绕开共享 store）
     static func snapshotForTesting(customCertificates: [CustomCertificateRule]) -> RulesSnapshot {
@@ -277,6 +278,7 @@ struct RulesSnapshot {
     var hasSSLApplicationRules: Bool { sslApplications.contains(where: \.enabled) }
 
     func shouldSSLProxy(host: String, application: String? = nil) -> Bool {
+        guard sslProxyingEnabled else { return false }
         if let application {
             let bundleID = SSLApplicationRule.normalize(application)
             if let rule = sslApplications.first(where: { $0.enabled && $0.id == bundleID }) {
@@ -321,6 +323,7 @@ final class RulesStore: ObservableObject {
     private var saveTimer: Timer?
     private var applyingBackup = false
     private var certificateRulesNeedInvalidation = false
+    private var organizationObserver: NSObjectProtocol?
     private let storageURL: URL
     private let certificateStore: CustomCertificateStore
     private let certificateAuthority: CertificateAuthority
@@ -336,6 +339,10 @@ final class RulesStore: ObservableObject {
         self.certificateAuthority = certificateAuthority
         load()
         rebuildSnapshot()
+        organizationObserver = NotificationCenter.default.addObserver(forName: .ruleOrganizationChanged, object: nil, queue: .main) { [weak self] _ in
+            guard let self, !self.applyingBackup else { return }
+            self.rebuildSnapshot()
+        }
         NSLog("[ProxyMirror][Rules] 载入: mapLocal=%d mapRemote=%d block=%d allow=%d ssl=%d noCaching=%@",
               mapLocal.count, mapRemote.count, blockList.count, allowList.count,
               sslProxyingList.count, noCaching ? "Y" : "N")
@@ -346,12 +353,32 @@ final class RulesStore: ObservableObject {
         return snapshotCache
     }
 
+    deinit {
+        if let organizationObserver { NotificationCenter.default.removeObserver(organizationObserver) }
+        saveTimer?.invalidate()
+    }
+
     func rebuildSnapshot() {
+        let organization = RuleOrganizationStore.shared
+        func rules(_ source: [ProxyRule], tool: String) -> [ProxyRule] {
+            source.map { entry in
+                var entry = entry
+                entry.enabled = entry.enabled && organization.ruleIsEnabled(tool: tool, id: entry.id)
+                return entry
+            }
+        }
         let s = RulesSnapshot(
-            mapLocal: mapLocal, mapRemote: mapRemote,
-            blockList: blockList, allowList: allowList,
-            sslProxyingList: sslProxyingList, sslApplications: sslApplications,
-            customCertificates: customCertificates, noCaching: noCaching)
+            mapLocal: rules(mapLocal, tool: "mapLocal"), mapRemote: rules(mapRemote, tool: "mapRemote"),
+            blockList: rules(blockList, tool: "blockList"), allowList: rules(allowList, tool: "allowList"),
+            sslProxyingList: rules(sslProxyingList, tool: "sslProxyingList"),
+            sslApplications: sslApplications.map { entry in
+                var entry = entry; entry.enabled = entry.enabled && organization.ruleIsEnabled(tool: "sslApplications", ruleID: entry.id); return entry
+            },
+            customCertificates: customCertificates.map { entry in
+                var entry = entry; entry.enabled = entry.enabled && organization.ruleIsEnabled(tool: "customCertificates", id: entry.id); return entry
+            },
+            noCaching: noCaching && organization.isEnabled("noCaching"),
+            sslProxyingEnabled: organization.isEnabled("sslProxyingList"))
         lock.lock()
         let certificatesChanged = certificateRulesNeedInvalidation
             || snapshotCache.customCertificates != s.customCertificates
@@ -390,6 +417,11 @@ final class RulesStore: ObservableObject {
         sslApplications = dto.sslApplications ?? []
         customCertificates = dto.customCertificates ?? []
         noCaching = dto.noCaching ?? false
+        if let organization = dto.organization { RuleOrganizationStore.shared.updateSnapshot(organization) }
+        if let reverse = dto.reverse { InterceptionConfig.shared.reverse.set(reverse) }
+        if let external = dto.external { InterceptionConfig.shared.externalProxy.set(external) }
+        if let h2c = dto.h2c { InterceptionConfig.shared.h2cUpstream.set(h2c) }
+        if let protobuf = dto.protobuf { ProtobufRuntimeStore.shared.updateSnapshot(protobuf) }
         applyingBackup = false
         rebuildSnapshot()
     }
@@ -406,24 +438,34 @@ final class RulesStore: ObservableObject {
                    noCaching: noCaching,
                    dns: InterceptionConfig.shared.dnsSpoof.value, breakpoints: InterceptionConfig.shared.breakpoints.value,
                    rewrite: InterceptionConfig.shared.rewrite.value,
-                   latency: LatencyConditions.snapshot())
+                   latency: LatencyConditions.snapshot(), organization: RuleOrganizationStore.shared.snapshot(),
+                   reverse: InterceptionConfig.shared.reverse.value, external: InterceptionConfig.shared.externalProxy.value,
+                   h2c: InterceptionConfig.shared.h2cUpstream.value, protobuf: ProtobufRuntimeStore.shared.snapshot())
     }
 
     func install(_ backup: RuleBackup) throws {
         var rules = backup
         rules.settings = nil
+        try rules.validate()
         try persist(rules)
         saveTimer?.invalidate()
         apply(rules)
+        DiagnosticLog.record("rule configuration committed")
         if let dns = rules.dns { InterceptionConfig.shared.dnsSpoof.set(dns) }
         if let breakpoints = rules.breakpoints { InterceptionConfig.shared.breakpoints.set(breakpoints) }
         if let rewrite = rules.rewrite { InterceptionConfig.shared.rewrite.set(rewrite) }
         if let latency = rules.latency { LatencyConditions.updateSnapshot(latency) }
+        if rules.reverse != nil {
+            Task { @MainActor in ReverseProxyController.shared.reloadRules() }
+        }
     }
 
     private func persist(_ dto: RuleBackup) throws {
         let url = storageURL
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(dto).write(to: url, options: .atomic)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+        let data = try JSONEncoder().encode(dto)
+        guard data.count <= RuleBackup.fileLimit else { throw CocoaError(.fileWriteOutOfSpace) }
+        try PrivateAppFile.write(data, to: url)
     }
 }

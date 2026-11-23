@@ -1,7 +1,7 @@
 import zlib
 import Foundation
 
-/// Content-Encoding 正文解码：gzip（RFC1952）/ deflate（RFC1950 或 raw RFC1951）/ br。
+/// Content-Encoding 正文解码：gzip（RFC1952）/ deflate（RFC1950 或 raw RFC1951）/ br / zstd。
 /// 流式解码上限 32 MiB，与 BrotliBody 一致。gzip 和 zlib 容器由 zlib 校验。
 enum ContentCoding {
     enum DecodeError: Error, Equatable {
@@ -10,7 +10,7 @@ enum ContentCoding {
         case outputLimit
     }
 
-    static let supported: Set<String> = ["gzip", "deflate", "br"]
+    static let supported: Set<String> = ["gzip", "deflate", "br", "zstd"]
     static let maxDecodedBytes = 32 * 1024 * 1024
 
     /// 解码成功返回 (数据, 编码标签)；输入未压缩（无编码）返回 nil。
@@ -40,6 +40,9 @@ enum ContentCoding {
     // MARK: - 单层解码
 
     private static func inflate(coding: String, data: Data, limit: Int, prefix: Bool) -> Result<Data, DecodeError> {
+        if coding == "zstd" {
+            return ZstdBody.decode(data, limit: limit, allowTruncatedOutput: prefix)
+        }
         if coding == "br" {
             do { return .success(try BrotliBody.decode(data, limit: limit, allowTruncatedOutput: prefix)) }
             catch BrotliBody.DecodeError.outputLimit { return .failure(.outputLimit) }

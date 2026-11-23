@@ -7,6 +7,7 @@ import NIOSSL
 /// G7：自定义根 CA 导入 + 按域名自定义服务端证书链
 @MainActor
 func checkCertificates(_ test: CoreAssertions) throws {
+    try checkCertificateFormats(test)
     let dir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pm-cert-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

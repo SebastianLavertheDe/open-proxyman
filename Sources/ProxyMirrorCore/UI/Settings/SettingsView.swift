@@ -49,17 +49,15 @@ struct SettingsView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
 
-                Picker("", selection: Binding(
-                    get: { selectedTab },
-                    set: { selectedTab = $0; search = ""; reveal = nil }
-                )) {
-                    Text("General").tag(0)
-                    Text("SSL").tag(1)
-                    Text("Advanced").tag(2)
+                HStack(spacing: 24) {
+                    settingsTab("常规", icon: "gearshape", index: 0)
+                    settingsTab("SSL", icon: "lock.shield", index: 1)
+                    settingsTab("高级", icon: "slider.horizontal.3", index: 2)
+                    settingsTab("显示与行为", icon: "textformat", index: 3)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(.bar)
 
                 Divider()
 
@@ -70,6 +68,8 @@ struct SettingsView: View {
                         switch selectedTab {
                         case 0: generalTab
                         case 1: sslTab
+                        case 3:
+                            setting(.displayBehavior) { ExperienceSettingsView().id(SettingsSearchTarget.copyBehavior) }
                         default: advancedTab
                         }
                     }
@@ -83,7 +83,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: 520, height: 455)
+        .frame(width: 720, height: 580)
         .disabled(appState.proxyRestarting)
         .onAppear { revealSettingsTarget() }
         .onChange(of: appState.settingsTarget) { _ in revealSettingsTarget() }
@@ -118,6 +118,18 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsTab(_ title: String, icon: String, index: Int) -> some View {
+        Button { selectedTab = index; search = ""; reveal = nil } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 21))
+                Text(title).font(.caption)
+            }
+            .foregroundStyle(selectedTab == index ? Color.accentColor : Color.secondary)
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(selectedTab == index ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 7))
+        }.buttonStyle(.plain).accessibilityAddTraits(selectedTab == index ? .isSelected : [])
     }
 
     private func revealSettingsTarget() {
@@ -186,23 +198,7 @@ struct SettingsView: View {
 
             Divider()
 
-            setting(.lan) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("允许指定设备连接局域网代理", isOn: Binding(
-                        get: { settings.lanEnabled }, set: { settings.lanEnabled = $0 }))
-                    if settings.lanEnabled {
-                        Picker("本机地址", selection: Binding(
-                            get: { settings.lanAddress }, set: { settings.lanAddress = $0 })) {
-                            Text("选择地址").tag("")
-                            ForEach(LANAccess.addresses, id: \.self) { Text($0).tag($0) }
-                        }
-                        TextField("设备 IPv4 地址", text: Binding(
-                            get: { settings.deviceAddress }, set: { settings.deviceAddress = $0 }))
-                        Text("在设备的 Wi-Fi HTTP 代理设置中填写此地址及端口 \(settings.port)。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
+            setting(.lan) { AccessControlSettingsView() }
 
             setting(.applyListener) {
                 Button("应用监听设置") { appState.applyAndRestartIfNeeded() }
@@ -226,6 +222,9 @@ struct SettingsView: View {
             Text("首次接管需要管理员授权。同一版本会复用授权，退出时会恢复原代理设置。")
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            Divider()
+            setting(.bypassProxy) { SystemBypassProxyView() }
         }
     }
 

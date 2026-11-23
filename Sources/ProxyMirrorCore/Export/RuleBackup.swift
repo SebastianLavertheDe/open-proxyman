@@ -1,11 +1,12 @@
 import Foundation
+import ProxyMirrorSystemProxy
 
 struct RuleBackup: Codable {
-    static let fileLimit = 2 * 1024 * 1024
+    static let fileLimit = 16 * 1024 * 1024
 
     enum Section: String, Codable, CaseIterable, Identifiable {
         case mapLocal, mapRemote, blockList, allowList, sslProxyingList, sslApplications, customCertificates
-        case dns, breakpoints, rewrite, latency, noCaching, settings
+        case dns, breakpoints, rewrite, latency, noCaching, reverse, external, h2c, protobuf, organization, settings
 
         var id: Self { self }
         var title: String {
@@ -22,6 +23,11 @@ struct RuleBackup: Codable {
             case .rewrite: return "Rewrite"
             case .latency: return "延迟模拟"
             case .noCaching: return "No Caching"
+            case .reverse: return "反向代理"
+            case .external: return "外部代理"
+            case .h2c: return "HTTP/2 明文上游"
+            case .protobuf: return "Protobuf"
+            case .organization: return "规则文件夹与工具开关"
             case .settings: return "应用设置"
             }
         }
@@ -49,6 +55,69 @@ struct RuleBackup: Codable {
         let maxBodyMB: Int
         let maxTransactions: Int
         let followLatest: Bool
+        var extras: Extras?
+
+        struct Extras: Codable, Equatable {
+            var http2Enabled: Bool?
+            var lanEnabled: Bool?
+            var lanAddress: String?
+            var deviceAddress: String?
+            var allowedPeerRanges: [String]?
+            var showResourceUsage: Bool?
+            var showMenuBarIcon: Bool?
+            var hideAppleTraffic: Bool?
+            var redactSensitiveHeaders: Bool?
+            var appendProxyToCommands: Bool?
+            var noCacheOnRepeat: Bool?
+            var appendDiagnosticHeaders: Bool?
+            var truncationStyle: String?
+            var wordWrap: Bool?
+            var showInvisibles: Bool?
+            var showMinimap: Bool?
+            var systemBypassHosts: [String]?
+            var usesCustomSystemBypass: Bool?
+
+            var valid: Bool {
+                (truncationStyle.map { ["head", "middle", "tail"].contains($0) } ?? true)
+                    && NetworkAccessPolicy.validationError(for: allowedPeerRanges ?? []) == nil
+                    && SystemProxyBypassList.validationError(systemBypassHosts ?? []) == nil
+            }
+
+            init(_ settings: AppSettings) {
+                http2Enabled = settings.http2Enabled
+                lanEnabled = settings.lanEnabled; lanAddress = settings.lanAddress; deviceAddress = settings.deviceAddress
+                allowedPeerRanges = settings.allowedPeerRanges
+                showResourceUsage = settings.showResourceUsage; showMenuBarIcon = settings.showMenuBarIcon
+                hideAppleTraffic = settings.hideAppleTraffic; redactSensitiveHeaders = settings.redactSensitiveHeaders
+                appendProxyToCommands = settings.appendProxyToCommands; noCacheOnRepeat = settings.noCacheOnRepeat
+                appendDiagnosticHeaders = settings.appendDiagnosticHeaders; truncationStyle = settings.truncationStyle
+                wordWrap = settings.wordWrap; showInvisibles = settings.showInvisibles; showMinimap = settings.showMinimap
+                systemBypassHosts = settings.systemBypassHosts
+                usesCustomSystemBypass = systemBypassHosts != nil
+            }
+
+            func apply(to settings: AppSettings) {
+                if let http2Enabled { settings.http2Enabled = http2Enabled }
+                if let lanEnabled { settings.lanEnabled = lanEnabled }
+                if let lanAddress { settings.lanAddress = lanAddress }
+                if let deviceAddress { settings.deviceAddress = deviceAddress }
+                if let allowedPeerRanges { settings.allowedPeerRanges = allowedPeerRanges }
+                if let showResourceUsage { settings.showResourceUsage = showResourceUsage }
+                if let showMenuBarIcon { settings.showMenuBarIcon = showMenuBarIcon }
+                if let hideAppleTraffic { settings.hideAppleTraffic = hideAppleTraffic }
+                if let redactSensitiveHeaders { settings.redactSensitiveHeaders = redactSensitiveHeaders }
+                if let appendProxyToCommands { settings.appendProxyToCommands = appendProxyToCommands }
+                if let noCacheOnRepeat { settings.noCacheOnRepeat = noCacheOnRepeat }
+                if let appendDiagnosticHeaders { settings.appendDiagnosticHeaders = appendDiagnosticHeaders }
+                if let truncationStyle { settings.truncationStyle = truncationStyle }
+                if let wordWrap { settings.wordWrap = wordWrap }
+                if let showInvisibles { settings.showInvisibles = showInvisibles }
+                if let showMinimap { settings.showMinimap = showMinimap }
+                if let usesCustomSystemBypass {
+                    settings.systemBypassHosts = usesCustomSystemBypass ? systemBypassHosts ?? [] : nil
+                }
+            }
+        }
 
         init(_ settings: AppSettings) {
             port = settings.port
@@ -59,6 +128,7 @@ struct RuleBackup: Codable {
             maxBodyMB = settings.maxBodyMB
             maxTransactions = settings.maxTransactions
             followLatest = settings.followLatest
+            extras = Extras(settings)
         }
 
         func apply(to settings: AppSettings) {
@@ -70,10 +140,11 @@ struct RuleBackup: Codable {
             settings.maxBodyMB = maxBodyMB
             settings.maxTransactions = maxTransactions
             settings.followLatest = followLatest
+            extras?.apply(to: settings)
         }
 
         var valid: Bool {
-            (1024...65535).contains(port) && (1...100).contains(maxBodyMB) && (100...50000).contains(maxTransactions)
+            (1024...65535).contains(port) && (1...100).contains(maxBodyMB) && (100...50000).contains(maxTransactions) && extras?.valid != false
         }
     }
 
@@ -84,6 +155,8 @@ struct RuleBackup: Codable {
         var removed = 0
         var unchanged = 0
         var reordered = false
+        /// Global condition switch changed in addition to the per-rule counts.
+        var configurationChanged: Bool?
 
         var id: Section { section }
     }
@@ -102,6 +175,11 @@ struct RuleBackup: Codable {
     var breakpoints: [BreakpointRule]?
     var rewrite: [RewriteRuleSet]?
     var latency: LatencyConditions?
+    var organization: RuleOrganization?
+    var reverse: [ReverseProxyRule]?
+    var external: ExternalProxyConfig?
+    var h2c: H2CUpstreamConfig?
+    var protobuf: ProtobufConfiguration?
 
     static func snapshot(settings: AppSettings) -> Self {
         var backup = RulesStore.shared.backup()
@@ -117,7 +195,7 @@ struct RuleBackup: Codable {
 
     func exportData() throws -> Data {
         let data = try encoded(pretty: true)
-        guard data.count <= Self.fileLimit else { throw BackupError("规则备份超过 2 MiB。请按工具导出。") }
+        guard data.count <= Self.fileLimit else { throw BackupError("规则备份超过 16 MiB。请按工具导出。") }
         return data
     }
 
@@ -128,12 +206,12 @@ struct RuleBackup: Codable {
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         let data = try file.read(upToCount: fileLimit + 1) ?? Data()
-        guard data.count <= fileLimit else { throw BackupError("规则备份超过 2 MiB。请按工具拆分。") }
+        guard data.count <= fileLimit else { throw BackupError("规则备份超过 16 MiB。请按工具拆分。") }
         return data
     }
 
     static func read(_ data: Data) throws -> (RuleBackup, [String]) {
-        guard data.count <= fileLimit else { throw BackupError("规则备份超过 2 MiB。请按工具拆分。") }
+        guard data.count <= fileLimit else { throw BackupError("规则备份超过 16 MiB。请按工具拆分。") }
         let sections = Set(Section.allCases.map(\.rawValue))
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               !sections.isDisjoint(with: object.keys) else {
@@ -146,13 +224,25 @@ struct RuleBackup: Codable {
             throw BackupError("备份中没有可导入的规则或设置。")
         }
 
-        var unknown = Set(object.keys).subtracting(sections.union(["version"]))
+        var unknown = Set(object.keys).subtracting(sections.union(["version", "organization"]))
         if let preferences = object["settings"] as? [String: Any] {
-            let names = ["port", "mitmEnabled", "mitmExcluded", "autoStart", "autoTakeOverSystemProxy", "maxBodyMB", "maxTransactions", "followLatest"]
+            let names = ["port", "mitmEnabled", "mitmExcluded", "autoStart", "autoTakeOverSystemProxy", "maxBodyMB", "maxTransactions", "followLatest", "extras"]
             unknown.formUnion(Set(preferences.keys).subtracting(names).map { "settings.\($0)" })
         }
+        if let error = backup.organization?.validationError { throw BackupError(error) }
+        if let error = backup.protobuf?.validationError { throw BackupError(error) }
         try backup.validateRules(object)
         return (backup, unknown.sorted())
+    }
+
+    /// Validates typed edits too, before RulesStore commits the canonical configuration.
+    /// Raw-key validation remains in read(_:), where original imported JSON is available.
+    func validate() throws {
+        guard version == nil || version == 1 else { throw BackupError("此规则备份版本暂不支持。") }
+        guard settings?.valid != false else { throw BackupError("备份中的设置值超出支持范围。") }
+        if let issue = organization?.validationError { throw BackupError(issue) }
+        if let issue = protobuf?.validationError { throw BackupError(issue) }
+        try validateRules([:])
     }
 
     private func validateRules(_ object: [String: Any]) throws {
@@ -220,7 +310,7 @@ struct RuleBackup: Codable {
                         }
                     case .script(_, let source):
                         guard source.utf8.count <= ScriptingService.sourceLimit else {
-                            throw BackupError("Rewrite 单个脚本超过 16 KiB。")
+                            throw BackupError("Rewrite 单个脚本超过 \(ScriptingService.sourceLimit / 1024) KiB。")
                         }
                     default: break
                     }
@@ -232,6 +322,19 @@ struct RuleBackup: Codable {
             try Self.rejectUnknown(rawLatency, allowed: keys, location: "latency")
         }
         if let error = latency?.validationError { throw BackupError(error) }
+        try Self.validateIDs(reverse, section: .reverse)
+        var reversePorts = Set<UInt16>()
+        for rule in reverse ?? [] where rule.enabled {
+            do { _ = try ReverseProxyRoute(rule) }
+            catch { throw BackupError(error.localizedDescription) }
+            guard reversePorts.insert(rule.listenPort).inserted else { throw BackupError("反向代理包含重复监听端口。") }
+        }
+        if let external, external.enabled, let error = external.validationError { throw BackupError(error) }
+        if let h2c {
+            guard h2c.hosts.count <= 1000, h2c.hosts.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 && !$0.contains("/") }) else {
+                throw BackupError("HTTP/2 明文上游主机规则无效。")
+            }
+        }
         for (index, rule) in (mapLocal ?? []).enumerated() {
             if let status = rule.responseStatus, !(200...599).contains(status) {
                 throw BackupError("Map Local 第 \(index + 1) 条规则的响应状态码无效。")
@@ -310,6 +413,13 @@ struct RuleBackup: Codable {
             return copy
         }
         var result = RuleBackup(version: 1)
+        if let organization {
+            result.organization = RuleOrganization(
+                folders: organization.folders.filter { $0.tool == section.rawValue },
+                assignments: organization.assignments.filter { $0.key.hasPrefix(section.rawValue + ":") },
+                disabledTools: organization.disabledTools.filter { $0 == section.rawValue },
+                includedTools: [section.rawValue])
+        }
         if let path = section.classicRules { result[keyPath: path] = self[keyPath: path] }
         switch section {
         case .sslApplications: result.sslApplications = sslApplications
@@ -319,6 +429,11 @@ struct RuleBackup: Codable {
         case .rewrite: result.rewrite = rewrite
         case .latency: result.latency = latency
         case .noCaching: result.noCaching = noCaching
+        case .reverse: result.reverse = reverse
+        case .external: result.external = external
+        case .h2c: result.h2c = h2c
+        case .protobuf: result.protobuf = protobuf
+        case .organization: result.organization = organization
         case .settings: result.settings = settings
         default: break
         }
@@ -340,9 +455,14 @@ struct RuleBackup: Codable {
         if let dns { result.dns = Self.resolve(dns, current: current.dns ?? [], merge: merge) }
         if let breakpoints { result.breakpoints = Self.resolve(breakpoints, current: current.breakpoints ?? [], merge: merge) }
         if let rewrite { result.rewrite = Self.resolve(rewrite, current: current.rewrite ?? [], merge: merge) }
+        if let reverse { result.reverse = Self.resolve(reverse, current: current.reverse ?? [], merge: merge) }
+        result.external = external ?? current.external
+        result.h2c = h2c ?? current.h2c
+        if let protobuf { result.protobuf = protobuf.resolving(with: current.protobuf ?? ProtobufConfiguration(), merge: merge) }
         result.noCaching = noCaching ?? current.noCaching
-        result.latency = latency ?? current.latency
+        if let latency { result.latency = latency.resolving(with: current.latency ?? LatencyConditions(), merge: merge) }
         result.settings = settings ?? current.settings
+        if let organization { result.organization = organization.resolving(with: current.organization ?? RuleOrganization(), merge: merge) }
         return result
     }
 
@@ -374,9 +494,26 @@ struct RuleBackup: Codable {
             case .rewrite:
                 return rewrite.map { Self.changes(section, incoming: $0, current: current.rewrite ?? [], mode: mode) }
             case .latency:
-                return latency.map { Self.change(section, incoming: $0, current: current.latency) }
+                return latency.map { incoming in
+                    guard let rules = incoming.rules else { return Self.change(section, incoming: incoming, current: current.latency) }
+                    var change = Self.changes(section, incoming: rules, current: current.latency?.rules ?? [], mode: mode)
+                    if current.latency?.enabled != incoming.enabled || current.latency?.rules == nil {
+                        change.configurationChanged = true
+                    }
+                    return change
+                }
             case .noCaching:
                 return noCaching.map { Self.change(section, incoming: $0, current: current.noCaching) }
+            case .reverse:
+                return reverse.map { Self.changes(section, incoming: $0, current: current.reverse ?? [], mode: mode) }
+            case .external:
+                return external.map { Self.change(section, incoming: $0, current: current.external) }
+            case .h2c:
+                return h2c.map { Self.change(section, incoming: $0, current: current.h2c) }
+            case .protobuf:
+                return protobuf.map { Self.change(section, incoming: $0, current: current.protobuf) }
+            case .organization:
+                return organization.map { Self.change(section, incoming: $0, current: current.organization) }
             case .settings:
                 return settings.map { Self.change(section, incoming: $0, current: current.settings) }
             default: return nil

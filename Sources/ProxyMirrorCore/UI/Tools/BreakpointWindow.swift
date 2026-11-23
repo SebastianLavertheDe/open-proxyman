@@ -24,6 +24,7 @@ struct BreakpointWindow: View {
     @State private var selected: UUID?
     @State private var draft = ""
     @State private var error: String?
+    @ObservedObject private var templates = BreakpointTemplateStore.shared
 
     private var active: BreakpointManager.HeldItem? {
         manager.held.first { $0.id == selected }
@@ -35,16 +36,19 @@ struct BreakpointWindow: View {
                 Picker("断点", selection: $tab) {
                     Text("待处理 (\(manager.held.count))").tag(0)
                     Text("规则").tag(1)
+                    Text("模板").tag(2)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 230)
+                .frame(width: 330)
 
                 Spacer()
                 Toggle("自动打开窗口", isOn: $manager.autoBringToFront)
                 Toggle("启用断点", isOn: $manager.enabled)
             }
-            if tab == 0 { queue } else { BreakpointRuleEditor() }
+            if tab == 0 { queue }
+            else if tab == 1 { BreakpointRuleEditor() }
+            else { templateLibrary }
         }
         .padding(14)
         .frame(minWidth: 730, minHeight: 460)
@@ -106,6 +110,15 @@ struct BreakpointWindow: View {
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
                 Button("取消此条", role: .destructive) { manager.drop(item) }
+                Menu("应用模板") {
+                    ForEach(templates.templates.filter { $0.phase == item.phase }) { template in
+                        Button(template.name) {
+                            do { draft = try template.draft(for: item.message, phase: item.phase); error = nil }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                }.disabled(!templates.templates.contains { $0.phase == item.phase })
+                Button("存为模板…") { saveTemplate(item) }
                 Spacer()
                 Button("还原编辑") { draft = item.message.text; error = nil }
                     .disabled(draft == item.message.text)
@@ -123,6 +136,51 @@ struct BreakpointWindow: View {
     private func refreshSelection() {
         if active == nil { selected = manager.held.first?.id }
         if manager.held.isEmpty { draft = ""; error = nil }
+    }
+
+    private var templateLibrary: some View {
+        List {
+            ForEach(templates.templates) { template in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(template.name)
+                        Text("\(template.phase.rawValue) · \(template.headers.count) 个头部 · \(template.body?.count ?? 0) 字节")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("重命名") {
+                        let panel = NSAlert(); panel.messageText = "重命名模板"
+                        let field = NSTextField(string: template.name); panel.accessoryView = field
+                        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+                        panel.addButton(withTitle: "保存"); panel.addButton(withTitle: "取消")
+                        if panel.runModal() == .alertFirstButtonReturn, !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            var updated = template; updated.name = field.stringValue
+                            do { try templates.save(updated) } catch { self.error = error.localizedDescription }
+                        }
+                    }
+                    Button("删除", role: .destructive) {
+                        do { try templates.remove(template.id) } catch { self.error = error.localizedDescription }
+                    }
+                }
+            }
+            if templates.templates.isEmpty { Text("在待处理断点编辑报文后，点击「存为模板」。").foregroundStyle(.secondary) }
+        }
+        .overlay(alignment: .bottom) { if let error { Text(error).foregroundStyle(.red).padding() } }
+    }
+
+    private func saveTemplate(_ item: BreakpointManager.HeldItem) {
+        do {
+            let edited = try item.message.applying(draft)
+            let panel = NSAlert(); panel.messageText = "保存断点模板"
+            let field = NSTextField(string: item.rule); field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+            panel.accessoryView = field
+            panel.addButton(withTitle: "保存"); panel.addButton(withTitle: "取消")
+            guard panel.runModal() == .alertFirstButtonReturn else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { throw BreakpointMessage.InvalidEdit("请填写模板名称") }
+            try templates.save(.capture(name: name, phase: item.phase, message: edited))
+            error = nil
+        } catch { self.error = error.localizedDescription }
     }
 }
 

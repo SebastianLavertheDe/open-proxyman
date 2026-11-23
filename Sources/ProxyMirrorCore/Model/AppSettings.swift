@@ -86,6 +86,66 @@ final class AppSettings: ObservableObject {
     }
 
     var lanAccess: LANAccess? {
-        lanEnabled ? LANAccess(address: lanAddress, device: deviceAddress) : nil
+        lanEnabled ? LANAccess(address: lanAddress, device: deviceAddress, allowedPeerRanges: allowedPeerRanges) : nil
+    }
+    var allowedPeerRanges: [String] {
+        get { d.stringArray(forKey: "proxy.allowedPeerRanges") ?? [] }
+        set { d.set(newValue, forKey: "proxy.allowedPeerRanges"); objectWillChange.send() }
+    }
+    var systemBypassHosts: [String]? {
+        get {
+            guard let data = d.data(forKey: "proxy.systemBypassHosts") else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            if let newValue, let data = try? JSONEncoder().encode(newValue) { d.set(data, forKey: "proxy.systemBypassHosts") }
+            else { d.removeObject(forKey: "proxy.systemBypassHosts") }
+            objectWillChange.send()
+        }
+    }
+
+    var showResourceUsage: Bool {
+        get { d.object(forKey: "ui.showResourceUsage") as? Bool ?? true }
+        set { d.set(newValue, forKey: "ui.showResourceUsage"); objectWillChange.send() }
+    }
+    var showMenuBarIcon: Bool {
+        get { d.object(forKey: "ui.showMenuBarIcon") as? Bool ?? false }
+        set { d.set(newValue, forKey: "ui.showMenuBarIcon"); objectWillChange.send() }
+    }
+    var hideAppleTraffic: Bool {
+        get { d.bool(forKey: "ui.hideAppleTraffic") }
+        set { d.set(newValue, forKey: "ui.hideAppleTraffic"); objectWillChange.send() }
+    }
+    var redactSensitiveHeaders: Bool {
+        get { d.bool(forKey: "export.redactSensitiveHeaders") }
+        set { d.set(newValue, forKey: "export.redactSensitiveHeaders"); objectWillChange.send() }
+    }
+    var appendProxyToCommands: Bool {
+        get { d.bool(forKey: "export.appendProxyToCommands") }
+        set { d.set(newValue, forKey: "export.appendProxyToCommands"); objectWillChange.send() }
+    }
+    var noCacheOnRepeat: Bool {
+        get { d.bool(forKey: "repeat.noCache") }
+        set { d.set(newValue, forKey: "repeat.noCache"); objectWillChange.send() }
+    }
+    var appendDiagnosticHeaders: Bool {
+        get { d.bool(forKey: "proxy.appendDiagnosticHeaders") }
+        set { d.set(newValue, forKey: "proxy.appendDiagnosticHeaders"); objectWillChange.send() }
+    }
+    var truncationStyle: String {
+        get { d.string(forKey: "ui.truncationStyle") ?? "middle" }
+        set { d.set(newValue, forKey: "ui.truncationStyle"); objectWillChange.send() }
+    }
+    var wordWrap: Bool {
+        get { d.object(forKey: "ui.wordWrap") as? Bool ?? true }
+        set { d.set(newValue, forKey: "ui.wordWrap"); objectWillChange.send() }
+    }
+    var showInvisibles: Bool {
+        get { d.bool(forKey: "ui.showInvisibles") }
+        set { d.set(newValue, forKey: "ui.showInvisibles"); objectWillChange.send() }
+    }
+    var showMinimap: Bool {
+        get { d.bool(forKey: "ui.showMinimap") }
+        set { d.set(newValue, forKey: "ui.showMinimap"); objectWillChange.send() }
     }
 }

@@ -1,0 +1,3 @@
+# Preserve embedded upstream JavaScript and license text byte for byte.
+Sources/ProxyMirrorScriptWorker/BuiltInScriptModules.swift -whitespace
+ThirdParty/Sparkle-LICENSE -whitespace

@@ -61,6 +61,9 @@ final class WSRelayInterceptor: @unchecked Sendable {
     private var decisionID: UUID?
     private var decisionTimeout: Scheduled<Void>?
     private var stopped = false
+    private var inputFinished = false
+    private var finishCallbacks: [@Sendable () -> Void] = []
+    private var finishTimeout: Scheduled<Void>?
 
     private static let maxPendingBytes = 1024 * 1024
 
@@ -83,7 +86,7 @@ final class WSRelayInterceptor: @unchecked Sendable {
 
     /// 引擎事件循环调用；测试在单线程上串行调用同样安全
     func feed(_ data: Data) {
-        guard !stopped else { return }
+        guard !stopped, !inputFinished else { return }
         guard script != nil else { emit(data, direction); return }
         guard data.count <= Self.maxPendingBytes - backlogBytes - parser.pendingBytes else {
             stop()
@@ -92,6 +95,47 @@ final class WSRelayInterceptor: @unchecked Sendable {
         backlog.append(data)
         backlogBytes += data.count
         drain()
+    }
+
+    /// A transport half-close must wait for asynchronous frame scripts. This is
+    /// also used for RFC8441 END_STREAM, which is independent of sibling streams.
+    func finish(_ completion: @escaping @Sendable () -> Void) {
+        guard !stopped else { return }
+        inputFinished = true
+        finishCallbacks.append(completion)
+        if finishTimeout == nil {
+            finishTimeout = loop.scheduleTask(in: .seconds(5)) { [weak self] in
+                guard let self else { return }
+                self.issue("WebSocket 关闭前等待帧脚本超时，已关闭连接")
+                self.stop()
+            }
+        }
+        completeFinishIfReady()
+    }
+
+    /// Cancellation/reset drops pending decisions; late worker replies cannot
+    /// write frames into a channel that has already ended or been recycled.
+    func cancel() {
+        stopped = true
+        decisionID = nil
+        decisionTimeout?.cancel(); decisionTimeout = nil
+        finishTimeout?.cancel(); finishTimeout = nil
+        finishCallbacks.removeAll()
+        backlog.removeAll(); backlogBytes = 0; queue.removeAll()
+        parser = WSFrameParser()
+    }
+
+    private func completeFinishIfReady() {
+        guard inputFinished, !stopped, decisionID == nil, queue.isEmpty, backlog.isEmpty else { return }
+        guard parser.pendingBytes == 0 else {
+            issue("WebSocket 在未完成帧中关闭，已终止连接")
+            stop()
+            return
+        }
+        finishTimeout?.cancel(); finishTimeout = nil
+        let callbacks = finishCallbacks
+        finishCallbacks.removeAll()
+        for callback in callbacks { callback() }
     }
 
     private func drain() {
@@ -121,7 +165,7 @@ final class WSRelayInterceptor: @unchecked Sendable {
                 }
                 return
             }
-            guard !backlog.isEmpty else { return }
+            guard !backlog.isEmpty else { completeFinishIfReady(); return }
             let chunk = backlog.removeFirst()
             backlogBytes -= chunk.count
             queue = parser.feed(chunk, direction: direction)
@@ -154,13 +198,7 @@ final class WSRelayInterceptor: @unchecked Sendable {
     }
 
     private func stop() {
-        stopped = true
-        decisionID = nil
-        decisionTimeout?.cancel()
-        decisionTimeout = nil
-        backlog.removeAll()
-        backlogBytes = 0
-        queue.removeAll()
+        cancel()
         close()
     }
 

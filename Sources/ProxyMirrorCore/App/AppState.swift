@@ -56,7 +56,7 @@ final class AppState: ObservableObject, TrafficSink {
     @Published var activeTool: ToolKind?
     private(set) var toolTransaction: Transaction?
     private(set) var commentTargets: [Transaction] = []
-    @Published var composeHistory: [ComposeService.ParsedRequest] = []
+    @Published var composeHistory: [ComposeService.ParsedRequest] = ComposeService.loadHistory()
     @Published var showCommandPalette = false
     @Published var showDiff = false
     @Published private(set) var diffPool: [Transaction] = []
@@ -65,6 +65,8 @@ final class AppState: ObservableObject, TrafficSink {
     @Published var showCharlesRules = false
     @Published var showColumnEditor = false
     @Published var showLatencyEditor = false
+    @Published var showFactoryReset = false
+    @Published var showGistPublish = false
     private var storeChanges: AnyCancellable?
     @Published var dockRight = UserDefaults.standard.bool(forKey: "ui.dockRight") {
         didSet { UserDefaults.standard.set(dockRight, forKey: "ui.dockRight") }
@@ -202,6 +204,7 @@ final class AppState: ObservableObject, TrafficSink {
             try ProxyEngine.shared.start(port: settings.port, lan: settings.lanAccess)
             ReverseProxyController.shared.start(engine: ProxyEngine.shared)
             proxyRunning = true
+            DiagnosticLog.record("listener started port=\(settings.port) lan=\(settings.lanEnabled) http2=\(settings.http2Enabled) mitm=\(settings.mitmEnabled)")
             proxyStartError = nil
             if automaticallyTakeOver { takeOverSystemProxyIfConfigured() }
         } catch {
@@ -233,6 +236,7 @@ final class AppState: ObservableObject, TrafficSink {
         ProxyEngine.shared.stop()
         stopBridgeCapture()
         proxyRunning = false
+        DiagnosticLog.record("listener stopped")
     }
 
     func toggleTransparentProxy() {
@@ -328,6 +332,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     private func applyRuntimeSettings() {
+        DiagnosticLog.record("applying runtime settings bodyLimitMB=\(settings.maxBodyMB) maxTransactions=\(settings.maxTransactions)")
         ProxyEngine.shared.mitmEnabled = settings.mitmEnabled
         ProxyEngine.shared.http2Enabled = settings.http2Enabled
         ProxyEngine.shared.mitmExcludedHosts = settings.mitmExcludedHosts
@@ -413,6 +418,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     private func restoreLAN(_ access: LANAccess?) {
+        settings.allowedPeerRanges = access?.allowedPeerRanges ?? []
         settings.lanEnabled = access != nil
         if let access {
             settings.lanAddress = access.address
@@ -447,12 +453,13 @@ final class AppState: ObservableObject, TrafficSink {
             return
         }
         guard proxyRunning, let lan = ProxyEngine.shared.lanAccess else {
-            systemProxyMessage = "请先在「设置 → General」启用局域网代理，填写调试设备的 IPv4 地址，再启动监听。"
+            systemProxyMessage = "请先在「设置 → 常规」启用局域网代理，设置设备 IP / CIDR 白名单，再启动监听。"
             return
         }
         do {
             let sessionID = UUID()
-            let receiver = try BridgeListener(address: lan.address, device: lan.device) { [weak self] capture, address in
+            guard let policy = lan.peerPolicy else { throw ProxyError.invalidLANAccess }
+            let receiver = try BridgeListener(address: lan.address, policy: policy) { [weak self] capture, address in
                 guard let self, self.bridgeSessionID == sessionID, self.recordingEnabled,
                       let tx = Transaction(bridge: capture, deviceAddress: address,
                                            limit: ProxyEngine.shared.captureLimit, sink: self) else { return }
@@ -775,19 +782,30 @@ final class AppState: ObservableObject, TrafficSink {
     func toggleDiffCandidate(_ tx: Transaction) {
         if let index = diffPool.firstIndex(where: { $0 === tx }) {
             diffPool.remove(at: index)
-        } else if diffPool.count == 2 {
-            systemProxyMessage = "对比池已有两条请求。请先移除其中一条或清空对比池。"
+        } else if diffPool.count >= 100 {
+            systemProxyMessage = "对比池最多保留 100 条请求，请先移除部分记录。"
         } else {
             diffPool.append(tx)
         }
     }
 
     func clearDiffPool() { diffPool.removeAll() }
+    func removeFromDiffPool(_ id: UUID) { diffPool.removeAll { $0.id == id } }
+    func addToDiffPool(_ transactions: [Transaction]) {
+        for tx in transactions where !diffPool.contains(where: { $0.id == tx.id }) {
+            guard diffPool.count < 100 else {
+                systemProxyMessage = "对比池最多保留 100 条请求，请先移除部分记录。"
+                return
+            }
+            diffPool.append(tx)
+        }
+    }
 
     func openComparison(usePool: Bool = false) {
         let candidates = usePool ? diffPool : activeStore.selectedTransactions
         guard candidates.count == 2 else { return }
         diffTargets = candidates
+        addToDiffPool(candidates)
         showDiff = true
     }
 
@@ -797,8 +815,9 @@ final class AppState: ObservableObject, TrafficSink {
         let workspace = activeStore
         guard let url = SessionFile.selectSaveFile() else { return }
         let snapshot = workspace.session(onlySelection: onlySelection, pinned: pinnedDomains)
+        let redact = settings.redactSensitiveHeaders
         SessionFile.fileQueue.async { [weak self] in
-            do { try snapshot.write(to: url) }
+            do { try snapshot.write(to: url, redactSensitiveHeaders: redact) }
             catch { DispatchQueue.main.async { [weak self] in self?.systemProxyMessage = error.localizedDescription } }
         }
     }
@@ -849,6 +868,7 @@ final class AppState: ObservableObject, TrafficSink {
                     }
                     workspace.loadArchive(archive.records, name: url.deletingPathExtension().lastPathComponent,
                                           pins: archive.pins, selection: archive.selection)
+                    NSDocumentController.shared.noteNewRecentDocumentURL(url)
                 case .failure(let error):
                     self.systemProxyMessage = "打开会话失败：\(error.localizedDescription)"
                 }

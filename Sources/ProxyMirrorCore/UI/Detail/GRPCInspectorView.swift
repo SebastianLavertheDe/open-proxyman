@@ -2,44 +2,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
-private final class GRPCDescriptors: ObservableObject {
-    static let shared = GRPCDescriptors()
-
-    @Published private(set) var schema: GRPCSchema?
-    @Published private(set) var filename: String?
-    @Published private(set) var revision = UUID()
-    @Published private(set) var loading = false
-    @Published var error: String?
-
-    func load(_ url: URL) {
-        guard !loading else { return }
-        loading = true
-        error = nil
-        Task {
-            defer { loading = false }
-            do {
-                schema = try await Task.detached(priority: .userInitiated) {
-                    let accessed = url.startAccessingSecurityScopedResource()
-                    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-                    return try GRPCSchema.load(url)
-                }.value
-                filename = url.lastPathComponent
-                revision = UUID()
-            } catch {
-                self.error = error.localizedDescription
-            }
-        }
-    }
-
-    func clear() {
-        schema = nil
-        filename = nil
-        error = nil
-        revision = UUID()
-    }
-}
-
-@MainActor
 struct GRPCInspectorView: View {
     let data: Data
     let bodyRevision: UInt64
@@ -51,8 +13,10 @@ struct GRPCInspectorView: View {
     let path: String
     let isRequest: Bool
     let mediaType: GRPCFrames.MediaType
+    var target = ""
 
-    @ObservedObject private var descriptors = GRPCDescriptors.shared
+    @ObservedObject private var descriptors = ProtobufRuleStore.shared
+    @State private var showRules = false
     @State private var importing = false
     @State private var selectedID: Int?
     @State private var typeOverride = ""
@@ -130,7 +94,7 @@ struct GRPCInspectorView: View {
     private var messageType: String? {
         let requested = GRPCSchema.normalized(typeOverride)
         if !requested.isEmpty { return requested }
-        return descriptors.schema?.messageType(for: path, isRequest: isRequest)
+        return descriptors.resolution(for: target.isEmpty ? path : target, isRequest: isRequest)?.type
     }
 
     var body: some View {
@@ -166,7 +130,7 @@ struct GRPCInspectorView: View {
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
             switch result {
-            case .success(let url): descriptors.load(url)
+            case .success(let url): descriptors.importSchema(url)
             case .failure(let error): descriptors.error = error.localizedDescription
             }
         }
@@ -195,7 +159,8 @@ struct GRPCInspectorView: View {
         if oversized { return .raw(payload, notice: "消息超过 1 MiB 解码上限。") }
         if !supportsFormat { return .raw(payload, notice: "自定义消息格式 · \(key.mediaType.rawValue)") }
 
-        let schema = descriptors.schema
+        let schema = descriptors.resolution(for: target.isEmpty ? path : target, isRequest: isRequest)?.schema
+            ?? descriptors.schema(containing: key.type)
         let worker = Task.detached(priority: .userInitiated) {
             try Self.decode(payload, compressed: message.compressed, key: key, schema: schema)
         }
@@ -233,32 +198,22 @@ struct GRPCInspectorView: View {
     private var schemaControls: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Button("导入描述符…") { importing = true }
-                    .disabled(descriptors.loading)
-                    .help("导入 protoc 生成的 FileDescriptorSet (.pb / .desc)")
-                if descriptors.loading {
-                    ProgressView().controlSize(.small)
-                } else if let file = descriptors.filename {
-                    Text(file).lineLimit(1).foregroundStyle(.secondary)
-                    Button { descriptors.clear(); typeOverride = "" } label: { Image(systemName: "xmark.circle") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("移除描述符")
-                }
+                Button("导入描述符…") { importing = true }.disabled(descriptors.loading)
+                    .help("导入 protoc 生成的 FileDescriptorSet (.pb / .desc)，并保存到全局 Schema 列表")
+                Button("全局映射…") { showRules = true }
+                if descriptors.loading { ProgressView().controlSize(.small) }
+                Spacer()
+                Text("\(descriptors.configuration.schemas.count) 个 Schema").foregroundStyle(.secondary)
+            }.controlSize(.small)
+            TextField("完整消息类型（默认按全局规则/RPC 路径匹配）", text: $typeOverride)
+                .textFieldStyle(.roundedBorder).accessibilityLabel("Protobuf 消息类型")
+            if let type = messageType {
+                Text(type).font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary).textSelection(.enabled)
             }
-            .controlSize(.small)
-            if descriptors.schema != nil {
-                TextField("完整消息类型（默认按 RPC 路径匹配）", text: $typeOverride)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Protobuf 消息类型")
-                if let type = messageType {
-                    Text(type).font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary).textSelection(.enabled)
-                }
-            }
-            if let error = descriptors.error {
-                Text(error).foregroundStyle(.red).textSelection(.enabled)
-            }
+            if let error = descriptors.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
+        .sheet(isPresented: $showRules) { ProtobufRulesView() }
     }
 
     private func messageControls(_ messages: [GRPCFrames.Message], selected: GRPCFrames.Message) -> some View {

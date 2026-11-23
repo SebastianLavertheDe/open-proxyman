@@ -30,7 +30,7 @@ func runScriptingLoopback(engine: ProxyEngine, source: String, records: () -> [T
     }
 
     let first = rule("第一条", path: "/scripting", phase: .request, js: """
-        if (typeof fetch !== "undefined" || typeof require !== "undefined" || typeof process !== "undefined") {
+        if (typeof fetch !== "undefined" || typeof process.exit !== "undefined" || typeof require !== "function") {
             throw new Error("host interface available");
         }
         message.body += "|one";
@@ -57,6 +57,52 @@ func runScriptingLoopback(engine: ProxyEngine, source: String, records: () -> [T
           && successful[2].contains("响应脚本"), "loopback: 流量记录保留实际脚本执行顺序")
     check(audit.contains { $0.contains("local script exception") }
           && audit.contains { $0.contains("first request script") }, "loopback: 脚本日志与异常均可追踪")
+
+    ScriptingRuntimeSettings.resetSharedState()
+    let stateRule = rule("共享状态", path: "/scripting-state", phase: .request, js: """
+        sharedState.count = (sharedState.count || 0) + 1;
+        const _ = require('lodash');
+        message.body = String(_.get(sharedState, 'count'));
+        """)
+    config.rewrite.set([RewriteRuleSet(rules: [stateRule])])
+    let firstState = try send("/scripting-state", body: "before")
+    let secondState = try send("/scripting-state", body: "before")
+    check(firstState.contains(#""body": "1""#) && secondState.contains(#""body": "2""#),
+          "loopback: CommonJS 和 sharedState 跨独立 worker 保留更新")
+    ScriptingRuntimeSettings.resetSharedState()
+    let invalidOutput = rule("无效输出", path: "/scripting-invalid-state", phase: .request,
+                            js: #"sharedState.invalidCommit = 1; message.headers.push({name: 'Bad\nHeader', value: 'invalid'});"#)
+    config.rewrite.set([RewriteRuleSet(rules: [invalidOutput])])
+    _ = try send("/scripting-invalid-state", body: "before")
+    let stateProbe = rule("失败后状态", path: "/scripting-probe-state", phase: .request,
+                         js: "message.body = String(sharedState.invalidCommit || 0);")
+    config.rewrite.set([RewriteRuleSet(rules: [stateProbe])])
+    let stateAfterFailure = try send("/scripting-probe-state", body: "before")
+    check(stateAfterFailure.contains(#""body": "0""#), "loopback: 主进程拒绝脚本报文后不提交 sharedState")
+    ScriptingRuntimeSettings.resetSharedState()
+
+    let mock = rule("本地 Mock", path: "/scripting-mock", phase: .request, js: """
+        mockResponse({status: 201, headers: {'X-PM-Mock': 'local'}, body: 'local-mock-only'});
+        """)
+    let mockGroup = RewriteRuleSet(rules: [mock])
+    config.rewrite.set([mockGroup])
+    let organizationStore = RuleOrganizationStore.shared
+    let savedOrganization = organizationStore.snapshot()
+    let disabledFolder = RuleFolder(tool: "rewrite", name: "脚本文件夹测试", enabled: false)
+    let mockTarget = ScriptingTarget(method: "POST", scheme: "http", host: "127.0.0.1", path: "/scripting-mock", query: "", url: source + "/scripting-mock")
+    var grouped = savedOrganization
+    grouped.folders.append(disabledFolder)
+    grouped.assignments["rewrite:" + mockGroup.id.uuidString] = disabledFolder.id.uuidString
+    organizationStore.updateSnapshot(grouped)
+    check(ScriptingService.plan(for: mockTarget, phase: .request) == nil, "loopback: 文件夹停用脚本分组时不生成执行计划")
+    grouped.assignments.removeValue(forKey: "rewrite:" + mockGroup.id.uuidString)
+    grouped.assignments["rewrite:" + mock.id.uuidString] = disabledFolder.id.uuidString
+    organizationStore.updateSnapshot(grouped)
+    check(ScriptingService.plan(for: mockTarget, phase: .request) == nil, "loopback: 文件夹停用分组内脚本时不生成执行计划")
+    organizationStore.updateSnapshot(savedOrganization)
+    let mocked = try send("/scripting-mock", body: "never-send-upstream")
+    check(mocked.contains("201") && mocked.contains("X-PM-Mock: local") && mocked.hasSuffix("local-mock-only"),
+          "loopback: 请求脚本通过本地 Mock 响应结束，无需上游响应")
 
     let named = rule("FindUser", path: "/scripting-graphql", phase: .response, operation: "FindUser", js: """
         message.status = 202;

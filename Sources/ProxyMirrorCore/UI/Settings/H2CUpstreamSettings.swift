@@ -18,8 +18,10 @@ struct H2CUpstreamSettings: View {
                 draft.hosts = hosts.components(separatedBy: CharacterSet(charactersIn: ",，\n")).map {
                     $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 }.filter { !$0.isEmpty }
-                failed = !RulesFileIO.save(draft, "h2c.json")
-                if !failed { InterceptionConfig.shared.h2cUpstream.set(draft) }
+                var backup = RulesStore.shared.backup()
+                backup.h2c = draft
+                do { try RulesStore.shared.install(backup); failed = false }
+                catch { failed = true }
                 message = failed ? "保存失败" : "h2c 设置已应用于新流量"
             }
             .disabled(draft.enabled && hosts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

@@ -44,15 +44,34 @@ func checkContentCoding(_ test: CoreAssertions) {
         test.expect(false, "gzip 校验值错误时应拒绝解码")
     }
 
+    let zstd = ContentCodingFixtures.b64("KLUv/SAYwQAAUHJveHlNaXJyb3IgenN0ZCDkuK3mlocK")
+    let zstdPlain = Data("ProxyMirror zstd 中文\n".utf8)
+    if case .success(let decoded)? = ContentCoding.decodeIfCompressed(zstd, encodings: ["zstd"]) {
+        test.equal(decoded.0, zstdPlain, "Zstandard static decoder preserves UTF-8")
+    } else { test.expect(false, "Zstandard fixture decodes") }
+    if case .success(let decoded)? = ContentCoding.decodeIfCompressed(zstd + zstd, encodings: ["zstd"]) {
+        test.equal(decoded.0, zstdPlain + zstdPlain, "Concatenated Zstandard frames decode")
+    } else { test.expect(false, "Concatenated Zstandard frames decode") }
+    if case .failure(.outputLimit)? = ContentCoding.decodeIfCompressed(zstd, encodings: ["zstd"], maxOutputBytes: 4) {
+        test.expect(true, "Zstandard output limit stops decompression")
+    } else { test.expect(false, "Zstandard output limit is enforced") }
+    if case .success(let decoded)? = ContentCoding.decodeIfCompressed(zstd, encodings: ["zstd"], maxOutputBytes: 4,
+                                                                     allowTruncatedOutput: true) {
+        test.equal(decoded.0, Data(zstdPlain.prefix(4)), "Zstandard prefix inspection remains bounded")
+    } else { test.expect(false, "Zstandard bounded prefix decodes") }
+    if case .failure(.invalidStream)? = ContentCoding.decodeIfCompressed(Data(zstd.dropLast()), encodings: ["zstd"]) {
+        test.expect(true, "Truncated Zstandard frame is rejected")
+    } else { test.expect(false, "Truncated Zstandard frame must fail") }
+
     // 无编码：返回 nil（不压缩）
     test.expect(ContentCoding.decodeIfCompressed(plain, encodings: []) == nil, "空编码返回 nil")
     test.expect(ContentCoding.decodeIfCompressed(plain, encodings: ["identity"]) == nil, "identity 返回 nil")
 
     // 不支持的编码
-    if case .failure(.unsupported(let list))? = ContentCoding.decodeIfCompressed(ContentCodingFixtures.b64("H4sIABad9moC/8vPS0nNOLxEISc/OTEnsyqxJDM/T+HZxs6na6crVCtlK1kpRBvqGOkYx+ooKOUWpwP5ShmpOTn5CulVmQUKKalpOYklqQpPdqx9Nq1dqTZ/1LRR00ZNGzVt1LQhbhoAES141BgGAAA="), encodings: ["zstd"]) {
-        test.equal(list, ["zstd"], "zstd 报 unsupported 且列出编码")
+    if case .failure(.unsupported(let list))? = ContentCoding.decodeIfCompressed(ContentCodingFixtures.b64("H4sIABad9moC/8vPS0nNOLxEISc/OTEnsyqxJDM/T+HZxs6na6crVCtlK1kpRBvqGOkYx+ooKOUWpwP5ShmpOTn5CulVmQUKKalpOYklqQpPdqx9Nq1dqTZ/1LRR00ZNGzVt1LQhbhoAES141BgGAAA="), encodings: ["compress"]) {
+        test.equal(list, ["compress"], "Unknown encoding reports unsupported")
     } else {
-        test.expect(false, "zstd 应报 unsupported")
+        test.expect(false, "Unknown encoding must report unsupported")
     }
 
     // 损坏流

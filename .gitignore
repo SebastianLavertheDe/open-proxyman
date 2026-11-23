@@ -2,3 +2,4 @@
 build_app/
 *.log
 .DS_Store
+__pycache__/

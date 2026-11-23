@@ -6,14 +6,18 @@
 
 ## 功能
 
-- HTTP/1.x 和 HTTP/2 抓包，支持 HTTPS ALPN、HTTP/2 流级取消和 trailers、按域 SSL 解密及 WebSocket。
+- HTTP/1.x 和 HTTP/2 抓包，支持 HTTPS ALPN、HTTP/2 流级取消和 trailers、按域 SSL 解密及 WebSocket（含 RFC 8441 extended CONNECT）。
 - gRPC、gRPC-Web 二进制和 Base64 文本检查，可查看 Protobuf 消息、状态与 trailers，并导入 FileDescriptorSet。
 - Map Local、Map Remote、Block/Allow、No Caching、断点、脚本、DNS 映射和按主机模拟延迟、限速、抖动、断连和正文分块暂停。
 - 反向代理、HTTP CONNECT、HTTPS CONNECT、SOCKS5 和 PAC 路由、上游 CA、mTLS 客户端身份与 TLS 密钥日志。
 - 流量表格、自定义列、组合筛选、标签和分屏。详情提供 Query、Cookie、原文、耗时、JSONPath、jq 和二进制查看。
-- Compose、编辑重发、直连重发，复制 cURL、HTTPie、Python requests 与 JavaScript fetch。常规重发经过本机代理。
-- 保存流量、版本化会话、响应 Diff、HAR 进出、Charles 会话及规则导入、规则与设置备份。
-- 局域网设备按 IPv4 授权接入，默认只监听回环地址。
+- Compose 支持 JSON、Form、Multipart、QUERY、WebSocket、超时和重定向；21 种 Copy as Code，常规重发经过本机代理。
+- 独立 Diff 对比池、请求/响应/头/正文比较、JSON 排序、外部 Diff；19 字段高级过滤、嵌套 AND/OR、着色预设及详情历史导航。
+- 保存流量、版本化会话、HAR / CSV、Gist 脱敏发布、Charles 会话及规则导入、含 Protobuf 描述符的规则与设置备份。
+- 内置 HTTP / stdio MCP、完整 CLI、嵌套规则文件夹和工具总开关；Automation Dashboard 可启动带代理的终端、浏览器与 Electron。
+- CommonJS Addons、Lodash / Moment、环境变量、sharedState、Mock API、分级 Console；脚本继续在有超时限制的独立进程内执行。
+- HTTP 与 SOCKS5 共用监听端口，支持 zstd 解码、12 种多规则弱网预设、全局 Protobuf Schema 映射。
+- 局域网按多 IP / CIDR 白名单接入，默认只监听回环地址；macOS 系统代理旁路列表随接管恢复。
 
 常用快捷键为 ⌘F 过滤当前流量、⇧⌘F 查找来源、⌥⌘N 构建请求、⌘K 编辑请求、⇧⌘R 编辑并重发，以及 ⇧⌘C 复制 cURL。
 
@@ -88,7 +92,7 @@ xcrun stapler validate build_app/transparent/ProxyMirror.app
 
 ### Charles 迁移
 
-从「文件 → 导入 Charles 会话」选择 Charles 导出的 XML 或 JSON Session。原生 `.chls` / `.chlz` 先在 Charles 中导出。打开「工具 → 从 Charles 导入规则」可预览兼容的 Rewrite、Map Local、Block List 规则和跳过项，再确认应用。 [Charles 导出说明](https://www.charlesproxy.com/documentation/using-charles/export/)
+从「文件 → 导入 Charles 会话」选择 Charles 导出的 XML 或 JSON Session。原生 `.chls` / `.chlz` 可调用本机 Charles 的 `convert` 命令转为 HAR；未安装 Charles 时先导出 XML / JSON / HAR。打开「工具 → 从 Charles 导入规则」可预览兼容的规则和跳过项，再确认应用。 [Charles 转换命令](https://www.charlesproxy.com/documentation/tools/command-line-tools/)
 
 ### 来源文件夹与设置搜索
 
@@ -136,6 +140,28 @@ HAR 包含已捕获的请求头、响应头和正文。单次导出的正文上�
 | 6 | 规则预览已失效 |
 
 ## 架构
+
+### MCP、规则工具与开发工作台
+
+从「帮助 → 安装 proxymirror-cli 到 PATH」安装 CLI，重新打开终端后可运行：
+
+```zsh
+proxymirror-cli proxy-address
+proxymirror-cli flow --id <UUID>
+proxymirror-cli export flows --format json --after-id <UUID> --limit 100 --output -
+proxymirror-cli rules mapLocal list
+proxymirror-cli tools disable --tool rewrite
+proxymirror-cli code --id <UUID> --language swift
+proxymirror-cli mcp config
+```
+
+应用启动时在随机回环端口开启 MCP。`mcp config` 输出本次端点及令牌；令牌文件权限为 0600，应用退出后清理。可从「帮助 → 查看 MCP 连接配置」复制 HTTP 配置，或将 AI 客户端配置为启动 `proxymirror-cli mcp stdio`。`--after-id` 每页返回游标之后最早的一批记录，继续用该页最后一条 ID 翻页，避免新增流量超过页大小时遗漏。
+
+「工具」菜单提供 Diff、Protobuf、规则文件夹、自定义预览器、汇总和 Automation 独立窗口；脚本窗口支持 ⌘B 格式化、⌘S 保存启用。自定义预览器接收 `preview(input)`，在独立 worker 内返回文本或 JSON。执行结果以纯文本显示。
+
+规则、文件夹、工具总开关和 Protobuf 描述符统一保存到 `rules.json`；单份备份上限 16 MiB。证书菜单提供 PEM / DER / P12 导入向导与加密私钥导出。Gist 发布需填写具备 Gists 写权限的 GitHub Token，可保存到钥匙串；发布前可检查已脱敏的 HAR 预览。
+
+实现范围、验证命令和仍需外部配套的能力见 [差距开发验收记录](Docs/gap-implementation.md)。
 
 ```
 Sources/

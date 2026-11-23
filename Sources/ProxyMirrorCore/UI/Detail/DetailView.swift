@@ -33,11 +33,19 @@ struct DetailView: View {
 struct DetailContentView: View {
     @ObservedObject var tx: Transaction
     let store: TrafficStore
+    var navigationEnabled = true
     @EnvironmentObject var appState: AppState
+    @AppStorage("ui.truncationStyle") private var truncation = "middle"
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
+                if navigationEnabled {
+                    Button { store.navigateSelectionHistory(-1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless).disabled(!store.canNavigateBackward).help("上一条查看记录")
+                    Button { store.navigateSelectionHistory(1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless).disabled(!store.canNavigateForward).help("下一条查看记录")
+                }
                 methodBadge(tx.method)
                 statusBadge(tx)
                 let url = tx.originalURL ?? tx.fullURL
@@ -45,7 +53,7 @@ struct DetailContentView: View {
                     (Text(url[..<schemeEnd]).foregroundColor(.secondary)
                      + Text(url[schemeEnd...]).foregroundColor(.blue))
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(truncation == "head" ? .head : truncation == "tail" ? .tail : .middle)
                         .textSelection(.enabled)
                 } else {
                     Text(url).foregroundStyle(.blue).lineLimit(1).textSelection(.enabled)
@@ -55,6 +63,10 @@ struct DetailContentView: View {
                     Button("Repeat") { appState.repeatRequest(tx) }.disabled(!tx.canReplay)
                     Button("Copy as cURL") { appState.copyRequestsAsCurl([tx]) }
                     Button("Copy URL") { appState.copyText(tx.fullURL) }
+                    Button("创建 Protobuf 映射…") {
+                        ProtobufRuleStore.shared.addRule(for: tx.fullURL)
+                        NotificationCenter.default.post(name: .pmOpenProtobuf, object: nil)
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -159,6 +171,9 @@ private struct ContentSideView: View {
     @State private var showingQuery = false
     @State private var showCapturedBytes = false
     @State private var decodedBody: (input: TreeInput, result: Result<(Data, String), ContentCoding.DecodeError>)?
+    @ObservedObject private var previewers = CustomPreviewerStore.shared
+    @ObservedObject private var protobufRules = ProtobufRuleStore.shared
+    @State private var customPreviewerID: UUID?
 
     private struct TreeInput: Equatable {
         let transaction: ObjectIdentifier
@@ -226,6 +241,7 @@ private struct ContentSideView: View {
     }
     private var isHTTPProtobuf: Bool {
         HTTPProtobuf.matches(contentType: contentType, query: tx.query, isRequest: isRequest)
+            || protobufRules.resolution(for: tx.fullURL, isRequest: isRequest) != nil
     }
     private var isJSON: Bool {
         BodyContentView.isJSON(data: data, contentType: inspectedBody.contentType)
@@ -267,7 +283,11 @@ private struct ContentSideView: View {
                     Text("正文已截断 · 捕获 \(capturedData.count) / \(receivedBytes) 字节")
                         .font(.caption).foregroundStyle(.orange).padding(4)
                 }
-                content
+                if let id = customPreviewerID, let previewer = previewers.items.first(where: { $0.id == id }) {
+                    CustomPreviewerResultView(previewer: previewer, tx: tx, side: side)
+                } else {
+                    content
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -322,7 +342,11 @@ private struct ContentSideView: View {
                         if additionalTabs.contains(tab) { tabButton(tab) }
                         Menu {
                             ForEach(additionalTabs, id: \.self) { candidate in
-                                Button(candidate.rawValue) { selectedTab = candidate }
+                                Button(candidate.rawValue) { customPreviewerID = nil; selectedTab = candidate }
+                            }
+                            if !previewers.items.isEmpty { Divider() }
+                            ForEach(previewers.items.filter { $0.matches(contentType) }) { previewer in
+                                Button(previewer.name) { customPreviewerID = previewer.id }
                             }
                         } label: {
                             Image(systemName: "plus").font(.system(size: 10))
@@ -349,10 +373,10 @@ private struct ContentSideView: View {
     }
 
     private func tabButton(_ candidate: Tab) -> some View {
-        Button { selectedTab = candidate } label: {
+        Button { customPreviewerID = nil; selectedTab = candidate } label: {
             Text(candidate == .body ? grpcMediaType?.transport.label ?? candidate.rawValue : candidate.rawValue)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tab == candidate ? Color.accentColor : Color.secondary)
+                .foregroundStyle(tab == candidate && customPreviewerID == nil ? Color.accentColor : Color.secondary)
                 .fixedSize()
                 .frame(height: 30)
                 .contentShape(Rectangle())
@@ -407,13 +431,13 @@ private struct ContentSideView: View {
                                           bodyGeneration: bodyGeneration,
                                           headers: headers, trailers: trailers,
                                           complete: complete || tx.state == .failed, truncated: truncated,
-                                          path: tx.path, isRequest: isRequest, mediaType: grpcMediaType)
+                                          path: tx.path, isRequest: isRequest, mediaType: grpcMediaType, target: tx.fullURL)
                             .id(ObjectIdentifier(tx))
                     } else if isHTTPProtobuf {
                         HTTPProtobufView(data: baseDecodedData, revision: bodyRevision, generation: bodyGeneration,
                                          complete: complete || tx.state == .failed, truncated: truncated,
                                          isError: !isRequest && (400...599).contains(tx.statusCode),
-                                         decodedEncoding: decodedLabel)
+                                         decodedEncoding: decodedLabel, target: tx.fullURL, isRequest: isRequest)
                             .id(ObjectIdentifier(tx))
                     } else {
                         bodyInspector
@@ -663,7 +687,7 @@ private struct ContentSideView: View {
                         HTTPProtobufView(data: baseDecodedData, revision: bodyRevision, generation: bodyGeneration,
                                          complete: complete || tx.state == .failed, truncated: truncated,
                                          isError: !isRequest && (400...599).contains(tx.statusCode),
-                                         decodedEncoding: nil, rawHead: head, rawTrailers: trailers)
+                                         decodedEncoding: nil, target: tx.fullURL, isRequest: isRequest, rawHead: head, rawTrailers: trailers)
                             .id(ObjectIdentifier(tx))
                     } else {
                         rawBodyPreview(data, head: head, contentType: inspectedBody.contentType)

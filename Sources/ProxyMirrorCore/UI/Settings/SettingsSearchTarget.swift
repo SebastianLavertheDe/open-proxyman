@@ -4,6 +4,7 @@ enum SettingsSearchTarget: String, CaseIterable, Identifiable {
     case listenPort, autoStart, autoTakeOver, followLatest, appearance, lan, applyListener, systemProxy
     case decryptHTTPS, http2, caCertificate, fingerprint, excludedHosts, clientCertificate
     case bodyLimit, transactionLimit, restart, upstreamProxy
+    case displayBehavior, copyBehavior, bypassProxy
 
     var id: Self { self }
 
@@ -27,6 +28,9 @@ enum SettingsSearchTarget: String, CaseIterable, Identifiable {
         case .transactionLimit: return (2, "最大保留请求数", "traffic request transaction limit history 留存 流量 容量")
         case .restart: return (2, "应用并重启代理", "apply restart reload proxy 重启 重新加载")
         case .upstreamProxy: return (2, "外部代理与 PAC", "upstream external proxy HTTP HTTPS CONNECT SOCKS5 bypass PAC proxy auto config 上游代理 自动代理配置 直连 转发 绕过")
+        case .displayBehavior: return (3, "显示与正文编辑", "resource usage memory upload download menu bar icon truncation word wrap minimap invisibles Apple traffic 内存 速率 菜单栏 截断 换行 空白字符 缩略导航 隐藏")
+        case .copyBehavior: return (3, "复制导出与重发行为", "redact sensitive headers proxy curl no cache repeat diagnostic headers 脱敏 敏感头 复制 重发 缓存 诊断头")
+        case .bypassProxy: return (0, "系统代理旁路", "bypass exceptions macOS proxy 域名 绕过 旁路")
         }
     }
 
@@ -36,6 +40,7 @@ enum SettingsSearchTarget: String, CaseIterable, Identifiable {
         switch tab {
         case 0: return "General · 常规"
         case 1: return "SSL · 证书与协议"
+        case 3: return "显示与行为"
         default: return "Advanced · 高级"
         }
     }

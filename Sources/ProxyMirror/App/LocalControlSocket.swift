@@ -3,7 +3,7 @@ import Foundation
 @testable import ProxyMirrorCore
 
 enum LocalControlSocket {
-    static let requestLimit = 3 * 1024 * 1024
+    static let requestLimit = 24 * 1024 * 1024
     static let responseLimit = 64 * 1024 * 1024
 
     private static var directory: URL {

@@ -33,6 +33,18 @@ struct ScriptingResult: Sendable {
     let body: Data?
     let graphqlOperationName: String?
     let logs: [String]
+    let mockResponse: ScriptingMockResponse?
+
+    init(head: BreakpointHead, body: Data?, graphqlOperationName: String?, logs: [String], mockResponse: ScriptingMockResponse? = nil) {
+        self.head = head; self.body = body; self.graphqlOperationName = graphqlOperationName
+        self.logs = logs; self.mockResponse = mockResponse
+    }
+}
+
+struct ScriptingMockResponse: Sendable {
+    let status: Int
+    let headers: HTTPHeaders
+    let body: Data
 }
 
 private struct ScriptingEntry: Sendable {
@@ -51,11 +63,11 @@ private enum ScriptingAction: Sendable {
         return nil
     }
 
-    func run(_ message: WireMessage) throws -> (message: WireMessage, logs: [String]) {
+    func run(_ message: WireMessage, original: BreakpointMessage) throws -> (message: WireMessage, logs: [String], mock: ScriptingMockResponse?) {
         var result = message
         switch self {
         case .script(let source):
-            return try ScriptWorker.run(source: source, message: message)
+            return try ScriptWorker.run(source: source, message: message, original: original)
         case .header(let operation, let name, let value):
             let lower = name.lowercased()
             if operation == .replaceExisting {
@@ -69,7 +81,7 @@ private enum ScriptingAction: Sendable {
         case .status(let status):
             result.status = status
         }
-        return (result, [])
+        return (result, [], nil)
     }
 }
 
@@ -82,7 +94,18 @@ final class ScriptingActivity: ObservableObject {
         let date = Date()
         let url: String
         let text: String
+        var level: Level {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[error]") { return .error }
+            if trimmed.hasPrefix("[warn]") { return .warning }
+            if ["[log]", "[info]", "[debug]"].contains(where: trimmed.hasPrefix) { return .user }
+            if trimmed.contains("繁忙") { return .warning }
+            if ["已执行", "此阶段", "Mock API 本地响应", "关闭连接", "丢弃帧", "改写帧负载"].contains(where: trimmed.contains) { return .system }
+            return .error
+        }
     }
+
+    enum Level: String, CaseIterable { case user = "用户", warning = "警告", error = "错误", system = "系统" }
 
     @Published private(set) var entries: [Entry] = []
     @Published var pendingTarget: ScriptingTarget?
@@ -90,7 +113,7 @@ final class ScriptingActivity: ObservableObject {
 
     func record(url: String, lines: [String]) {
         entries.append(contentsOf: lines.map { Entry(url: url, text: $0) })
-        if entries.count > 250 { entries.removeFirst(entries.count - 250) }
+        if entries.count > 2000 { entries.removeFirst(entries.count - 2000) }
     }
 
     func clear() { entries.removeAll() }
@@ -110,7 +133,7 @@ final class ScriptingActivity: ObservableObject {
 }
 
 enum ScriptingService {
-    static let sourceLimit = 16 * 1024
+    static let sourceLimit = 256 * 1024
     static let bodyLimit = BreakpointMessage.bodyLimit
     private static let maxRules = 6
     private static let capacity = DispatchSemaphore(value: 4)
@@ -118,6 +141,7 @@ enum ScriptingService {
 
     /// Preflight matching omits the operation name until bounded request bytes are available.
     static func plan(for target: ScriptingTarget, phase: ScriptingPhase) -> ScriptingPlan? {
+        guard RuleOrganizationStore.shared.isEnabled("rewrite") else { return nil }
         let rules = InterceptionConfig.shared.rewrite.value
         guard !rules.isEmpty else { return nil }
         let entries = entries(for: target, phase: phase, groups: rules)
@@ -130,8 +154,9 @@ enum ScriptingService {
 
     private static func entries(for target: ScriptingTarget, phase: ScriptingPhase,
                                 groups: [RewriteRuleSet]) -> [ScriptingEntry] {
-        groups.filter(\.enabled).flatMap { group in
+        groups.filter { $0.enabled && RuleOrganizationStore.shared.ruleIsEnabled(tool: "rewrite", id: $0.id) }.flatMap { group in
             group.rules.filter(\.enabled).flatMap { rule -> [ScriptingEntry] in
+                guard RuleOrganizationStore.shared.ruleIsEnabled(tool: "rewrite", id: rule.id) else { return [] }
                 var predicate = rule.rule
                 let operation = predicate.graphqlQueryName
                 predicate.graphqlQueryName = ""
@@ -164,20 +189,23 @@ enum ScriptingService {
         }) {
             var result = captured
             var logs: [String] = []
+            var mockResponse: ScriptingMockResponse?
             for entry in candidates.prefix(maxRules) {
                 let before = WireMessage(packet: result, plan: plan, operation: operation)
                 do {
-                    let output = try entry.action.run(before)
+                    let output = try entry.action.run(before, original: result)
                     result = try output.message.applying(to: result)
                     logs.append("\(plan.phase.label) · \(entry.label) · 已执行")
                     logs += output.logs.map { "  \($0)" }
+                    if let mock = output.mock { mockResponse = mock; logs.append("请求 · \(entry.label) · Mock API 本地响应"); break }
                 } catch {
+                    if let failure = error as? ScriptExecutionFailure { logs += failure.capturedLogs.map { "  \($0)" } }
                     logs.append("\(plan.phase.label) · \(entry.label) · \(error.localizedDescription)")
                 }
             }
             if candidates.count > maxRules { logs.append("此阶段按顺序执行前 \(maxRules) 条脚本") }
             report(plan: plan, logs: logs)
-            completion(ScriptingResult(head: result.head, body: result.body, graphqlOperationName: operation, logs: logs))
+            completion(ScriptingResult(head: result.head, body: result.body, graphqlOperationName: operation, logs: logs, mockResponse: mockResponse))
         }
     }
 
@@ -235,6 +263,7 @@ enum ScriptingService {
                     continue
                 }
             } catch {
+                if let failure = error as? ScriptExecutionFailure { logs += failure.capturedLogs.map { "  \($0)" } }
                 logs.append("WebSocket · \(entry.label) · \(error.localizedDescription)")
             }
         }
@@ -381,33 +410,105 @@ private struct WireMessage: Codable {
     }
 }
 
+private struct ScriptExecutionFailure: LocalizedError {
+    let errorDescription: String?
+    var capturedLogs: [String] = []
+}
+
 private enum ScriptWorker {
-    private struct Input: Encodable { let source: String; let message: WireMessage }
     private struct Response: Decodable { let message: WireMessage?; let logs: [String]?; let error: String? }
-    private struct Failure: LocalizedError { let errorDescription: String? }
+    private typealias Failure = ScriptExecutionFailure
 
-    static func run(source: String, message: WireMessage) throws -> (message: WireMessage, logs: [String]) {
-        guard source.utf8.count <= ScriptingService.sourceLimit else { throw Failure(errorDescription: "脚本超过 16 KiB") }
-        guard let executable = Bundle.main.executableURL?.deletingLastPathComponent()
-            .appendingPathComponent("ProxyMirrorScriptWorker"),
-              FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw Failure(errorDescription: "找不到脚本执行组件")
+    static func run(source: String, message: WireMessage, original: BreakpointMessage) throws -> (message: WireMessage, logs: [String], mock: ScriptingMockResponse?) {
+        let output = try execute(source: source, message: message) { result in
+            let bytes = try JSONSerialization.data(withJSONObject: result)
+            guard let packet = try JSONDecoder().decode(Response.self, from: bytes).message else {
+                throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message")
+            }
+            // Host-side framing/body validation must succeed before sharedState commits.
+            _ = try packet.applying(to: original)
         }
-        let data = try JSONEncoder().encode(Input(source: source, message: message))
-        guard data.count <= 2 * 1024 * 1024 else { throw Failure(errorDescription: "脚本输入超过 2 MiB") }
+        let data = try JSONSerialization.data(withJSONObject: output)
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        guard let packet = response.message else { throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message") }
+        return (packet, logs(output), try mock(output["mock"], phase: message.phase))
+    }
 
+    static func beautify(_ source: String) throws -> String {
+        let output = try execute(source: source, operation: "beautify")
+        guard let result = output["source"] as? String else { throw Failure(errorDescription: "无法格式化脚本") }
+        return result
+    }
+
+    private static func logs(_ output: [String: Any]) -> [String] {
+        (output["logs"] as? [String] ?? []).prefix(256).map { String($0.prefix(4000)) }
+    }
+
+    private static func mock(_ value: Any?, phase: ScriptingPhase) throws -> ScriptingMockResponse? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard phase == .request, let object = value as? [String: Any],
+              let status = object["status"] as? Int, (200...599).contains(status) else {
+            throw Failure(errorDescription: "Mock 响应需要请求阶段和 200...599 状态码")
+        }
+        let body: Data
+        if let base64 = object["base64"] as? String {
+            guard let decoded = Data(base64Encoded: base64) else { throw Failure(errorDescription: "Mock base64 无效") }
+            body = decoded
+        } else {
+            guard object["body"] == nil || object["body"] is String else { throw Failure(errorDescription: "Mock body 必须是 UTF-8 文本，可用 base64 发送二进制") }
+            body = Data((object["body"] as? String ?? "").utf8)
+        }
+        guard body.count <= ScriptingService.bodyLimit,
+              !BreakpointMessage.noBodyStatus(status) || body.isEmpty else { throw Failure(errorDescription: "Mock 正文过大或状态码不允许正文") }
+        let fields: [(String, String)]
+        if let pairs = object["headers"] as? [[String: String]] {
+            guard pairs.allSatisfy({ $0["name"] != nil && $0["value"] != nil }) else { throw Failure(errorDescription: "Mock 头部无效") }
+            fields = pairs.map { ($0["name"]!, $0["value"]!) }
+        } else if let values = object["headers"] as? [String: String] { fields = values.map { ($0.key, $0.value) } }
+        else {
+            guard object["headers"] == nil else { throw Failure(errorDescription: "Mock headers 必须是字符串字典或 name/value 数组") }
+            fields = []
+        }
+        guard fields.count <= 256, fields.reduce(0, { $0 + $1.0.utf8.count + $1.1.utf8.count }) <= 128 * 1024 else {
+            throw Failure(errorDescription: "Mock 头部过大")
+        }
+        var headers = HTTPHeaders()
+        let reserved: Set<String> = ["content-length", "transfer-encoding", "connection", "proxy-connection", "keep-alive", "upgrade", "trailer", "te"]
+        for (name, value) in fields {
+            guard !name.isEmpty, name.utf8.allSatisfy({ byte in
+                (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte) || "!#$%&'*+-.^_`|~".utf8.contains(byte)
+            }), value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }) else { throw Failure(errorDescription: "Mock 头部无效") }
+            if !reserved.contains(name.lowercased()) { headers.append(name, value) }
+        }
+        headers.set(name: "Content-Length", value: String(body.count))
+        if !headers.contains("Content-Type") { headers.set(name: "Content-Type", value: "application/json; charset=utf-8") }
+        return ScriptingMockResponse(status: status, headers: headers, body: body)
+    }
+
+    /// Serializing read/execute/commit preserves sharedState under concurrent flows.
+    private static func execute(source: String, message: WireMessage? = nil, operation: String? = nil,
+                                validate: (([String: Any]) throws -> Void)? = nil) throws -> [String: Any] {
+        guard source.utf8.count <= ScriptingService.sourceLimit else { throw Failure(errorDescription: "脚本超过 256 KiB") }
+        guard let executable = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("ProxyMirrorScriptWorker"),
+              FileManager.default.isExecutableFile(atPath: executable.path) else { throw Failure(errorDescription: "找不到脚本执行组件") }
+        ScriptingRuntimeSettings.executionLock.lock()
+        defer { ScriptingRuntimeSettings.executionLock.unlock() }
+        var object = try ScriptingRuntimeSettings.input()
+        object["source"] = source
+        object["mockMode"] = source.hasPrefix(ScriptingRuntimeSettings.mockDirective)
+        object["operation"] = operation
+        if let message { object["message"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) }
+        let data = try JSONSerialization.data(withJSONObject: object)
+        guard data.count <= 2 * 1024 * 1024 else { throw Failure(errorDescription: "脚本输入超过 2 MiB") }
         let input = try scratchFile()
         defer { try? input.close() }
         let output = try scratchFile()
         defer { try? output.close() }
         try input.write(contentsOf: data)
         try input.seek(toOffset: 0)
-
         let process = Process()
         process.executableURL = executable
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
+        process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
         let done = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in done.signal() }
         try process.run()
@@ -417,33 +518,32 @@ private enum ScriptWorker {
             throw Failure(errorDescription: "脚本超过 400 ms")
         }
         try output.seek(toOffset: 0)
-        guard process.terminationStatus == 0,
-              let bytes = try output.read(upToCount: 1024 * 1024 + 1),
-              bytes.count <= 1024 * 1024,
-              let response = try? JSONDecoder().decode(Response.self, from: bytes) else {
+        guard process.terminationStatus == 0, let bytes = try output.read(upToCount: 2 * 1024 * 1024 + 1),
+              bytes.count <= 2 * 1024 * 1024,
+              let result = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
             throw Failure(errorDescription: "脚本执行组件返回了无效结果")
         }
-        if let error = response.error { throw Failure(errorDescription: error) }
-        guard let packet = response.message else {
-            throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message")
+        if let error = result["error"] as? String { throw Failure(errorDescription: error, capturedLogs: logs(result)) }
+        if let message, message.phase != .webSocket {
+            guard (try JSONDecoder().decode(Response.self, from: bytes)).message != nil else {
+                throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message")
+            }
+            _ = try mock(result["mock"], phase: message.phase)
         }
-        return (packet, (response.logs ?? []).prefix(12).map { String($0.prefix(1000)) })
+        do { try validate?(result) }
+        catch { throw Failure(errorDescription: error.localizedDescription, capturedLogs: logs(result)) }
+        try ScriptingRuntimeSettings.commit(result)
+        return result
     }
 
-    /// Give the worker an inherited file descriptor without a named on-disk input.
     private static func scratchFile() throws -> FileHandle {
-        let path = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pm-script-\(UUID().uuidString)").path
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("pm-script-\(UUID().uuidString)").path
         let descriptor = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, mode_t(0o600))
         guard descriptor >= 0 else { throw Failure(errorDescription: "无法创建脚本输入输出缓冲") }
-        guard unlink(path) == 0 else {
-            close(descriptor)
-            throw Failure(errorDescription: "无法隔离脚本输入输出缓冲")
-        }
+        guard unlink(path) == 0 else { close(descriptor); throw Failure(errorDescription: "无法隔离脚本输入输出缓冲") }
         return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 }
-
 
 /// 脚本帧动作返回值的宽松 JSON 解码
 enum FrameValue: Decodable, Sendable {
@@ -467,51 +567,16 @@ enum FrameValue: Decodable, Sendable {
 }
 
 extension ScriptWorker {
-    fileprivate struct FrameInput: Encodable { let source: String; let message: WireMessage }
-    fileprivate struct FrameResponse: Decodable { let message: FrameValue?; let logs: [String]?; let error: String? }
-    fileprivate struct FrameFailure: LocalizedError { let errorDescription: String? }
-
-    /// 帧级脚本执行：允许任意返回值（原报文对象、字符串、false、{base64} 等）
+    private struct FrameResponse: Decodable { let message: FrameValue? }
     fileprivate static func runFrame(source: String, message: WireMessage) throws -> (FrameValue?, [String]) {
-        guard source.utf8.count <= ScriptingService.sourceLimit else {
-            throw FrameFailure(errorDescription: "脚本超过 16 KiB")
-        }
-        guard let executable = Bundle.main.executableURL?.deletingLastPathComponent()
-            .appendingPathComponent("ProxyMirrorScriptWorker"),
-              FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw FrameFailure(errorDescription: "找不到脚本执行组件")
-        }
-        let data = try JSONEncoder().encode(FrameInput(source: source, message: message))
-        guard data.count <= 2 * 1024 * 1024 else { throw FrameFailure(errorDescription: "脚本输入超过 2 MiB") }
+        let output = try execute(source: source, message: message)
+        let response = try JSONDecoder().decode(FrameResponse.self, from: JSONSerialization.data(withJSONObject: output))
+        return (response.message, logs(output))
+    }
+}
 
-        let input = try scratchFile()
-        defer { try? input.close() }
-        let output = try scratchFile()
-        defer { try? output.close() }
-        try input.write(contentsOf: data)
-        try input.seek(toOffset: 0)
-
-        let process = Process()
-        process.executableURL = executable
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        let done = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in done.signal() }
-        try process.run()
-        guard done.wait(timeout: .now() + .milliseconds(400)) == .success else {
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            _ = done.wait(timeout: .now() + .milliseconds(150))
-            throw FrameFailure(errorDescription: "脚本超过 400 ms")
-        }
-        try output.seek(toOffset: 0)
-        guard process.terminationStatus == 0,
-              let bytes = try output.read(upToCount: 1024 * 1024 + 1),
-              bytes.count <= 1024 * 1024,
-              let response = try? JSONDecoder().decode(FrameResponse.self, from: bytes) else {
-            throw FrameFailure(errorDescription: "脚本执行组件返回了无效结果")
-        }
-        if let error = response.error { throw FrameFailure(errorDescription: error) }
-        return (response.message, (response.logs ?? []).prefix(12).map { String($0.prefix(1000)) })
+extension ScriptingService {
+    static func beautify(source: String, completion: @escaping @Sendable (Result<String, Error>) -> Void) {
+        queue.async { completion(Result { try ScriptWorker.beautify(source) }) }
     }
 }

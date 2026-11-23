@@ -6,7 +6,10 @@ struct ExternalProxySettings: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var draft = InterceptionConfig.shared.externalProxy.value
     @State private var port = String(InterceptionConfig.shared.externalProxy.value.port)
-    @State private var bypass = (InterceptionConfig.shared.externalProxy.value.bypassHosts ?? []).joined(separator: "\n")
+    @State private var bypass = InterceptionConfig.shared.externalProxy.value.bypassHosts ?? []
+    @State private var newBypassHost = ""
+    @State private var pacChecking = false
+    @State private var pacFeedback: String?
     @State private var feedback: String?
     @State private var saveFailed = false
 
@@ -26,12 +29,8 @@ struct ExternalProxySettings: View {
                     manualSettings
                 }
                 Text("直连主机").fontWeight(.medium)
-                TextEditor(text: $bypass)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(height: 55)
-                    .overlay(Rectangle().strokeBorder(.quaternary))
-                    .accessibilityLabel("外部代理直连主机")
-                Text("每行一个主机。example.com 仅匹配该主机，*.example.com 匹配其子域。")
+                bypassList
+                Text("example.com 仅匹配该主机，*.example.com 匹配子域。localhost、*.localhost、127.0.0.0/8、::1 与其 IPv4 映射地址始终直连。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let issue = validation ?? feedback {
@@ -42,9 +41,40 @@ struct ExternalProxySettings: View {
             Button("应用外部代理设置") { save() }
                 .disabled(validation != nil)
         }
-        .onChange(of: draft) { _ in feedback = nil }
+        .onChange(of: draft) { _ in feedback = nil; pacFeedback = nil }
         .onChange(of: port) { _ in feedback = nil }
         .onChange(of: bypass) { _ in feedback = nil }
+    }
+
+    private var bypassList: some View {
+        VStack(spacing: 6) {
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(bypass.indices, id: \.self) { index in
+                        HStack {
+                            Text(bypass[index]).font(.system(.caption, design: .monospaced))
+                            Spacer()
+                            Button { bypass.remove(at: index) } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.borderless).accessibilityLabel("移除直连主机 \(bypass[index])")
+                        }
+                    }
+                }.frame(maxWidth: .infinity)
+            }.frame(height: min(105, max(30, CGFloat(bypass.count) * 22)))
+                .padding(5).overlay(Rectangle().strokeBorder(.quaternary))
+            HStack {
+                TextField("主机或 *.example.com", text: $newBypassHost).onSubmit(addBypass)
+                Button("添加", action: addBypass).disabled(newBypassHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func addBypass() {
+        let value = newBypassHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !value.isEmpty else { return }
+        var check = candidate; check.bypassHosts = [value]
+        if let issue = check.validationError { feedback = issue; saveFailed = true; return }
+        if !bypass.contains(value) { bypass.append(value) }
+        newBypassHost = ""; feedback = nil
     }
 
     private var pacSettings: some View {
@@ -57,7 +87,20 @@ struct ExternalProxySettings: View {
                     if panel.runModal() == .OK { draft.pacURL = panel.url?.absoluteString }
                 }
             }
-            Text("支持 DIRECT、PROXY 和系统明确标记为 SOCKS5 的路由。")
+            HStack {
+                Button("验证 PAC") {
+                    pacChecking = true; pacFeedback = nil
+                    ExternalProxyPACValidation.check(candidate) { result in
+                        pacChecking = false
+                        switch result {
+                        case .success(let description): pacFeedback = description
+                        case .failure(let error): pacFeedback = "PAC 验证失败：" + error.localizedDescription
+                        }
+                    }
+                }.disabled(pacChecking || candidate.validationError != nil)
+                if pacChecking { ProgressView().controlSize(.small) }
+            }
+            Text(pacFeedback ?? "支持 DIRECT、PROXY 和系统明确标记为 SOCKS5 的路由。验证会实际加载 PAC 并计算 https://example.com/ 的路由。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -90,9 +133,7 @@ struct ExternalProxySettings: View {
         value.host = ExternalProxyHost(draft.host)?.name ?? draft.host
         value.pacURL = draft.pacURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.mode == .pac { value.useAuth = false }
-        value.bypassHosts = bypass.components(separatedBy: .newlines).map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines)
-        }.filter { !$0.isEmpty }
+        value.bypassHosts = bypass.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         return value
     }
 
@@ -115,8 +156,9 @@ struct ExternalProxySettings: View {
             value.password = ""
         }
         do {
-            try store(value)
-            InterceptionConfig.shared.externalProxy.set(value)
+            var backup = RulesStore.shared.backup()
+            backup.external = value
+            try RulesStore.shared.install(backup)
             feedback = value.enabled ? "外部代理设置已保存，应用于新连接。" : "已关闭外部代理。"
             saveFailed = false
         } catch {
@@ -125,8 +167,4 @@ struct ExternalProxySettings: View {
         }
     }
 
-    private func store(_ config: ExternalProxyConfig) throws {
-        let target = RulesFileIO.dir.appendingPathComponent("external.json")
-        try PrivateAppFile.write(JSONEncoder().encode(config), to: target)
-    }
 }

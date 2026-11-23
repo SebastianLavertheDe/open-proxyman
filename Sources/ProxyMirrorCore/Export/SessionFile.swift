@@ -226,11 +226,18 @@ struct SessionFile: Codable, Sendable {
 
     @MainActor
     func save() throws {
-        if let url = Self.selectSaveFile() { try write(to: url) }
+        if let url = Self.selectSaveFile() { try write(to: url, redactSensitiveHeaders: AppSettings.shared.redactSensitiveHeaders) }
     }
 
-    func write(to url: URL) throws {
-        try JSONEncoder().encode(self).write(to: url, options: .atomic)
+    func exportData(redactSensitiveHeaders: Bool = false) throws -> Data {
+        let data = try JSONEncoder().encode(self)
+        guard redactSensitiveHeaders,
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return data }
+        return try JSONSerialization.data(withJSONObject: ExportRedaction.har(object))
+    }
+
+    func write(to url: URL, redactSensitiveHeaders: Bool = false) throws {
+        try PrivateAppFile.write(exportData(redactSensitiveHeaders: redactSensitiveHeaders), to: url)
     }
 
     @MainActor
@@ -242,7 +249,7 @@ struct SessionFile: Codable, Sendable {
     }
 
     @MainActor
-    static func selectFile(extensions: [String] = [fileExtension, "har"]) -> URL? {
+    static func selectFile(extensions: [String] = [fileExtension, "har", "xml", "chlsx", "chlsj", "chls", "chlz"]) -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
         guard panel.runModal() == .OK else { return nil }

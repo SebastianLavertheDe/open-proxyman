@@ -16,7 +16,12 @@ enum CharlesImport {
     }
 
     static func readSession(_ url: URL) throws -> Session {
-        try readSession(contents(of: url, limit: sessionLimit))
+        let data = try contents(of: url, limit: sessionLimit)
+        let binary = data.prefix(2) == Data([0xac, 0xed]) || data.prefix(2) == Data([0x1f, 0x8b]) || data.prefix(2) == Data([0x50, 0x4b])
+        if binary, ["chls", "chlz"].contains(url.pathExtension.lowercased()) {
+            return Session(records: try SessionFile.importHAR(CharlesSessionConverter.convertToHAR(url)), skipped: 0)
+        }
+        return try readSession(data)
     }
 
     static func readSession(_ data: Data) throws -> Session {

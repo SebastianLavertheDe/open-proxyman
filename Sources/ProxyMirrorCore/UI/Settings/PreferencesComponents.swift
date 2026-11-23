@@ -132,7 +132,25 @@ struct PreferencesSetting<Content: View>: View {
     }
 }
 
-/// Keep the system window controls while letting the sidebar extend behind the title bar.
+/// 标记实际 header 的布局范围，仅用于截图验收，不参与鼠标和辅助功能交互。
+struct PreferencesHeaderAnchor: NSViewRepresentable {
+    static let identifier = NSUserInterfaceItemIdentifier("ProxyMirror.preferences.header")
+
+    final class MarkerView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MarkerView(frame: .zero)
+        view.identifier = Self.identifier
+        view.setAccessibilityElement(false)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// 让自有 header 留在系统标题栏下方的标准内容区域，避免标题栏遮挡。
 struct PreferencesWindowStyle: NSViewRepresentable {
     final class WindowView: NSView {
         private var snapshotScheduled = false
@@ -143,7 +161,7 @@ struct PreferencesWindowStyle: NSViewRepresentable {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.titlebarSeparatorStyle = .none
-            window.styleMask.insert(.fullSizeContentView)
+            window.styleMask.remove(.fullSizeContentView)
             window.isMovableByWindowBackground = true
             window.toolbar = nil
             window.setContentSize(NSSize(width: 970, height: 750))
@@ -158,13 +176,14 @@ struct PreferencesWindowStyle: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                 guard let self else { return }
                 do {
-                    guard let content = self.window?.contentView else {
+                    guard let window = self.window, let content = window.contentView else {
                         throw CocoaError(.fileWriteUnknown)
                     }
                     // The frame view also draws the real system title-bar controls.
                     let renderedView = content.superview ?? content
                     renderedView.layoutSubtreeIfNeeded()
-                    let rect = self.convert(self.bounds, to: renderedView)
+                    let rect = renderedView.bounds
+                    let layout = try self.headerLayout(in: content, window: window)
                     guard let bitmap = renderedView.bitmapImageRepForCachingDisplay(in: rect) else {
                         throw CocoaError(.fileWriteUnknown)
                     }
@@ -175,6 +194,15 @@ struct PreferencesWindowStyle: NSViewRepresentable {
                     let url = URL(fileURLWithPath: path)
                     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try data.write(to: url, options: .atomic)
+                    let metricsURL = url.deletingPathExtension().appendingPathExtension("layout.json")
+                    let metrics = try JSONSerialization.data(withJSONObject: layout.metrics,
+                                                            options: [.sortedKeys, .prettyPrinted])
+                    try metrics.write(to: metricsURL, options: .atomic)
+                    guard layout.visible else {
+                        throw NSError(domain: "ProxyMirror.SettingsSnapshot", code: 2,
+                                      userInfo: [NSLocalizedDescriptionKey:
+                                        "The settings header is clipped or obscured by the title bar."])
+                    }
                     NotificationCenter.default.post(name: Notification.Name("ProxyMirror.settingsSnapshotFinished"),
                                                     object: nil, userInfo: ["path": path, "success": true])
                 } catch {
@@ -183,6 +211,42 @@ struct PreferencesWindowStyle: NSViewRepresentable {
                                                                          "error": LocalizedErrorPresentation.message(for: error)])
                 }
             }
+        }
+
+        private func headerLayout(in content: NSView, window: NSWindow) throws
+            -> (metrics: [String: Any], visible: Bool) {
+            @MainActor func findHeader(in view: NSView) -> NSView? {
+                if view.identifier == PreferencesHeaderAnchor.identifier { return view }
+                for child in view.subviews {
+                    if let found = findHeader(in: child) { return found }
+                }
+                return nil
+            }
+            guard let header = findHeader(in: content) else {
+                throw NSError(domain: "ProxyMirror.SettingsSnapshot", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "The settings header layout marker is missing."])
+            }
+            func coordinates(_ rect: NSRect) -> [String: Double] {
+                ["x": Double(rect.minX), "y": Double(rect.minY),
+                 "width": Double(rect.width), "height": Double(rect.height)]
+            }
+            // NSView 转换到 nil 与 contentLayoutRect 都使用窗口坐标。
+            let frame = header.convert(header.bounds, to: nil)
+            let visibleFrame = header.convert(header.visibleRect, to: nil)
+            let contentFrame = window.contentLayoutRect
+            let tolerance: CGFloat = 0.5
+            let visible = !header.isHiddenOrHasHiddenAncestor
+                && frame.width > 0 && frame.height >= 52 - tolerance
+                && contentFrame.insetBy(dx: -tolerance, dy: -tolerance).contains(frame)
+                && visibleFrame.insetBy(dx: -tolerance, dy: -tolerance).contains(frame)
+            return ([
+                "version": 1,
+                "contentLayout": coordinates(contentFrame),
+                "header": coordinates(frame),
+                "headerVisible": coordinates(visibleFrame),
+                "headerHidden": header.isHiddenOrHasHiddenAncestor,
+                "fullSizeContentView": window.styleMask.contains(.fullSizeContentView)
+            ], visible)
         }
     }
 

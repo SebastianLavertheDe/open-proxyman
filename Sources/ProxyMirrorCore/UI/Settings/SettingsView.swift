@@ -56,7 +56,6 @@ struct SettingsView: View {
         .tint(PreferencesPalette.selection)
         .frame(width: 970, height: 750)
         .background(PreferencesWindowStyle())
-        .ignoresSafeArea(.container, edges: .top)
         .environment(\.locale, L10n.locale)
         .environment(\.preferencesReveal, reveal)
         .background {
@@ -71,7 +70,7 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Color.clear.frame(height: 62)
+            Color.clear.frame(height: 34)
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField(Strings.Settings.searchF, text: $search)
@@ -157,6 +156,7 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain).padding(.horizontal, 20).frame(height: 52)
         .background(PreferencesPalette.header)
+        .background(PreferencesHeaderAnchor())
     }
 
     @ViewBuilder private var pageContent: some View {

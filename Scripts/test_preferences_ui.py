@@ -6,6 +6,7 @@ This captures NSView content without changing the personal App or its preference
 """
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import struct
@@ -24,6 +25,33 @@ def png_size(path):
     if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
         raise AssertionError(f"Not a PNG: {path}")
     return struct.unpack(">II", header[16:24])
+
+
+def verify_header_layout(path):
+    layout = json.loads(path.read_text())
+    if layout.get("version") != 1 or layout.get("headerHidden") is not False:
+        raise AssertionError("Missing or hidden native settings header")
+
+    def rectangle(name):
+        value = layout[name]
+        numbers = [value[key] for key in ("x", "y", "width", "height")]
+        if any(isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(item)
+               for item in numbers):
+            raise AssertionError(f"Invalid native header geometry: {name}")
+        if numbers[2] <= 0 or numbers[3] <= 0:
+            raise AssertionError(f"Empty native header geometry: {name}")
+        return numbers
+
+    header = rectangle("header")
+    if header[3] < 51.5:
+        raise AssertionError("The native settings header is compressed")
+    for name in ("contentLayout", "headerVisible"):
+        bounds = rectangle(name)
+        if not (header[0] >= bounds[0] - 0.5 and header[1] >= bounds[1] - 0.5
+                and header[0] + header[2] <= bounds[0] + bounds[2] + 0.5
+                and header[1] + header[3] <= bounds[1] + bounds[3] + 0.5):
+            raise AssertionError(f"The settings header is clipped or obscured: {name}")
+    return layout
 
 
 def main():
@@ -60,7 +88,9 @@ def main():
                     for page in args.pages:
                         basename = f"{page}-{appearance}-{language}"
                         output = destination / f"{basename}.png"
+                        layout_output = destination / f"{basename}.layout.json"
                         output.unlink(missing_ok=True)
+                        layout_output.unlink(missing_ok=True)
                         with tempfile.TemporaryDirectory(prefix="pm-preferences-preview-") as support:
                             env = {**os.environ, "PM_SUPPORT_DIR": support, "PM_SETTINGS_PAGE": page,
                                    "PM_SETTINGS_SNAPSHOT": str(output), "PM_SETTINGS_APPEARANCE": appearance,
@@ -84,9 +114,11 @@ def main():
                         width, height = png_size(output)
                         if width < 970 or height < 750:
                             raise AssertionError(f"Unexpected native window size: {width}x{height}")
+                        layout = verify_header_layout(layout_output)
                         manifest.append({"page": page, "appearance": appearance, "language": language,
-                                         "file": output.name, "width": width, "height": height})
-                        print(f"PASS: {basename}: real native PNG {width}x{height}")
+                                         "file": output.name, "width": width, "height": height,
+                                         "layoutFile": layout_output.name, "layout": layout})
+                        print(f"PASS: {basename}: real native PNG {width}x{height}; header fully visible")
     finally:
         subprocess.run(["/usr/bin/defaults", "delete", identifier], check=False, capture_output=True, timeout=5)
     (destination / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")

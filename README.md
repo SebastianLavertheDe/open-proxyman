@@ -220,7 +220,9 @@ python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --appeara
 python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --pages general appearance tools --language en
 ```
 
-PNG 和窗口尺寸记录默认保存在 `build_app/preferences-review/`。此流程验证原生窗口可渲染，像素与交互仍需对照参考图检查。网络扩展激活另需前述签名构建。
+PNG、窗口尺寸和每页的 `.layout.json` 默认保存在 `build_app/preferences-review/`。截图时会测量实际 header，要求其完整处于窗口未遮挡的 `contentLayoutRect` 和父视图可见范围内；标题栏覆盖、父级裁切或 header 高度被压缩都会让验收失败。PNG 捕获包含系统标题栏，像素与交互仍需对照参考图检查。网络扩展激活另需前述签名构建。
+
+复测设置标题栏裁切可运行 `python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --pages mcp workspace --language both --appearance dark`。当前的几何判定负例可跨平台运行 `python3 Scripts/test_preferences_layout.py`，它不代替真实 macOS 界面检查。[Apple 内容布局区域说明](https://developer.apple.com/documentation/appkit/nswindow/contentlayoutrect)
 
 ### 核心与代理回归
 

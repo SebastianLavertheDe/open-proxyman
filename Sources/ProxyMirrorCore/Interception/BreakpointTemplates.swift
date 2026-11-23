@@ -22,7 +22,7 @@ struct BreakpointTemplate: Codable, Identifiable, Equatable {
     }
 
     func draft(for message: BreakpointMessage, phase: BreakpointRule.Phase) throws -> String {
-        guard self.phase == phase else { throw BreakpointMessage.InvalidEdit("模板阶段与当前断点不匹配") }
+        guard self.phase == phase else { throw BreakpointMessage.InvalidEdit(OperationIssue.modelBreakpointTemplatePhase) }
         var head = message.head
         if case .response(var response) = head, let status,
            BreakpointMessage.noBodyStatus(status) == BreakpointMessage.noBodyStatus(response.status) {
@@ -54,14 +54,14 @@ final class BreakpointTemplateStore: ObservableObject {
     }
     func save(_ template: BreakpointTemplate) throws {
         var next = templates.filter { $0.id != template.id }
-        guard next.count < 100 else { throw BreakpointMessage.InvalidEdit("最多保存 100 个断点模板") }
+        guard next.count < 100 else { throw BreakpointMessage.InvalidEdit(OperationIssue.modelBreakpointTemplateCount) }
         next.append(template)
         try persist(next)
     }
     func remove(_ id: UUID) throws { try persist(templates.filter { $0.id != id }) }
     private func persist(_ next: [BreakpointTemplate]) throws {
         let bytes = try JSONEncoder().encode(next)
-        guard bytes.count <= 8 * 1024 * 1024 else { throw BreakpointMessage.InvalidEdit("模板库超过 8 MiB") }
+        guard bytes.count <= 8 * 1024 * 1024 else { throw BreakpointMessage.InvalidEdit(OperationIssue.modelBreakpointTemplateSize) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PrivateAppFile.write(bytes, to: url)
         templates = next

@@ -52,33 +52,33 @@ struct BreakpointMessage: Sendable {
         let end = separator?.lowerBound ?? draft.endIndex
         let rawHead = String(draft[..<end]).replacingOccurrences(of: "\r\n", with: "\n")
         let rawBody = separator.map { String(draft[$0.upperBound...]) } ?? ""
-        guard rawHead.utf8.count <= Self.headLimit else { throw InvalidEdit("报文头超过 128 KiB") }
-        guard body != nil || rawBody.isEmpty else { throw InvalidEdit("此报文仅支持编辑头部") }
-        guard rawBody.utf8.count <= Self.bodyLimit else { throw InvalidEdit("正文超过 256 KiB") }
+        guard rawHead.utf8.count <= Self.headLimit else { throw InvalidEdit(OperationIssue.modelBreakpointHeaderSize) }
+        guard body != nil || rawBody.isEmpty else { throw InvalidEdit(OperationIssue.modelBreakpointHeadersOnly) }
+        guard rawBody.utf8.count <= Self.bodyLimit else { throw InvalidEdit(OperationIssue.modelBreakpointBodySize) }
         let lines = rawHead.components(separatedBy: "\n")
-        guard let first = lines.first, validValue(first) else { throw InvalidEdit("报文首行无效") }
+        guard let first = lines.first, validValue(first) else { throw InvalidEdit(OperationIssue.modelBreakpointFirstLineInvalid) }
 
         let newHead: BreakpointHead
         switch head {
         case .request:
-            guard first == head.firstLine else { throw InvalidEdit("请求行保持原样，可编辑头部与正文") }
+            guard first == head.firstLine else { throw InvalidEdit(OperationIssue.modelBreakpointRequestLineImmutable) }
             newHead = head
         case .response(let original):
             guard let edited = try? ResponseHeadParser.parse(first), edited.version == original.version,
                   (200...599).contains(edited.status),
                   Self.noBodyStatus(edited.status) == Self.noBodyStatus(original.status) else {
-                throw InvalidEdit("响应状态需在 200–599 内，并保留原报文的正文类型")
+                throw InvalidEdit(OperationIssue.modelBreakpointResponseStatusInvalid)
             }
             newHead = .response(edited)
         }
 
         var headers = HTTPHeaders()
         for line in lines.dropFirst() {
-            guard let colon = line.firstIndex(of: ":") else { throw InvalidEdit("每个报文头需要名称和冒号") }
+            guard let colon = line.firstIndex(of: ":") else { throw InvalidEdit(OperationIssue.modelBreakpointHeaderColon) }
             let name = String(line[..<colon])
             let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty, name.utf8.allSatisfy(Self.headerNameByte), validValue(value) else {
-                throw InvalidEdit("无效报文头：\(name)")
+                throw InvalidEdit(OperationIssue.modelBreakpointHeaderInvalid(name))
             }
             headers.append(name, value)
         }
@@ -86,7 +86,7 @@ struct BreakpointMessage: Sendable {
                                "Transfer-Encoding", "Trailer", "Content-Encoding"]
         if body == nil { protectedFields.append("Content-Length") }
         for field in protectedFields where headers.values(of: field) != head.headers.values(of: field) {
-            throw InvalidEdit("\(field) 决定连接或正文编码，需要保留原值")
+            throw InvalidEdit(OperationIssue.modelBreakpointProtectedHeader(field))
         }
         let replacement = body.map { _ in Data(rawBody.utf8) }
         if let replacement {
@@ -119,9 +119,11 @@ struct BreakpointMessage: Sendable {
         }
     }
 
-    struct InvalidEdit: LocalizedError {
-        let detail: String
-        init(_ detail: String) { self.detail = detail }
-        var errorDescription: String? { detail }
+    struct InvalidEdit: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+        var errorDescription: String? { operationIssue.diagnostic }
+        var detail: String { operationIssue.diagnostic }
     }
 }

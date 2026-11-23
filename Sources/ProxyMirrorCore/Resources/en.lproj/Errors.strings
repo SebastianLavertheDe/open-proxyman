@@ -1,0 +1,849 @@
+/* ProxyMirror Errors — maintained native localization resources. */
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_allow_the_proxymirror_network_extension_in_macos_system" = "Allow the ProxyMirror network extension in macOS System Settings.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_android_emulator_setup_failed" = "Android emulator setup failed: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_applying_settings_and_restarting_the_proxy" = "Applying settings and restarting the proxy…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_ca_installation_failed" = "CA installation failed: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel" = "Cancel";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel_transparent_capture_activation" = "Cancel Transparent Capture Activation";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel_transparent_capture_awaiting_approval" = "Cancel Transparent Capture (Awaiting Approval)";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel_transparent_proxy_connection" = "Cancel Transparent Proxy Connection";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_device" = "Device %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_disabling_the_system_proxy" = "Disabling the system proxy…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_enable_lan_access_in_settings_general_configure_the" = "Enable LAN access in Settings > General, configure the device IP/CIDR allowlist, then start listening.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_enable_the_system_proxy_manually" = "Enable the system proxy manually. %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_enabling_the_system_proxy" = "Enabling the system proxy…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_import" = "Import";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_import_charles_session" = "Import Charles Session";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_new_connections_from_will_use_passthrough" = "New connections from “%@” will use passthrough.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_ok" = "OK";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_record_proxymirror_tls_session_keys" = "Record ProxyMirror TLS Session Keys";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_removing_system_proxy_authorization" = "Removing system proxy authorization…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_restore_the_system_proxy_before_changing_the_listen" = "Restore the system proxy before changing the listen address or port.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_restored_the_previous_listener_port" = "\nRestored the previous listener port %ld.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_retry_stopping_transparent_capture" = "Retry Stopping Transparent Capture";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_settings_applied_the_listener_is_not_running" = "Settings applied. The listener is not running.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_settings_applied_the_proxy_has_restarted" = "Settings applied. The proxy has restarted.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_simulator_setup_failed" = "Simulator setup failed: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_start_listening_before_enabling_the_system_proxy" = "Start listening before enabling the system proxy.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_start_transparent_capture" = "Start Transparent Capture…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stop_transparent_capture" = "Stop Transparent Capture";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stop_transparent_capture_before_changing_the_listen_address" = "Stop transparent capture before changing the listen address or port.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stop_transparent_capture_before_enabling_the_system_proxy" = "Stop transparent capture before enabling the system proxy.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stopping_transparent_capture" = "Stopping Transparent Capture…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_authorization_removed" = "System proxy authorization removed.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_enabled" = "System proxy enabled.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_enabled_127_0_0_1" = "System proxy enabled (127.0.0.1:%ld)";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_restored" = "System proxy restored";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_ca_is_installed_and_trusted_system_wide" = "The CA is installed and trusted system-wide. Refresh the browser to apply it.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_certificate_was_imported_but_the_current_ca" = "The certificate was imported, but the current CA has not passed system trust verification. Check its trust settings in Keychain Access.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_comparison_pool_holds_up_to_100_requests" = "The comparison pool holds up to 100 requests. Remove some entries first.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_keys_can_decrypt_network_data_for_corresponding" = "The keys can decrypt network data for corresponding connections. Recording applies only to TLS handshakes terminated by the proxy.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_selected_requests_cannot_be_copied_as_check" = "The selected requests cannot be copied as %@. Check that capture is complete, or choose another default copy format in Settings.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_ssl_rule_was_not_saved" = "The SSL rule was not saved: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_system_proxy_service_disconnected_the_background_service" = "The system proxy service disconnected. The background service will try to restore the original configuration.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_this_build_has_no_transparent_proxy_extension_use" = "This build has no transparent proxy extension. Use a signed build with the network extension.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_transactions_can_be_imported_skipped" = "%@\n%ld transactions can be imported · %ld skipped";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_transparent_capture_unavailable" = "Transparent Capture Unavailable…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_copy_select_the_requests_again_and" = "Unable to copy. Select the requests again and retry.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_copy_the_certificate" = "Unable to copy the certificate: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_disable_the_system_proxy" = "Unable to disable the system proxy: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_enable_the_system_proxy" = "Unable to enable the system proxy: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_open_the_session" = "Unable to open the session: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_open_the_tls_key_log" = "Unable to open the TLS key log: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_remove_system_proxy_authorization" = "Unable to remove system proxy authorization: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_save_the_passthrough_rule" = "Unable to save the passthrough rule: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_start_check_the_port_and_lan" = "Unable to start: %@\nCheck the port and LAN address in Settings.";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_start_the_in_app_capture_listener" = "Unable to start the in-app capture listener: %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_wait_for_the_proxy_restart_to_finish" = "Wait for the proxy restart to finish.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_check_for_updates" = "Check for Updates…";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_check_project_releases_and_notify_you_about_new" = "Check project Releases and notify you about new versions. You choose when to download and install.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_check_project_releases_for_new_versions" = "Check project Releases for new versions.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_checking_for_updates" = "Checking for updates…";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_download" = "Download";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_later" = "Later";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_ok" = "OK";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_signed_updates_are_currently_unavailable" = "Signed updates are currently unavailable: %@";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_software_updates" = "Software Updates";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_sparkle_verifies_signed_updates_automatic_checks_do_not" = "Sparkle verifies signed updates. Automatic checks do not install updates automatically.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_the_signed_update_feed_must_use_a_valid" = "The signed update feed must use a valid HTTPS URL.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_the_update_public_key_must_be_a_base64" = "The update public key must be a Base64-encoded 32-byte Ed25519 key.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_there_are_no_downloadable_releases_yet" = "There are no downloadable releases yet.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_unable_to_open_the_browser_visit_the_project" = "Unable to open the browser. Visit the project Releases page.";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_update_check_failed" = "Update check failed: %@";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_version_is_available" = "Version %@ is available";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_you_are_up_to_date" = "You are up to date.";
+
+/* System models */
+"automation_other_terminal" = "Other Terminal";
+
+/* System models */
+"certificate_export_der" = "CA Certificate DER";
+
+/* System models */
+"certificate_export_key" = "Encrypted Private Key PEM";
+
+/* System models */
+"certificate_export_p12" = "CA and Private Key PKCS#12";
+
+/* System models */
+"certificate_export_pem" = "CA Certificate PEM";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_a_ca_certificate_must_declare_ca_basic_constraints" = "A CA certificate must declare CA basic constraints. A regular server or client certificate cannot be imported for this purpose.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_certificate_conversion_failed_check_the_password_file_format" = "Certificate conversion failed. Check the password, file format and algorithms supported by the system OpenSSL. Older P12 algorithms such as RC2 may be unsupported.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_certificate_format_conversion_timed_out" = "Certificate format conversion timed out.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_enter_a_valid_target_host_or_example_com" = "Enter a valid target host or *.example.com.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_mtls_and_server_identities_require_a_leaf_certificate" = "mTLS and server identities require a leaf certificate, not a CA private key.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_no_usable_certificate_was_found" = "No usable certificate was found.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_select_a_regular_file_between_1_byte_and" = "Select a regular file between 1 byte and 8 MiB.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_select_a_valid_pem_or_der_cer_certificate" = "Select a valid PEM or DER/CER certificate, or a PKCS#12 file with a .p12 or .pfx extension.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_set_a_nonempty_password_for_the_private_key" = "Set a nonempty password for the private key or P12 file.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_ca_certificate_key_usage_does_not_permit" = "The CA certificate key usage does not permit signing certificates.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_chain_contains_a_certificate_that_is" = "The certificate chain contains a certificate that is not yet valid or has expired.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_chain_is_empty" = "The certificate chain is empty.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_does_not_match_the_private_key" = "The certificate does not match the private key.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_extended_key_usage_does_not_permit" = "The certificate extended key usage does not permit TLS client authentication.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_extended_key_usage_does_not_permit_2" = "The certificate extended key usage does not permit TLS server authentication.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_key_usage_does_not_support_the" = "The certificate key usage does not support the selected TLS identity purpose.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_san_does_not_match_the_server" = "The certificate SAN does not match the server domain rule. Wildcard certificates cover only one subdomain level.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_file_exceeds_8_mib" = "The file exceeds 8 MiB.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_file_is_empty" = "The file is empty.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_first_certificate_in_the_chain_does_not" = "The first certificate in the chain does not match the private key.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_password_cannot_contain_a_newline_or_nul" = "The password cannot contain a newline or NUL and must not exceed 4,096 bytes.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_pem_certificate_chain_is_invalid_or_contains" = "The PEM certificate chain is invalid or contains more than 64 certificates.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_root_ca_changed_during_export_export_it" = "The root CA changed during export. Export it again.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_server_certificate_has_no_subject_alternative_name" = "The server certificate has no Subject Alternative Name. Use a certificate that includes the target host.";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_this_purpose_requires_a_matching_private_key_select" = "This purpose requires a matching private key. Select a private key or a P12 identity file.";
+
+/* System models */
+"certificate_purpose_client" = "Upstream mTLS Identity";
+
+/* System models */
+"certificate_purpose_root" = "Capture Root CA";
+
+/* System models */
+"certificate_purpose_server" = "Server Identity by Domain";
+
+/* System models */
+"certificate_purpose_upstream" = "Upstream CA Trust Chain";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_a_connection_termination_action_cannot_be_converted_to" = "%@: a connection termination action cannot be converted to HTTP 403";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_charles_rules_exceed_2_mib_split_the_export" = "Charles rules exceed 2 MiB. Split the export by tool.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_directory_mapping_cannot_be_converted_equivalently" = "%@: directory mapping cannot be converted equivalently";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_export_the_native_session_as_xml_or_json" = "Export the native session as XML or JSON Session in Charles first.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_location_the_match_condition_cannot_be_converted" = "%@ location %@: the match condition cannot be converted";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_no_enabled_locations_can_be_imported_rules" = "%@: no enabled locations can be imported (%ld rules)";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_rule_unsupported_rewrite_action_or_match_condition" = "%@ rule %@: unsupported Rewrite action or match condition";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_select_a_charles_rewrite_map_local_block_list" = "Select a Charles Rewrite, Map Local, Block List or Settings XML export.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_select_a_charles_xml_session_export" = "Select a Charles XML session export.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_select_a_regular_file" = "Select a regular file.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_body_contains_invalid_base64" = "The Charles body contains invalid Base64.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_body_uses_an_unreadable_character_encoding" = "The Charles body uses an unreadable character encoding.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_export_exceeds_the_size_limit" = "The Charles export exceeds the size limit.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_json_body_uses_an_unreadable_encoding" = "The Charles JSON body uses an unreadable encoding.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_session_exceeds_128_mib_split_it" = "The Charles session exceeds 128 MiB. Split it before importing.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_xml_body_uses_an_unreadable_encoding" = "The Charles XML body uses an unreadable encoding.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_location_match_expression_is_too_long_or" = "%@: the location match expression is too long or invalid";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_match_condition_cannot_be_converted" = "%@: the match condition cannot be converted";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_match_condition_or_local_file_path_cannot" = "%@: the match condition or local file path cannot be converted";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_target_file_is_unreadable_on_this_mac" = "%@: the target file is unreadable on this Mac and was disabled.\n%@";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_tool" = "Tool %@";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_unable_to_read_charles_xml_select_a_session" = "Unable to read Charles XML. Select a session or rule file exported by Charles.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesSessionConverter.swift */
+"charles_session_converter_charles_conversion_failed_or_exceeded_60_seconds_open" = "Charles conversion failed or exceeded 60 seconds. Open the file in Charles to verify it, then export HAR.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesSessionConverter.swift */
+"charles_session_converter_the_converted_har_exceeds_128_mib_split_the" = "The converted HAR exceeds 128 MiB. Split the session first.";
+
+/* Sources/ProxyMirrorCore/Export/CharlesSessionConverter.swift */
+"charles_session_converter_this_is_a_native_charles_binary_session_install" = "This is a native Charles binary session. Install Charles for automatic conversion, or export XML / JSON / HAR from Charles first. XML and JSON imports do not require Charles.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_a_client_identity_must_use_a_leaf_certificate" = "A client identity must use a leaf certificate, not a CA private key.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_a_maximum_of_client_identities_can_be_saved" = "A maximum of %ld client identities can be saved.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_enter_a_hostname_ip_address_or_example_com" = "Enter a hostname, IP address or *.example.com.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_certificate_chain_is_empty" = "The certificate chain is empty.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_certificate_chain_or_private_key_exceeds_the" = "The certificate chain or private key exceeds the size limit.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_certificate_extended_key_usage_does_not_permit" = "The certificate extended key usage does not permit TLS client authentication.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_certificate_is_not_yet_valid_or" = "The client certificate is not yet valid or has expired.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_certificate_key_usage_does_not_permit" = "The client certificate key usage does not permit digital signatures.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_count_exceeds_the_limit" = "The client identity count exceeds the limit.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_file_is_too_large" = "The client identity file is too large.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_host_is_invalid" = "The client identity host is invalid.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_is_missing_its_private_key" = "The client identity is missing its private key.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_file_exceeds_the_size_limit" = "The file exceeds the size limit.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_file_is_empty_too_large_or_not" = "The file is empty, too large or not a regular file.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_first_certificate_in_the_chain_does_not" = "The first certificate in the chain does not match the private key.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_identity_file_permissions_must_be_0600" = "The identity file permissions must be 0600.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_unable_to_parse_the_client_certificate_or_private" = "Unable to parse the client certificate or private key. Use a PEM certificate chain and an unencrypted PEM private key.";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_unable_to_read_upstream_client_identities" = "Unable to read upstream client identities. %@";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_a_connected_writable_android_emulator_running_android_13" = "A connected, writable Android emulator running Android 13 or earlier is required. For physical devices, use the user certificate installation guide.";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_connect_only_one_android_device_with_usb_debugging" = "Connect only one Android device with USB debugging authorized.";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_installed_ca" = "Installed CA: %@ (%@)";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_installed_the_system_ca_on_android_emulator_api" = "Installed the system CA on Android emulator %@ (API %ld). Restart as required by the emulator image and verify the result.";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_no_ios_simulator_is_running_start_at_least" = "No iOS simulator is running. Start at least one simulator in Xcode.";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_simulator_apps_use_the_host_network_stack_keep" = "Simulator apps use the host network stack. Keep the system proxy enabled for HTTPS inspection.";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_the_certificate_was_copied_to_the_device_download" = "The certificate was copied to the device Download folder. Open Android Settings > Security > Install CA certificate and select ProxyMirror-CA.cer.";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_the_command_failed" = "The command failed: %@";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_unable_to_parse_the_device_list_check_your" = "Unable to parse the device list. Check your Xcode and Command Line Tools configuration.";
+
+/* Sources/ProxyMirrorCore/Export/ExportService.swift */
+"export_service_export_failed" = "%@ export failed: %@";
+
+/* Sources/ProxyMirrorCore/System/ExternalProxyPACValidation.swift */
+"external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example" = "PAC loaded and executed. The route for example.com is DIRECT.";
+
+/* Sources/ProxyMirrorCore/System/ExternalProxyPACValidation.swift */
+"external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example_2" = "PAC loaded and executed. The route for example.com is %@ %@:%ld.";
+
+/* Sources/ProxyMirrorCore/System/ExternalProxyPACValidation.swift */
+"external_proxy_pacvalidation_select_pac_mode_first" = "Select PAC mode first.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_enter_a_github_token_with_gists_write_permission" = "Enter a GitHub token with Gists write permission.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_github_did_not_return_an_http_response" = "GitHub did not return an HTTP response.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_github_publishing_failed_http_check_token_permissions_and" = "GitHub publishing failed (HTTP %ld). Check token permissions and the API rate limit.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_github_returned_an_invalid_gist_url" = "GitHub returned an invalid Gist URL.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_select_the_requests_to_publish" = "Select the requests to publish.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_the_preview_must_be_valid_har_json" = "The preview must be valid HAR JSON.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_this_gist_exceeds_8_mib_reduce_the_selection" = "This Gist exceeds 8 MiB. Reduce the selection or remove unneeded bodies.";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_unable_to_access_the_keychain" = "Unable to access the keychain (%ld).";
+
+/* Sources/ProxyMirrorCore/System/MemoryPressureController.swift */
+"memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and" = "%@ · %@ · Cleared %ld types of rebuildable caches. Captured traffic and user files were preserved.";
+
+/* Sources/ProxyMirrorCore/System/MemoryPressureController.swift */
+"memory_pressure_controller_simulate_memory_warning" = "Simulate Memory Warning";
+
+/* Sources/ProxyMirrorCore/System/MemoryPressureController.swift */
+"memory_pressure_controller_system_memory_pressure" = "System memory pressure";
+
+/* Sources/ProxyMirrorCore/System/NetworkAccessPolicy.swift */
+"network_access_policy_invalid_ip_address_or_cidr" = "Invalid IP address or CIDR: %@";
+
+/* Sources/ProxyMirrorCore/System/NetworkAccessPolicy.swift */
+"network_access_policy_the_access_list_supports_up_to_entries" = "The access list supports up to %ld entries.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_install_firefox_first" = "Install Firefox first.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_install_iterm2_first" = "Install iTerm2 first.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_launch_failed" = "Launch failed (%ld): %@";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_opened_a_terminal_with_proxy_and_ca_environment" = "Opened a terminal with proxy and CA environment variables. Close that window to end this configuration.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_select_an_installed_app" = "Select an installed %@ .app.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_select_an_installed_terminal_app" = "Select an installed terminal .app.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_start_the_proxy_listener_first" = "Start the proxy listener first.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_started_an_isolated_firefox_profile_with_the_proxy" = "Started an isolated Firefox profile with the proxy configured. Trust the ProxyMirror CA in macOS first.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_started_an_isolated_profile_using_the_proxymirror_proxy" = "Started an isolated profile using the ProxyMirror proxy. Install and trust the ProxyMirror CA for HTTPS.";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_submitted_the_launch_request_launch_log" = "Submitted the %@ launch request. Launch log: %@";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_the_selected_terminal_must_support_the_e_command" = "The selected terminal must support the -e command argument.";
+
+/* Sources/ProxyMirrorCore/System/ReleaseUpdate.swift */
+"release_update_the_update_check_failed_http" = "The update check failed (HTTP %@).";
+
+/* Sources/ProxyMirrorCore/System/ReleaseUpdate.swift */
+"release_update_the_update_service_returned_invalid_release_information" = "The update service returned invalid release information.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_failed_exit_code" = "%@ failed (exit code %ld). %@";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_install_the_ca_on" = "Install the CA on %@";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_read_the_device_list" = "Read the device list";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_select_an_existing_simulator_device_set_directory_containing" = "Select an existing Simulator device-set directory containing device_set.plist. A new device set will not be created.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_exceeded_seconds_and_was_stopped_check_xcode" = "simctl exceeded %ld seconds and was stopped. Check Xcode and the target runtime.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_returned_a_duplicate_device_identifier" = "simctl returned a duplicate device identifier.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_returned_an_invalid_device_identifier_or_name" = "simctl returned an invalid device identifier or name.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_standard_output_exceeds_4_mib" = "simctl standard output exceeds 4 MiB.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_start_in_xcode_or_simulator_then_refresh_the" = "Start %@ in Xcode or Simulator, then refresh the list. The installer does not start devices automatically.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_the_device_count_exceeds_1_000_select_a" = "The device count exceeds 1,000. Select a smaller device set.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_the_simctl_device_list_exceeds_4_mib" = "The simctl device list exceeds 4 MiB.";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_unable_to_parse_the_simctl_device_list_check" = "Unable to parse the simctl device list. Check the selected Xcode and Simulator runtime.";
+
+/* System models */
+"simulator_state_booted" = "Booted";
+
+/* System models */
+"simulator_state_booting" = "Booting";
+
+/* System models */
+"simulator_state_shutdown" = "Shutdown";
+
+/* System models */
+"simulator_state_stopping" = "Shutting Down";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_administrator_authorization_was_cancelled" = "Administrator authorization was cancelled.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_macos_could_not_authorize_the_system_proxy_service" = "macOS could not authorize the system proxy service update (%ld).";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_proxymirror_needs_administrator_authorization_to_install_the_system" = "ProxyMirror needs administrator authorization to install the system proxy background service.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_proxymirror_needs_administrator_authorization_to_remove_the_system" = "ProxyMirror needs administrator authorization to remove the system proxy background service.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_create_a_macos_authorization_session" = "Unable to create a macOS authorization session.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_prepare_the_system_proxy_service_installation" = "Unable to prepare the system proxy service installation arguments.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_read_the_system_proxy_service_installation" = "Unable to read the system proxy service installation result.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_update_the_system_proxy_background_service" = "Unable to update the system proxy background service.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_enable_the_system_proxy_first" = "Enable the system proxy first.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_imported_into_the_login_keychain" = "Imported %@ into the login keychain.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_importing_the_custom_certificate" = "Importing the custom certificate…";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_installed_authorization_is_required_for_this_application_version" = "Installed; authorization is required for this application version";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_installed_but_the_launchd_service_is_not_loaded" = "Installed, but the launchd service is not loaded";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_installed_launchd_service_loaded_and_code_signature_verified" = "Installed; launchd service loaded and code signature verified";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_legacy_version_no_version_information" = "Legacy version (no version information)";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_not_installed" = "Not installed";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_proxy_helper_check_failed" = "Proxy helper check failed: %@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_restore_the_system_proxy_before_removing_its_authorization" = "Restore the system proxy before removing its authorization.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_select_the_certificate_to_import_pem_cer_or" = "Select the certificate to import (.pem, .cer or .p12)";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_select_the_matching_private_key_pem_p_256" = "Select the matching private key (PEM, P-256 or Ed25519)";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_select_the_root_ca_certificate_pem" = "Select the root CA certificate (PEM)";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_certificate_command_failed_exit_code" = "The certificate command failed (exit code %ld).";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_current_ca_is_installed_and_trusted_for" = "The current CA is installed and trusted for SSL by macOS";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_current_ca_is_installed_but_is_not" = "The current CA is installed, but is not trusted for SSL or has expired";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_current_ca_is_not_installed" = "The current CA is not installed";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_custom_root_ca_was_imported_reinstall_and" = "The custom root CA was imported. Reinstall and trust the new CA on each client. Export it from the Certificate menu.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_helper_is_not_installed" = "The system proxy helper is not installed";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_is_enabled_restore_the_original" = "The system proxy is enabled. Restore the original configuration first.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_service_did_not_respond_try" = "The system proxy service did not respond. Try again.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_service_interface_is_unavailable" = "The system proxy service interface is unavailable.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_service_is_missing_use_a" = "The system proxy service is missing. Use a complete .app build.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_check_the_current_ca" = "Unable to check the current CA: %@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_connect_to_the_system_proxy_service" = "Unable to connect to the system proxy service. Check the macOS background item permissions.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_import_the_custom_certificate" = "Unable to import the custom certificate: %@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_import_the_root_ca" = "Unable to import the root CA: %@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_open_the_keychain" = "Unable to open the keychain: %@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_read_keychain_certificates" = "Unable to read keychain certificates: %@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_read_the_installed_certificate_list" = "Unable to read the installed certificate list.";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_read_the_keychain_error_code" = "Unable to read the keychain (error code %ld).";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unknown" = "Unknown";
+
+/* Sources/ProxyMirrorCore/System/SystemTrustAnchors.swift */
+"system_trust_anchors_the_client_certificate_configured_for_the_target_host" = "The client certificate configured for the target host is not yet valid or has expired.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_proxymirror_transparent_capture" = "ProxyMirror Transparent Capture";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_restart_your_mac_to_finish_activating_the_transparent" = "Restart your Mac to finish activating the transparent proxy system extension.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_stop_the_current_transparent_capture_first" = "Stop the current transparent capture first.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_the_local_listener_configuration_for_transparent_capture_is" = "The local listener configuration for transparent capture is invalid.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_the_system_extension_returned_an_unknown_activation_state" = "The system extension returned an unknown activation state.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_the_transparent_proxy_connection_was_disconnected" = "The transparent proxy connection was disconnected.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_this_app_bundle_does_not_contain_the_transparent" = "This app bundle does not contain the transparent proxy extension. Use a signed build that includes it.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_timed_out_waiting_for_the_transparent_proxy_connection" = "Timed out waiting for the transparent proxy connection.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_timed_out_waiting_for_the_transparent_proxy_to" = "Timed out waiting for the transparent proxy to disconnect. Try stopping it again.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_transparent_capture_was_cancelled" = "Transparent capture was cancelled.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_activate_the_transparent_proxy_system_extension" = "Unable to activate the transparent proxy system extension. %@";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_establish_the_transparent_proxy_connection" = "Unable to establish the transparent proxy connection.";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_start_transparent_capture" = "Unable to start transparent capture";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_stop_transparent_capture" = "Unable to stop transparent capture";
+
+
+/* Shared helper error code: invalidPort */
+"helper_invalid_port" = "The system proxy port is invalid.";
+
+/* Shared helper error code: busy */
+"helper_busy" = "Another ProxyMirror instance is enabling or restoring the system proxy.";
+
+/* Shared helper error code: notOwner */
+"helper_not_owner" = "The current connection does not own the system proxy.";
+
+/* Shared helper error code: authorizationRequired */
+"helper_authorization_required" = "The system proxy service requires administrator authorization.";
+
+/* Shared helper error code: invalidArguments */
+"helper_invalid_arguments" = "The system proxy service arguments are invalid.";
+
+/* Shared helper error code: signatureInvalid */
+"helper_signature_invalid" = "Unable to verify the ProxyMirror or system proxy service signature. Use a complete .app build.";
+
+/* Shared helper error code: lockUnavailable */
+"helper_lock_unavailable" = "Unable to open the system proxy lock.";
+
+/* Shared helper error code: restoreRecordInvalid */
+"helper_restore_record_invalid" = "Unable to read the pending system proxy recovery record.";
+
+/* Shared helper error code: bypassRecordInvalid */
+"helper_bypass_record_invalid" = "The system proxy bypass recovery record is invalid.";
+
+/* Shared helper error code: takeoverRequired */
+"helper_takeover_required" = "Enable the system proxy first.";
+
+/* Shared helper error code: bypassUpdateLimit */
+"helper_bypass_update_limit" = "The bypass list was changed too many times during this takeover. Restore the proxy and enable it again.";
+
+/* Shared helper error code: noOwnedServices */
+"helper_no_owned_services" = "No network services owned by ProxyMirror were found.";
+
+/* Shared helper error code: installationFailed */
+"helper_installation_failed" = "Unable to start the authorized system proxy installer.";
+
+/* Shared helper error code: invalidDirectory */
+"helper_invalid_directory" = "The system proxy service directory has an invalid owner or permissions.";
+
+/* Shared helper error code: permissionsFailed */
+"helper_permissions_failed" = "Unable to set system proxy service file permissions.";
+
+/* Shared helper error code: stopFailed */
+"helper_stop_failed" = "Unable to stop the installed system proxy service.";
+
+/* Shared helper error code: loadFailed */
+"helper_load_failed" = "macOS could not load the system proxy service. Check background item permissions in System Settings.";
+
+/* Shared helper error code: bypassTooLarge */
+"helper_bypass_too_large" = "The system proxy bypass list supports up to 1,024 entries and 64 KiB in total.";
+
+/* Shared helper error code: bypassInvalid */
+"helper_bypass_invalid" = "Invalid bypass entry: %@. Enter a host, IP address, CIDR or wildcard without a URL or whitespace.";
+
+"simulator_check_runtime" = "Check Xcode, the runtime and device state.";
+
+"memory_critical" = "Critical";
+
+"memory_warning" = "Warning";
+
+"transparent_system_operation_failed" = "%@ (%@ %ld).";
+
+"transparent_capture_cleanup_failed" = "Capture failed: %@ Cleanup failed: %@";

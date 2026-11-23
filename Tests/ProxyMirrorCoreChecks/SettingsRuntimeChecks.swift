@@ -13,6 +13,7 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
     let settings = AppSettings(defaults: defaults)
     settings.autoStartProxy = false
     settings.autoTakeOverSystemProxy = false
+    settings.autoStartRecording = false
     let previousSupport = ProcessInfo.processInfo.environment["PM_SUPPORT_DIR"]
     setenv("PM_SUPPORT_DIR", directory.path, 1)
     defer {
@@ -34,6 +35,8 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
     let previousLimit = engine.captureLimit
     let previousRecording = engine.recordingEnabled
     let state = AppState(settings: settings, launchServices: false)
+    test.expect(!state.recordingEnabled && !engine.recordingEnabled,
+                "启动录制偏好关闭时真实引擎和应用状态均从暂停开始")
     defer {
         state.stopProxy()
         engine.sink = previousSink
@@ -94,6 +97,9 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
                 "明确重启重新建立同一端点的监听")
     test.expect(!state.recordingEnabled && !engine.recordingEnabled,
                 "明确重启保留暂停录制状态")
+    settings.port = originalListenerPortForCheck(engine.port)
+    test.equal(state.listenerPort, engine.port, "未应用端口偏好不会改变向客户端公开的实际监听端口")
+    settings.port = engine.port
     let replacement = try ClientBootstrap(group: engine.group)
         .connect(host: "127.0.0.1", port: Int(engine.port)).wait()
     try replacement.close().wait()
@@ -122,4 +128,8 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
                 "新端口已被占用时重启恢复原监听及设置")
     test.expect(state.proxyStartError?.contains("已恢复原监听端口") == true,
                 "重绑失败并恢复后仍显示原始失败原因")
+}
+
+private func originalListenerPortForCheck(_ current: UInt16) -> UInt16 {
+    current == 65535 ? current - 1 : current + 1
 }

@@ -30,9 +30,20 @@ struct FlowSummarySample: Sendable {
 
 struct FlowSummaryStatistics: Sendable {
     enum Bucket: String, CaseIterable, Identifiable, Sendable {
-        case informational = "1xx", success = "2xx", redirect = "3xx", clientError = "4xx", serverError = "5xx"
-        case unanswered = "未完成 / 未响应", failed = "传输失败"
+        case informational, success, redirect, clientError, serverError
+        case unanswered, failed
         var id: String { rawValue }
+        var localizedTitle: String {
+            switch self {
+            case .informational: return Strings.Models.summaryBucketInformational
+            case .success: return Strings.Models.summaryBucketSuccess
+            case .redirect: return Strings.Models.summaryBucketRedirect
+            case .clientError: return Strings.Models.summaryBucketClientError
+            case .serverError: return Strings.Models.summaryBucketServerError
+            case .unanswered: return Strings.Models.summaryBucketUnanswered
+            case .failed: return Strings.Models.summaryBucketFailed
+            }
+        }
     }
     struct Count: Identifiable, Sendable {
         let status: Int
@@ -94,7 +105,7 @@ struct FlowSummaryStatistics: Sendable {
             let up = Int64(max(0, sample.uploadedBytes)), down = Int64(max(0, sample.downloadedBytes))
             result.uploadedBytes = saturatedAdd(result.uploadedBytes, up)
             result.downloadedBytes = saturatedAdd(result.downloadedBytes, down)
-            let host = sample.host.isEmpty ? "（无主机）" : sample.host
+            let host = sample.host.isEmpty ? Strings.Models.summaryNoHost : sample.host
             var entry = byHost[host] ?? Host(name: host)
             entry.count += 1
             entry.uploadedBytes = saturatedAdd(entry.uploadedBytes, up)

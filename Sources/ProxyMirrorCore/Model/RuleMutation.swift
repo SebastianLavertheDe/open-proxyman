@@ -8,9 +8,11 @@ enum RuleMutation {
         /// One source ID can appear in multiple owned nodes in an older rule.
         let identifiers: [String: [String]]
     }
-    struct Failure: LocalizedError {
-        let errorDescription: String?
-        init(_ text: String) { errorDescription = text }
+    struct Failure: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 
     private static let commentTools: Set<String> = ["mapLocal", "mapRemote", "blockList", "allowList", "sslProxyingList"]
@@ -20,16 +22,16 @@ enum RuleMutation {
         let label = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty, label.utf8.count <= 512,
               !label.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
-            throw Failure("规则名称需要 1 到 512 字节，且不能包含控制字符。")
+            throw Failure(OperationIssue.modelRuleNameInvalid)
         }
         var result = source
         if tool == "breakpoints" || tool == "rewrite" && nestedRewrite {
-            guard var predicate = result["rule"] as? [String: Any] else { throw Failure("规则缺少 URL 匹配条件。") }
+            guard var predicate = result["rule"] as? [String: Any] else { throw Failure(OperationIssue.modelRuleUrlMissing) }
             predicate["name"] = label
             result["rule"] = predicate
         } else if commentTools.contains(tool) { result["comment"] = label }
         else if nameTools.contains(tool) { result["name"] = label }
-        else { throw Failure("此工具不支持逐条规则改名。") }
+        else { throw Failure(OperationIssue.modelRuleRenameUnsupported) }
         return result
     }
 
@@ -52,25 +54,25 @@ enum RuleMutation {
             if let array = value as? [Any] { return array.map(clone) }
             return value
         }
-        guard var result = clone(source) as? [String: Any] else { throw Failure("规则格式无效。") }
+        guard var result = clone(source) as? [String: Any] else { throw Failure(OperationIssue.modelRuleInvalid) }
         if tool == "sslApplications" {
-            guard let raw = bundleID else { throw Failure("应用 SSL 规则以 Bundle ID 为身份，复制时需要 --bundle-id 指定新应用。") }
+            guard let raw = bundleID else { throw Failure(OperationIssue.modelSslCopyBundleRequired) }
             let newID = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let oldID = (source["bundleID"] as? String ?? "").lowercased()
             guard !newID.isEmpty, newID != oldID, newID.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 46 }) else {
-                throw Failure("复制的 Bundle ID 必须有效且与源应用不同。")
+                throw Failure(OperationIssue.modelSslCopyBundleInvalid)
             }
             result["bundleID"] = newID
             identifiers[oldID] = [newID]
         } else {
             guard bundleID == nil, let oldID = source["id"] as? String, let uuid = UUID(uuidString: oldID),
                   let newID = result["id"] as? String, newID != uuid.uuidString else {
-                throw Failure("复制需要具有 UUID 的源规则；--bundle-id 仅用于应用 SSL。")
+                throw Failure(OperationIssue.modelRuleCopyRequiresUuid)
             }
         }
         // A second active reverse listener cannot bind the original port.
         if tool == "reverse" { result["enabled"] = false }
-        let label = name ?? String(displayName(source, tool: tool, nestedRewrite: nestedRewrite).prefix(120)) + " 副本"
+        let label = name ?? Strings.Models.ruleCopyName(String(displayName(source, tool: tool, nestedRewrite: nestedRewrite).prefix(120)))
         result = try rename(result, tool: tool, nestedRewrite: nestedRewrite, name: label)
         return Copy(rule: result, identifiers: identifiers)
     }
@@ -92,9 +94,9 @@ enum RuleMutation {
     private static func displayName(_ row: [String: Any], tool: String, nestedRewrite: Bool) -> String {
         if tool == "breakpoints" || tool == "rewrite" && nestedRewrite {
             let predicate = row["rule"] as? [String: Any] ?? [:]
-            return (predicate["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "规则"
+            return (predicate["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? Strings.Models.ruleDefaultName
         }
         let field = commentTools.contains(tool) ? "comment" : "name"
-        return (row[field] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "规则"
+        return (row[field] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? Strings.Models.ruleDefaultName
     }
 }

@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "ProxyMirror 透明代理";
+"NSSystemExtensionUsageDescription" = "ProxyMirror 使用此扩展接收 TCP 连接，以便在开启透明代理时抓包。";

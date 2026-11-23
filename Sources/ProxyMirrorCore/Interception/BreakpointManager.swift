@@ -38,7 +38,7 @@ final class BreakpointManager: ObservableObject {
 
     func hold(_ item: HeldItem, resume: @escaping @Sendable (Decision) -> Void) {
         guard enabled else { resume(.original); return }
-        guard held.count < 48 else { resume(.drop("断点等待队列已满")); return }
+        guard held.count < 48 else { resume(.drop(OperationIssue.modelBreakpointQueueFull.diagnostic)); return }
         let first = held.isEmpty
         pending[item.id] = resume
         held.append(item)
@@ -53,7 +53,7 @@ final class BreakpointManager: ObservableObject {
         finish(item.id, decision: .apply(try item.message.applying(draft)))
     }
 
-    func drop(_ item: HeldItem) { finish(item.id, decision: .drop("已取消断点")) }
+    func drop(_ item: HeldItem) { finish(item.id, decision: .drop(OperationIssue.modelBreakpointCancelled.diagnostic)) }
 
     func discardAll() {
         for id in held.map(\.id) { finish(id, decision: .discard) }

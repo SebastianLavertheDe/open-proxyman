@@ -1,0 +1,17 @@
+"cli_installed" = "命令行已安装到 %@；重新打开终端后可使用 proxymirror-cli。";
+"http_mcp_details" = "HTTP MCP 仅监听本机，连接令牌每次启动更新。也可使用 proxymirror-cli mcp stdio，无需保存令牌。";
+"copy_configuration" = "复制配置";
+"close" = "关闭";
+"mcp_not_running" = "MCP 服务未启动。请在设置 → MCP 中启用服务。";
+"mcp_start_failed" = "无法启动 MCP 服务：%@";
+"external_target_limit" = "包含目标最多 256 项。";
+"external_invalid_target" = "包含目标格式无效：%@";
+"external_inclusive_required" = "仅包含列表模式至少需要一个目标主机或 URL。";
+"external_invalid_bypass" = "直连主机格式无效：%@";
+"external_pac_required" = "请输入 HTTP、HTTPS 或本机文件的 PAC URL。";
+"external_host_required" = "请输入主机名、IPv4 或 IPv6 地址。";
+"external_port_range" = "端口必须在 1–65535 之间。";
+"external_credentials_required" = "请输入代理用户名和密码。";
+"external_socks_credentials_size" = "SOCKS5 用户名和密码各限 255 字节。";
+"external_basic_credentials" = "HTTP Basic 用户名不能包含冒号，凭据总长限 4096 字节。";
+"external_control_characters" = "代理凭据包含控制字符。";

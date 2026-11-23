@@ -35,12 +35,12 @@ struct ReverseProxyEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("反向代理").font(.headline)
-            Text("启用的规则随代理启动，在 127.0.0.1 上接收 HTTP 请求并转发到配置的上游。")
+            Text(Strings.Tools.reverseProxy).font(.headline)
+            Text(Strings.Tools.enabledRulesStartWithTheProxyReceiveHttpRequests)
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 if drafts.isEmpty {
-                    Text("暂无反向代理规则")
+                    Text(Strings.Tools.noReverseProxyRules)
                         .frame(maxWidth: .infinity, minHeight: 100)
                         .foregroundStyle(.secondary)
                 } else {
@@ -53,10 +53,10 @@ struct ReverseProxyEditor: View {
             .frame(minHeight: 180, maxHeight: 360)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
-                Button("添加规则") { drafts.append(Draft(ReverseProxyRule())) }
+                Button(Strings.Tools.addRule) { drafts.append(Draft(ReverseProxyRule())) }
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存", action: save).keyboardShortcut(.defaultAction)
+                Button(Strings.Tools.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.save, action: save).keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
@@ -70,22 +70,22 @@ struct ReverseProxyEditor: View {
         let status = savedPort.flatMap { controller.errors[$0] }
         return VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Toggle("启用", isOn: draft.rule.enabled)
-                TextField("名称", text: draft.rule.name)
+                Toggle(Strings.Tools.enable, isOn: draft.rule.enabled)
+                TextField(Strings.Tools.name, text: draft.rule.name)
                 Button(role: .destructive) {
                     drafts.removeAll { $0.id == value.id }
                 } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("移除规则")
+                .accessibilityLabel(Strings.Tools.removeRule)
             }
             RuleFolderPicker(tool: "reverse", ruleID: value.id.uuidString, draft: $folderDraft).id(value.id)
             HStack(spacing: 8) {
                 Text("127.0.0.1")
-                TextField("本地端口", text: draft.localPort).frame(width: 75)
+                TextField(Strings.Tools.localPort, text: draft.localPort).frame(width: 75)
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                Picker("上游协议", selection: Binding(
+                Picker(Strings.Tools.upstreamProtocol, selection: Binding(
                     get: { draft.wrappedValue.rule.remoteScheme ?? "http" },
                     set: { draft.wrappedValue.rule.remoteScheme = $0 }
                 )) {
@@ -94,15 +94,15 @@ struct ReverseProxyEditor: View {
                 }
                 .labelsHidden()
                 .frame(width: 84)
-                TextField("上游主机", text: draft.rule.remoteHost)
-                TextField("上游端口", text: draft.upstreamPort).frame(width: 75)
+                TextField(Strings.Tools.upstreamHost, text: draft.rule.remoteHost)
+                TextField(Strings.Tools.upstreamPort, text: draft.upstreamPort).frame(width: 75)
             }
             if let status {
                 Text(status).font(.caption).foregroundStyle(.red)
             } else if let savedPort, controller.listening.contains(savedPort) {
-                Text("监听中  127.0.0.1:\(savedPort)").font(.caption).foregroundStyle(.secondary)
+                Text(Strings.Tools.listening127001(Int(savedPort))).font(.caption).foregroundStyle(.secondary)
             } else if value.rule.enabled && !appState.proxyRunning {
-                Text("等待代理启动").font(.caption).foregroundStyle(.secondary)
+                Text(Strings.Tools.waitingForProxyToStart).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(10)
@@ -116,7 +116,7 @@ struct ReverseProxyEditor: View {
             try controller.save(rules, organization: organization)
             dismiss()
         } catch let failure {
-            error = failure.localizedDescription
+            error = LocalizedErrorPresentation.message(for: failure)
         }
     }
 }

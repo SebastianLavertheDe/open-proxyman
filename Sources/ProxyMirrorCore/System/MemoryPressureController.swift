@@ -23,8 +23,8 @@ final class MemoryPressureController: ObservableObject {
         let clearedCaches: [String]
         let residentBytesReleased: UInt64?
         var summary: String {
-            let origin = source == .system ? "系统内存压力" : "模拟内存警告"
-            return "\(origin) · \(level == .critical ? "严重" : "警告") · 已清理 \(clearedCaches.count) 类可重建缓存；捕获记录与用户文件已保留。"
+            let origin = source == .system ? Strings.Errors.memoryPressureControllerSystemMemoryPressure : Strings.Errors.memoryPressureControllerSimulateMemoryWarning
+            return Strings.Errors.memoryPressureControllerClearedTypesOfRebuildableCachesCapturedTrafficAnd(String(origin), level == .critical ? Strings.Errors.memoryCritical : Strings.Errors.memoryWarning, Int(clearedCaches.count))
         }
     }
     struct Cleaner {
@@ -112,7 +112,7 @@ final class MemoryPressureController: ObservableObject {
         return event
     }
 
-    private static func residentMemory() -> UInt64? {
+    nonisolated static func residentMemory() -> UInt64? {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
         let result = withUnsafeMutablePointer(to: &info) { pointer in

@@ -10,12 +10,14 @@ enum ExternalProxyPACValidation {
         var config = candidate
         config.enabled = true; config.bypassHosts = []
         guard config.mode == .pac, config.validationError == nil else {
-            completion(.failure(ExternalProxyError(config.validationError ?? "请先选择 PAC 模式。"))); return
+            if let issue = config.validationIssue { completion(.failure(SystemProxyOperationError(issue))) }
+            else { completion(.failure(SystemProxyOperationError(.externalProxyPacvalidationSelectPacModeFirst))) }
+            return
         }
         config.resolve(for: URL(string: "https://example.com/")!, on: group.next(), respectGlobalSwitch: false).whenComplete { result in
             let mapped = result.map { route -> String in
-                guard let route else { return "PAC 已加载并执行，example.com 路由为 DIRECT。" }
-                return "PAC 已加载并执行，example.com 路由为 \(route.mode.rawValue) \(route.host):\(route.port)。"
+                guard let route else { return Strings.Errors.externalProxyPacvalidationPacLoadedAndExecutedTheRouteForExample }
+                return Strings.Errors.externalProxyPacvalidationPacLoadedAndExecutedTheRouteForExample2(String(route.mode.rawValue), String(route.host), Int(route.port))
             }
             DispatchQueue.main.async { completion(mapped) }
         }

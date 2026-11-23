@@ -32,10 +32,10 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         queue.async {
             do {
                 guard let port = UInt16(exactly: port), port >= 1024 else {
-                    throw SystemProxyError("系统代理端口无效。")
+                    throw SystemProxyError(.invalidPort)
                 }
                 guard !peer.closed, self.lease == nil else {
-                    throw SystemProxyError("另一个 ProxyMirror 实例正在接管或恢复系统代理。")
+                    throw SystemProxyError(.busy)
                 }
                 let lock = try SystemProxyService.acquireLock()
                 // Never take a new snapshot over a previous, un-restored takeover.
@@ -55,14 +55,14 @@ private final class Service: NSObject, NSXPCListenerDelegate {
                         throw error
                     }
                 }
-                if let bypassHosts, let issue = SystemProxyBypassList.validationError(bypassHosts) {
+                if let bypassHosts, let issue = SystemProxyBypassList.validationFailure(bypassHosts) {
                     Darwin.close(lock)
-                    throw SystemProxyError(issue)
+                    throw issue
                 }
                 try self.enable(port, bypassHosts: bypassHosts, owner: peer.id, holding: lock)
                 reply(nil)
             } catch {
-                reply(error.localizedDescription)
+                reply(SystemProxyError.wireValue(for: error))
             }
         }
     }
@@ -79,21 +79,21 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         }
     }
 
-    func restore(for peer: Peer, reply: @escaping (String?) -> Void) {
+    func restore(for peer: Peer, previousConfiguration: Bool = true, reply: @escaping (String?) -> Void) {
         queue.async {
             guard let lease = self.lease else { reply(nil); return }
-            guard lease.owner == peer.id else { reply("当前连接没有接管系统代理。"); return }
-            reply(self.restoreLease())
+            guard lease.owner == peer.id else { reply(SystemProxyError(.notOwner).wireValue); return }
+            reply(self.restoreLease(previousConfiguration: previousConfiguration))
         }
     }
 
     func updateBypass(_ hosts: [String]?, for peer: Peer, reply: @escaping (String?) -> Void) {
         queue.async {
             guard let lease = self.lease, lease.owner == peer.id, !peer.closed else {
-                reply("当前连接没有接管系统代理。"); return
+                reply(SystemProxyError(.notOwner).wireValue); return
             }
             do { try lease.settings.updateBypass(hosts); reply(nil) }
-            catch { reply(error.localizedDescription) }
+            catch { reply(SystemProxyError.wireValue(for: error)) }
         }
     }
 
@@ -107,15 +107,15 @@ private final class Service: NSObject, NSXPCListenerDelegate {
     }
 
     // Serialized with takeover and normal restoration.
-    private func restoreLease() -> String? {
+    private func restoreLease(previousConfiguration: Bool = true) -> String? {
         guard let lease else { return nil }
         do {
-            try lease.settings.restore()
+            try lease.settings.restore(previousConfiguration: previousConfiguration)
             Darwin.close(lease.lock)
             self.lease = nil
             return nil
         } catch {
-            return error.localizedDescription
+            return SystemProxyError.wireValue(for: error)
         }
     }
 
@@ -193,14 +193,22 @@ private final class Peer: NSObject, SystemProxyServiceProtocol {
     func restore(reply: @escaping (String?) -> Void) {
         service.restore(for: self, reply: reply)
     }
+
+    func disableOwned(reply: @escaping (String?) -> Void) {
+        service.restore(for: self, previousConfiguration: false, reply: reply)
+    }
 }
 
 private func run() throws {
     let arguments = CommandLine.arguments
-    guard geteuid() == 0 else { throw SystemProxyError("系统代理服务需要管理员授权。") }
+    if arguments.count == 2, arguments[1] == "--version" {
+        print(SystemProxyService.version)
+        return
+    }
+    guard geteuid() == 0 else { throw SystemProxyError(.authorizationRequired) }
     // The one-time installer may start with only its effective UID elevated.
     guard getuid() == 0 || setuid(0) == 0 else {
-        throw SystemProxyError("无法启动已授权的系统代理安装程序。")
+        throw SystemProxyError(.installationFailed)
     }
     umask(0o077)
     if arguments.count == 2, arguments[1] == "--uninstall" {
@@ -209,7 +217,7 @@ private func run() throws {
     }
     guard arguments.count == 4, let uid = uid_t(arguments[2]), uid > 0,
           SystemProxyService.isValidHash(arguments[3]) else {
-        throw SystemProxyError("系统代理服务参数无效。")
+        throw SystemProxyError(.invalidArguments)
     }
     let hash = arguments[3]
     switch arguments[1] {
@@ -229,14 +237,14 @@ private func run() throws {
         listener.resume()
         withExtendedLifetime((listener, termination)) { dispatchMain() }
     default:
-        throw SystemProxyError("系统代理服务参数无效。")
+        throw SystemProxyError(.invalidArguments)
     }
 }
 
 do {
     try run()
 } catch {
-    let message = "[ProxyMirror] 系统代理服务：\(error.localizedDescription)\n"
+    let message = SystemProxyError.wireValue(for: error) + "\n"
     FileHandle.standardError.write(Data(message.utf8))
     exit(EXIT_FAILURE)
 }

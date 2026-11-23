@@ -20,16 +20,16 @@ struct ProtobufRulesView: View {
             HStack {
                 Text("Protobuf").font(.headline)
                 Spacer()
-                Toggle("启用映射", isOn: Binding(get: { store.configuration.enabled }, set: { enabled in
+                Toggle(Strings.Tools.enableMapping, isOn: Binding(get: { store.configuration.enabled }, set: { enabled in
                     var next = store.configuration; next.enabled = enabled
                     save(next)
                 }))
             }
             TabView(selection: $selectedTab) {
                 schemas.tabItem { Text("Schema") }.tag(0)
-                mappings.tabItem { Text("消息映射") }.tag(1)
-                converter.tabItem { Text("Converter") }.tag(2)
-                console.tabItem { Text("Console") }.tag(3)
+                mappings.tabItem { Text(Strings.Tools.messageMappings) }.tag(1)
+                converter.tabItem { Text(Strings.Tools.converter) }.tag(2)
+                console.tabItem { Text(Strings.Tools.console) }.tag(3)
             }
             if let error = store.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }
@@ -53,12 +53,12 @@ struct ProtobufRulesView: View {
     private var schemas: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Button("导入 .desc / .pb…") { importing = true }.disabled(store.loading)
+                Button(Strings.Tools.importDescPb) { importing = true }.disabled(store.loading)
                 if store.loading { ProgressView().controlSize(.small) }
                 Spacer()
-                Text("\(store.configuration.schemas.count) 个 Schema").foregroundStyle(.secondary)
+                Text(Strings.Tools.schemas(Int(store.configuration.schemas.count))).foregroundStyle(.secondary)
             }
-            Text("使用 protoc --descriptor_set_out=service.desc --include_imports service.proto 生成描述符。导入后复制到本机应用数据目录。")
+            Text(Strings.Tools.generateDescriptorsWithProtocDescriptorSetOutServiceDesc)
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             List {
                 ForEach(store.configuration.schemas) { record in
@@ -69,10 +69,10 @@ struct ProtobufRulesView: View {
                             save(next)
                         }))
                         Spacer()
-                        Text("\(store.schemaNames(id: record.id).count) 个类型").font(.caption).foregroundStyle(.secondary)
-                        Button("移除") { do { try store.removeSchema(record.id) } catch { store.fail(error) } }
+                        Text(Strings.Tools.types(Int(store.schemaNames(id: record.id).count))).font(.caption).foregroundStyle(.secondary)
+                        Button(Strings.Tools.remove) { do { try store.removeSchema(record.id) } catch { store.fail(error) } }
                     }
-                    DisclosureGroup("消息类型") {
+                    DisclosureGroup(Strings.Tools.messageTypes) {
                         Text(store.schemaNames(id: record.id).joined(separator: "\n"))
                             .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                     }
@@ -84,16 +84,16 @@ struct ProtobufRulesView: View {
     private var mappings: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Button("新增映射") {
+                Button(Strings.Tools.addMapping) {
                     var rule = ProtobufMappingRule(); rule.schemaID = store.configuration.schemas.first?.id; editing = rule
                 }
                 Spacer()
-                Text("按顺序使用第一条匹配规则").font(.caption).foregroundStyle(.secondary)
+                Text(Strings.Tools.useTheFirstMatchingRuleInOrder).font(.caption).foregroundStyle(.secondary)
             }
             List {
                 ForEach(store.configuration.rules) { rule in
                     HStack {
-                        Toggle("", isOn: Binding(get: { rule.enabled }, set: { enabled in
+                        Toggle(Strings.Tools.enableRule, isOn: Binding(get: { rule.enabled }, set: { enabled in
                             var next = store.configuration
                             if let index = next.rules.firstIndex(where: { $0.id == rule.id }) { next.rules[index].enabled = enabled }
                             save(next)
@@ -101,12 +101,12 @@ struct ProtobufRulesView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(rule.name)
                             Text(rule.pattern).font(.caption).foregroundStyle(.secondary)
-                            Text("请求: \(rule.requestMessage.isEmpty ? "字段编号" : rule.requestMessage) · \(rule.requestEncoding.rawValue)\n响应: \(rule.responseMessage.isEmpty ? "字段编号" : rule.responseMessage) · \(rule.responseEncoding.rawValue)")
+                            Text(Strings.Tools.protobufMappingSummary(String(describing: rule.requestMessage.isEmpty ? Strings.Tools.fieldNumbers : rule.requestMessage), String(describing: rule.requestEncoding.localizedTitle), String(describing: rule.responseMessage.isEmpty ? Strings.Tools.fieldNumbers : rule.responseMessage), String(describing: rule.responseEncoding.localizedTitle)))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button("编辑") { editing = rule }
-                        Button("删除") {
+                        Button(Strings.Tools.edit) { editing = rule }
+                        Button(Strings.Tools.delete) {
                             var next = store.configuration; next.rules.removeAll { $0.id == rule.id }; save(next)
                         }
                     }
@@ -122,21 +122,21 @@ struct ProtobufRulesView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Picker("Schema", selection: $converterSchema) {
-                    Text("无 Schema").tag(nil as UUID?)
+                    Text(Strings.Tools.noSchema).tag(nil as UUID?)
                     ForEach(store.configuration.schemas) { Text($0.name).tag(Optional($0.id)) }
                 }
-                TextField("完整消息类型（可选）", text: $converterMessage)
+                TextField(Strings.Tools.fullyQualifiedMessageTypeOptional, text: $converterMessage)
             }
             HStack {
-                Toggle("输入为 Base64", isOn: $converterBase64)
-                Picker("编码", selection: $converterEncoding) {
-                    ForEach(ProtobufPayloadEncoding.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Toggle(Strings.Tools.inputIsBase64, isOn: $converterBase64)
+                Picker(Strings.Tools.encode, selection: $converterEncoding) {
+                    ForEach(ProtobufPayloadEncoding.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
                 }.frame(width: 210)
                 Spacer()
-                Button("解码") { convert() }.disabled(converterBusy || converterInput.isEmpty)
+                Button(Strings.Tools.decode) { convert() }.disabled(converterBusy || converterInput.isEmpty)
                 if converterBusy { ProgressView().controlSize(.small) }
             }
-            Text("关闭 Base64 时输入十六进制字节。Delimited 使用 varint 长度前缀。")
+            Text(Strings.Tools.whenBase64IsDisabledEnterHexadecimalBytesDelimitedMode)
                 .font(.caption).foregroundStyle(.secondary)
             HSplitView {
                 TextEditor(text: $converterInput).font(.system(.body, design: .monospaced))
@@ -151,9 +151,9 @@ struct ProtobufRulesView: View {
     private var console: some View {
         VStack(spacing: 8) {
             HStack {
-                Toggle("仅错误", isOn: $errorsOnly)
+                Toggle(Strings.Tools.errorsOnly, isOn: $errorsOnly)
                 Spacer()
-                Button("清空") { store.clearConsole() }
+                Button(Strings.Tools.clear) { store.clearConsole() }
             }
             ScrollViewReader { proxy in
                 List(store.console.filter { !errorsOnly || $0.isError }) { entry in
@@ -185,29 +185,29 @@ struct ProtobufRulesView: View {
             defer { converterBusy = false }
             do {
                 let result = try await Task.detached(priority: .userInitiated) { () -> String in
-                    guard input.utf8.count <= GRPCFrames.maxPayload * 4 else { throw GRPCInspectionError("转换输入过大。") }
+                    guard input.utf8.count <= GRPCFrames.maxPayload * 4 else { throw GRPCInspectionError(Strings.Tools.theConversionInputIsTooLarge) }
                     let bytes: Data
                     if base64 {
-                        guard let decoded = Data(base64Encoded: input.filter { !$0.isWhitespace }) else { throw GRPCInspectionError("Base64 输入无效。") }
+                        guard let decoded = Data(base64Encoded: input.filter { !$0.isWhitespace }) else { throw GRPCInspectionError(Strings.Tools.theBase64InputIsInvalid) }
                         bytes = decoded
                     } else {
                         let compact = input.filter { !$0.isWhitespace }
-                        guard compact.count % 2 == 0, compact.allSatisfy({ $0.isHexDigit }) else { throw GRPCInspectionError("十六进制输入无效。") }
+                        guard compact.count % 2 == 0, compact.allSatisfy({ $0.isHexDigit }) else { throw GRPCInspectionError(Strings.Tools.theHexadecimalInputIsInvalid) }
                         let chars = Array(compact)
                         var decoded = Data()
                         for index in stride(from: 0, to: chars.count, by: 2) {
-                            guard let byte = UInt8(String(chars[index...index + 1]), radix: 16) else { throw GRPCInspectionError("十六进制输入无效。") }
+                            guard let byte = UInt8(String(chars[index...index + 1]), radix: 16) else { throw GRPCInspectionError(Strings.Tools.theHexadecimalInputIsInvalid) }
                             decoded.append(byte)
                         }
                         bytes = decoded
                     }
-                    if !type.isEmpty, schema?.contains(type) != true { throw GRPCInspectionError("请选择包含该消息类型的 Schema。") }
+                    if !type.isEmpty, schema?.contains(type) != true { throw GRPCInspectionError(Strings.Tools.chooseASchemaContainingThisMessageType) }
                     let messages = try ProtobufPayload.messages(bytes, encoding: encoding)
                     return try ProtobufPayload.describeMessages(messages, type: type.isEmpty ? nil : type, schema: schema)
                 }.value
                 converterOutput = result
-                store.log("Converter 解码成功。")
-            } catch { converterOutput = error.localizedDescription; store.fail(error) }
+                store.log(Strings.Tools.converterDecodedSuccessfully)
+            } catch { converterOutput = LocalizedErrorPresentation.message(for: error); store.fail(error) }
         }
     }
 }
@@ -221,27 +221,27 @@ private struct ProtobufMappingEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Protobuf 消息映射").font(.headline)
-            TextField("名称", text: $rule.name)
-            TextField("完整 URL 或路径通配符", text: $rule.pattern)
+            Text(Strings.Tools.protobufMessageMapping).font(.headline)
+            TextField(Strings.Tools.name, text: $rule.name)
+            TextField(Strings.Tools.fullUrlOrPathPattern, text: $rule.pattern)
             Picker("Schema", selection: $rule.schemaID) {
-                Text("请选择").tag(nil as UUID?)
+                Text(Strings.Tools.choose).tag(nil as UUID?)
                 ForEach(store.configuration.schemas) { Text($0.name).tag(Optional($0.id)) }
             }
             Group {
-                messageField("请求消息", $rule.requestMessage)
-                encodingPicker("请求编码", $rule.requestEncoding)
-                messageField("响应消息", $rule.responseMessage)
-                encodingPicker("响应编码", $rule.responseEncoding)
+                messageField(Strings.Tools.requestMessage, $rule.requestMessage)
+                encodingPicker(Strings.Tools.requestEncoding, $rule.requestEncoding)
+                messageField(Strings.Tools.responseMessage, $rule.responseMessage)
+                encodingPicker(Strings.Tools.responseEncoding, $rule.responseEncoding)
             }
-            Picker("正文类型", selection: $rule.payloadType) {
-                ForEach(ProtobufPayloadType.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Picker(Strings.Tools.bodyType, selection: $rule.payloadType) {
+                ForEach(ProtobufPayloadType.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
             }
             if let error = store.error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") { onSave(rule) }.keyboardShortcut(.defaultAction).disabled(rule.schemaID == nil || rule.name.isEmpty)
+                Button(Strings.Tools.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.save) { onSave(rule) }.keyboardShortcut(.defaultAction).disabled(rule.schemaID == nil || rule.name.isEmpty)
             }
         }.padding(20).frame(width: 560)
     }
@@ -249,8 +249,8 @@ private struct ProtobufMappingEditor: View {
     private func messageField(_ label: String, _ value: Binding<String>) -> some View {
         HStack {
             TextField(label, text: value)
-            Menu("选择") {
-                Button("按字段编号") { value.wrappedValue = "" }
+            Menu(Strings.Tools.select) {
+                Button(Strings.Tools.byFieldNumber) { value.wrappedValue = "" }
                 ForEach(store.schemaNames(id: rule.schemaID), id: \.self) { type in Button(type) { value.wrappedValue = type } }
             }.fixedSize()
         }
@@ -258,7 +258,7 @@ private struct ProtobufMappingEditor: View {
 
     private func encodingPicker(_ label: String, _ value: Binding<ProtobufPayloadEncoding>) -> some View {
         Picker(label, selection: value) {
-            ForEach(ProtobufPayloadEncoding.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            ForEach(ProtobufPayloadEncoding.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
         }
     }
 }

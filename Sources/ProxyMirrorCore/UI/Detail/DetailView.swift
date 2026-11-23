@@ -22,7 +22,7 @@ struct DetailView: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 36))
                 .foregroundColor(.secondary.opacity(0.6))
-            Text("选择一条请求查看详情")
+            Text(Strings.Detail.selectARequestToInspectItsDetails)
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
         }
@@ -36,15 +36,16 @@ struct DetailContentView: View {
     var navigationEnabled = true
     @EnvironmentObject var appState: AppState
     @AppStorage("ui.truncationStyle") private var truncation = "middle"
+    @ObservedObject private var presentationSettings = AppSettings.shared
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 if navigationEnabled {
                     Button { store.navigateSelectionHistory(-1) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.borderless).disabled(!store.canNavigateBackward).help("上一条查看记录")
+                        .buttonStyle(.borderless).disabled(!store.canNavigateBackward).help(Strings.Detail.previousInspectedRequest)
                     Button { store.navigateSelectionHistory(1) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(.borderless).disabled(!store.canNavigateForward).help("下一条查看记录")
+                        .buttonStyle(.borderless).disabled(!store.canNavigateForward).help(Strings.Detail.nextInspectedRequest)
                 }
                 methodBadge(tx.method)
                 statusBadge(tx)
@@ -60,10 +61,10 @@ struct DetailContentView: View {
                 }
                 Spacer(minLength: 8)
                 Menu {
-                    Button("Repeat") { appState.repeatRequest(tx) }.disabled(!tx.canReplay)
-                    Button("Copy as cURL") { appState.copyRequestsAsCurl([tx]) }
-                    Button("Copy URL") { appState.copyText(tx.fullURL) }
-                    Button("创建 Protobuf 映射…") {
+                    Button(Strings.Detail.messageRepeat) { appState.repeatRequest(tx) }.disabled(!tx.canReplay)
+                    Button(Strings.Detail.copyAsCurl) { appState.copyRequestsAsCurl([tx]) }
+                    Button(Strings.Detail.copyUrl) { appState.copyText(tx.fullURL) }
+                    Button(Strings.Detail.createProtobufMapping) {
                         ProtobufRuleStore.shared.addRule(for: tx.fullURL)
                         NotificationCenter.default.post(name: .pmOpenProtobuf, object: nil)
                     }
@@ -73,22 +74,28 @@ struct DetailContentView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .accessibilityLabel("请求操作")
+                .accessibilityLabel(Strings.Detail.requestActions)
             }
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(PresentationFonts.swiftUIFont(weight: .medium))
             .padding(.horizontal, 10)
-            .frame(height: 32)
+            .frame(height: max(32, CGFloat(presentationSettings.fontSize) + 18))
             .background(ProxymanTheme.inspectorChrome)
             .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1) }
 
             if tx.suspectedPinning { pinningBanner }
 
-            // 左右分栏：Request | Response
-            HSplitView {
-                ContentSideView(tx: tx, side: .request)
-                    .frame(minWidth: 200)
-                ContentSideView(tx: tx, side: .response)
-                    .frame(minWidth: 200)
+            Group {
+                if presentationSettings.contentLayout == "horizontal" {
+                    HSplitView {
+                        ContentSideView(tx: tx, side: .request).frame(minWidth: 180)
+                        ContentSideView(tx: tx, side: .response).frame(minWidth: 180)
+                    }
+                } else {
+                    VSplitView {
+                        ContentSideView(tx: tx, side: .request).frame(minHeight: 100)
+                        ContentSideView(tx: tx, side: .response).frame(minHeight: 100)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -96,7 +103,7 @@ struct DetailContentView: View {
 
     private func methodBadge(_ method: String) -> some View {
         Text(method)
-            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            .font(PresentationFonts.swiftUIFont(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
             .frame(minWidth: 72, minHeight: 20)
             .background(Color.primary.opacity(0.10), in: Capsule())
@@ -106,7 +113,7 @@ struct DetailContentView: View {
     private func statusBadge(_ tx: Transaction) -> some View {
         Group {
             if tx.state == .failed {
-                Text(tx.statusCode > 0 ? "\(tx.statusText) · 传输失败" : "传输失败")
+                Text(tx.statusCode > 0 ? Strings.Detail.transferFailed(String(describing: tx.statusText)) : Strings.Detail.transportFailed)
                     .foregroundStyle(.red)
                     .help(tx.errorText ?? "")
             } else if tx.statusCode > 0 {
@@ -117,24 +124,24 @@ struct DetailContentView: View {
                     .background(color.opacity(0.15), in: Capsule())
                     .overlay { Capsule().strokeBorder(color.opacity(0.26)) }
             } else {
-                Text(tx.isTunnel ? "建立隧道中" : "接收中").foregroundStyle(.secondary)
+                Text(tx.isTunnel ? Strings.Detail.establishingTunnel : Strings.Detail.receiving2).foregroundStyle(.secondary)
             }
         }
-        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+        .font(PresentationFonts.swiftUIFont(size: 11, weight: .semibold))
     }
 
     private var pinningBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "lock.shield").foregroundStyle(.orange)
-            Text("疑似 SSL 证书锁定：客户端拒绝了代理证书，未发出明文请求。")
+            Text(Strings.Detail.possibleSslCertificatePinningTheClientRejectedTheProxyCertificateAnd)
                 .font(.system(size: 12))
             Spacer(minLength: 8)
             if let bundleID = tx.clientBundle, let name = tx.clientName {
-                Button("对「\(name)」启用透传") { appState.enablePinningPassthrough(bundleID: bundleID, name: name) }
+                Button(Strings.Detail.enablePassthroughFor(String(describing: name))) { appState.enablePinningPassthrough(bundleID: bundleID, name: name) }
                     .controlSize(.small)
-                    .help("此应用的新连接将使用透传。")
+                    .help(Strings.Detail.newConnectionsFromThisApplicationWillUsePassthrough)
             }
-            Button("不再解密此域") {
+            Button(Strings.Detail.stopDecryptingThisDomain) {
                 var hosts = appState.settings.mitmExcludedHosts
                 if !hosts.contains(tx.host) { hosts.append(tx.host) }
                 appState.settings.mitmExcludedHosts = hosts
@@ -155,14 +162,30 @@ enum ContentSide {
 
 private struct ContentSideView: View {
     enum Tab: String, CaseIterable {
-        case headers = "头部", body = "正文", raw = "原文", preview = "预览"
-        case query = "查询", cookies = "Cookies", auth = "Auth", connection = "Connection Log", chart = "耗时"
-        case graphql = "GraphQL", summary = "摘要"
-        case sse = "SSE", webSocket = "WebSocket"
+        case headers, body, raw, preview, query, cookies, auth, connection, chart, graphql, summary, sse, webSocket
+
+        var localizedTitle: String {
+            switch self {
+            case .headers: return Strings.Detail.headers
+            case .body: return Strings.Detail.body
+            case .raw: return Strings.Detail.raw
+            case .preview: return Strings.Detail.preview
+            case .query: return Strings.Detail.query
+            case .cookies: return "Cookie"
+            case .auth: return Strings.Detail.authentication
+            case .connection: return Strings.Detail.connectionLog
+            case .chart: return Strings.Detail.timing
+            case .graphql: return "GraphQL"
+            case .summary: return Strings.Detail.summary
+            case .sse: return "SSE"
+            case .webSocket: return "WebSocket"
+            }
+        }
     }
 
     @ObservedObject var tx: Transaction
     let side: ContentSide
+    @ObservedObject private var presentationSettings = AppSettings.shared
     @EnvironmentObject private var appState: AppState
     @State private var selectedTab: Tab?
     @State private var tree = false
@@ -248,9 +271,9 @@ private struct ContentSideView: View {
     }
 
     private var queryUnavailable: String? {
-        if truncated { return "正文已截断，完整捕获后可运行查询。" }
-        if !complete { return "等待完整正文…" }
-        if data.count > JSONPath.maxInputBytes { return "查询支持最大 1 MiB 的正文。" }
+        if truncated { return Strings.Detail.theBodyIsTruncatedQueriesRequireACompleteCapture }
+        if !complete { return Strings.Detail.waitingForCompleteBody }
+        if data.count > JSONPath.maxInputBytes { return Strings.Detail.queriesSupportBodiesUpTo1Mib }
         return nil
     }
     private var isEncryptedTunnel: Bool { tx.isTunnel && !tx.isTLSIntercepted }
@@ -280,7 +303,7 @@ private struct ContentSideView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(6)
                 }
                 if truncated {
-                    Text("正文已截断 · 捕获 \(capturedData.count) / \(receivedBytes) 字节")
+                    Text(Strings.Detail.bodyTruncatedBytesCaptured(capturedData.count, receivedBytes))
                         .font(.caption).foregroundStyle(.orange).padding(4)
                 }
                 if let id = customPreviewerID, let previewer = previewers.items.first(where: { $0.id == id }) {
@@ -332,8 +355,8 @@ private struct ContentSideView: View {
 
     private var inspectorHeader: some View {
         HStack(spacing: 9) {
-            Text(isRequest ? "Request" : "Response")
-                .font(.system(size: 12, weight: .bold))
+            Text(isRequest ? Strings.Detail.request : Strings.Detail.response)
+                .font(PresentationFonts.swiftUIFont(weight: .bold))
                 .fixedSize()
             if !tabs.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -342,7 +365,7 @@ private struct ContentSideView: View {
                         if additionalTabs.contains(tab) { tabButton(tab) }
                         Menu {
                             ForEach(additionalTabs, id: \.self) { candidate in
-                                Button(candidate.rawValue) { customPreviewerID = nil; selectedTab = candidate }
+                                Button(candidate.localizedTitle) { customPreviewerID = nil; selectedTab = candidate }
                             }
                             if !previewers.items.isEmpty { Divider() }
                             ForEach(previewers.items.filter { $0.matches(contentType) }) { previewer in
@@ -354,7 +377,7 @@ private struct ContentSideView: View {
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)
                         .fixedSize()
-                        .accessibilityLabel("更多详情标签")
+                        .accessibilityLabel(Strings.Detail.moreInspectorTabs)
                     }
                 }
             } else {
@@ -374,7 +397,7 @@ private struct ContentSideView: View {
 
     private func tabButton(_ candidate: Tab) -> some View {
         Button { customPreviewerID = nil; selectedTab = candidate } label: {
-            Text(candidate == .body ? grpcMediaType?.transport.label ?? candidate.rawValue : candidate.rawValue)
+            Text(candidate == .body ? grpcMediaType?.transport.label ?? candidate.localizedTitle : candidate.localizedTitle)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(tab == candidate && customPreviewerID == nil ? Color.accentColor : Color.secondary)
                 .fixedSize()
@@ -387,19 +410,19 @@ private struct ContentSideView: View {
 
     private var encryptedResponse: some View {
         VStack(spacing: 8) {
-            Label("HTTPS 响应", systemImage: "lock")
+            Label(Strings.Detail.httpsResponse, systemImage: "lock")
                 .font(.system(size: 17, weight: .medium))
-            Text("此 HTTPS 响应已加密。\n启用 SSL 代理以查看内容。")
+            Text(Strings.Detail.thisHttpsResponseIsEncryptedEnableSslProxyingToViewIts)
                 .font(.system(size: 13))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.tertiary)
-            Button("仅启用此域") { appState.enableSSLProxying(for: tx) }
+            Button(Strings.Detail.enableForThisDomainOnly) { appState.enableSSLProxying(for: tx) }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .padding(.top, 5)
             if let name = tx.clientName, tx.clientBundle != nil {
-                Text("或者").font(.system(size: 12))
-                Button("为「\(name)」配置 SSL 代理…") { appState.openTool(.sslApplications, transaction: tx) }
+                Text(Strings.Detail.or).font(.system(size: 12))
+                Button(Strings.Detail.configureSslProxyingFor(String(describing: name))) { appState.openTool(.sslApplications, transaction: tx) }
                     .controlSize(.small)
             }
         }
@@ -413,7 +436,7 @@ private struct ContentSideView: View {
         case .headers:
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    fields(isRequest ? "请求头" : "响应头", headers.pairs.map { ($0.name, $0.value) })
+                    fields(isRequest ? Strings.Detail.requestHeaders : Strings.Detail.responseHeaders, headers.pairs.map { ($0.name, $0.value) })
                     if trailers.count > 0 { fields("Trailers", trailers.pairs.map { ($0.name, $0.value) }) }
                 }.padding(10)
             }
@@ -460,11 +483,11 @@ private struct ContentSideView: View {
         case .query:
             let items = URLComponents(string: "?\(tx.query)")?.queryItems ?? []
             if items.isEmpty {
-                Text("没有查询").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                Text(Strings.Detail.noQuery).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    fields("查询参数", items.map { ($0.name, $0.value ?? "") }).padding(10)
+                    fields(Strings.Detail.queryParameters, items.map { ($0.name, $0.value ?? "") }).padding(10)
                 }
             }
         case .cookies:
@@ -474,50 +497,50 @@ private struct ContentSideView: View {
             ScrollView { fields(name, entries.map { (name, $0.trimmingCharacters(in: .whitespaces)) }).padding(10) }
         case .auth:
             let entries = headers.pairs.filter { ["authorization", "proxy-authorization"].contains($0.name.lowercased()) }
-            ScrollView { fields("认证头", entries.map { ($0.name, $0.value) }).padding(10) }
+            ScrollView { fields(Strings.Detail.authenticationHeaders, entries.map { ($0.name, $0.value) }).padding(10) }
         case .graphql:
             ScrollView {
                 if let info = GraphQLService.detect(tx: tx, inspectResponse: false) {
-                    fields("GraphQL", [("操作", info.operationName), ("类型", info.operationType),
-                                      ("文档", info.queryText), ("变量", info.variablesText)]).padding(10)
+                    fields("GraphQL", [(Strings.Detail.operation, info.operationName), (Strings.Detail.type, info.operationType),
+                                      (Strings.Detail.document, info.queryText), (Strings.Detail.variables, info.variablesText)]).padding(10)
                 } else {
-                    Text("未识别到 GraphQL 操作").font(.caption).foregroundStyle(.secondary).padding(10)
+                    Text(Strings.Detail.noGraphqlOperationDetected).font(.caption).foregroundStyle(.secondary).padding(10)
                 }
             }
         case .connection:
             ScrollView {
-                fields("连接日志", [
-                    ("客户端", tx.clientName ?? "未知"),
-                    ("客户端地址", tx.clientAddress ?? "暂无"),
-                    ("目标", tx.fullURL),
-                    ("原始目标", tx.originalURL ?? tx.fullURL),
-                    ("抓包入口", tx.isTransparent ? "透明代理" : "—"),
-                    ("DNS 映射地址", tx.resolvedAddress ?? "无"),
-                    ("客户端协议", tx.requestVersion),
-                    ("上游协议", tx.upstreamProtocol ?? (tx.statusCode == 0 ? "暂无" : tx.responseVersion)),
-                    ("上游连接地址", tx.connectionDetails?.address ?? "暂无"),
-                    ("外部代理", tx.connectionDetails?.externalProxy ?? "直连或无连接"),
-                    ("上游 ALPN", tx.connectionDetails?.alpn ?? "暂无"),
-                    ("DNS 解析", connectionDuration(tx.connectionDetails?.dnsMilliseconds)),
-                    ("TCP / 代理连接", connectionDuration(tx.connectionDetails?.tcpMilliseconds)),
-                    ("TLS 握手", connectionDuration(tx.connectionDetails?.tlsMilliseconds)),
-                    ("连接复用", tx.connectionDetails?.reused == true ? "已复用" : "新建或暂无"),
-                    ("客户端流 ID", tx.connectionDetails?.downstreamStream.map(String.init) ?? "–"),
-                    ("上游流 ID", tx.connectionDetails?.upstreamStream.map(String.init) ?? "–"),
-                    ("已建立连接", tx.tConnected.map { $0.formatted() } ?? "暂无"),
-                    ("收到响应头", tx.tHeaderAt.map { $0.formatted() } ?? "暂无"),
-                    ("命中规则", tx.ruleMatches.isEmpty ? "无" : tx.ruleMatches.joined(separator: " → ")),
-                    ("脚本执行", tx.scriptingLogs.isEmpty ? "无" : tx.scriptingLogs.joined(separator: "\n")),
+                fields(Strings.Detail.connectionLog, [
+                    (Strings.Detail.client, tx.clientName ?? Strings.Detail.unknown),
+                    (Strings.Detail.clientAddress, tx.clientAddress ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.target, tx.fullURL),
+                    (Strings.Detail.originalTarget, tx.originalURL ?? tx.fullURL),
+                    (Strings.Detail.captureIngress, tx.isTransparent ? Strings.Detail.transparentProxy : "—"),
+                    (Strings.Detail.dnsMappingAddress, tx.resolvedAddress ?? Strings.Detail.none),
+                    (Strings.Detail.clientProtocol, tx.requestVersion),
+                    (Strings.Detail.upstreamProtocol, tx.upstreamProtocol ?? (tx.statusCode == 0 ? Strings.Detail.notAvailable : tx.responseVersion)),
+                    (Strings.Detail.upstreamAddress, tx.connectionDetails?.address ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.externalProxy, tx.connectionDetails?.externalProxy ?? Strings.Detail.directOrNotConnected),
+                    (Strings.Detail.upstreamAlpn, tx.connectionDetails?.alpn ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.dnsLookup, connectionDuration(tx.connectionDetails?.dnsMilliseconds)),
+                    (Strings.Detail.tcpProxyConnection, connectionDuration(tx.connectionDetails?.tcpMilliseconds)),
+                    (Strings.Detail.tlsHandshake, connectionDuration(tx.connectionDetails?.tlsMilliseconds)),
+                    (Strings.Detail.connectionReuse, tx.connectionDetails?.reused == true ? Strings.Detail.reused : Strings.Detail.newOrNotAvailable),
+                    (Strings.Detail.clientStreamId, tx.connectionDetails?.downstreamStream.map(String.init) ?? "–"),
+                    (Strings.Detail.upstreamStreamId, tx.connectionDetails?.upstreamStream.map(String.init) ?? "–"),
+                    (Strings.Detail.connectionEstablished, tx.tConnected.map { $0.formatted() } ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.responseHeadersReceived, tx.tHeaderAt.map { $0.formatted() } ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.matchedRules, tx.ruleMatches.isEmpty ? Strings.Detail.none : tx.ruleMatches.joined(separator: " → ")),
+                    (Strings.Detail.scriptExecution, tx.scriptingLogs.isEmpty ? Strings.Detail.none : tx.scriptingLogs.joined(separator: "\n")),
                 ]).padding(10)
             }
         case .summary:
             ScrollView {
-                fields("摘要", [
-                    ("网址", tx.originalURL ?? tx.fullURL),
-                    ("方法", tx.method),
-                    ("状态", tx.statusCode > 0 ? tx.statusText : "–"),
-                    ("协议", isRequest ? tx.requestVersion : tx.responseVersion),
-                    ("持续时间", tx.durationText),
+                fields(Strings.Detail.summary, [
+                    (Strings.Detail.url, tx.originalURL ?? tx.fullURL),
+                    (Strings.Detail.method, tx.method),
+                    (Strings.Detail.status, tx.statusCode > 0 ? tx.statusText : "–"),
+                    (Strings.Detail.protocol, isRequest ? tx.requestVersion : tx.responseVersion),
+                    (Strings.Detail.duration, tx.durationText),
                 ]).padding(10)
             }
         case .chart:
@@ -535,16 +558,16 @@ private struct ContentSideView: View {
         if !isCompressed || capturedData.isEmpty || tx.isWebSocket {
             content()
         } else if truncated {
-            compressedBody("正文已截断，无法解压。", rawHead: rawHead)
+            compressedBody(Strings.Detail.theBodyWasTruncatedAndCannotBeDecompressed, rawHead: rawHead)
         } else if tx.state == .failed && !complete {
-            compressedBody("响应未完整接收，无法解压。", rawHead: rawHead)
+            compressedBody(Strings.Detail.theResponseWasNotFullyReceivedAndCannotBeDecompressed, rawHead: rawHead)
         } else if unsupportedEncodings {
-            compressedBody("暂不支持 Content-Encoding: \(contentEncodings.joined(separator: ", "))。", rawHead: rawHead)
+            compressedBody(Strings.Detail.unsupportedContentEncoding(String(describing: contentEncodings.joined(separator: ", "))), rawHead: rawHead)
         } else if !complete {
             if let rawHead {
-                compressedBody("等待接收完整正文，接收后自动解压。", rawHead: rawHead)
+                compressedBody(Strings.Detail.waitingForTheCompleteBodyBeforeAutomaticDecompression, rawHead: rawHead)
             } else {
-                ProgressView("等待接收完整正文…").controlSize(.small)
+                ProgressView(Strings.Detail.waitingForTheCompleteBody).controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {
@@ -554,17 +577,17 @@ private struct ContentSideView: View {
             case .failure(let error):
                 switch error {
                 case .outputLimit:
-                    compressedBody("解压后的正文超过 32 MiB。", rawHead: rawHead)
+                    compressedBody(Strings.Detail.theDecompressedBodyExceeds32Mib, rawHead: rawHead)
                 case .unsupported(let list):
-                    compressedBody("暂不支持 Content-Encoding: \(list.joined(separator: ", "))。", rawHead: rawHead)
+                    compressedBody(Strings.Detail.unsupportedContentEncoding(String(describing: list.joined(separator: ", "))), rawHead: rawHead)
                 case .invalidStream:
-                    compressedBody("无法解压 \(contentEncodings.joined(separator: ", ")) 压缩正文。", rawHead: rawHead)
+                    compressedBody(Strings.Detail.unableToDecompressTheBody(String(describing: contentEncodings.joined(separator: ", "))), rawHead: rawHead)
                 }
             case nil:
                 if let rawHead {
-                    compressedBody("正在解压…", rawHead: rawHead)
+                    compressedBody(Strings.Detail.decompressing, rawHead: rawHead)
                 } else {
-                    ProgressView("正在解压…").controlSize(.small)
+                    ProgressView(Strings.Detail.decompressing).controlSize(.small)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -589,36 +612,36 @@ private struct ContentSideView: View {
             if !data.isEmpty {
                 HStack {
                     if !showingQuery {
-                        TextField("搜索正文", text: $search).textFieldStyle(.roundedBorder)
+                        TextField(Strings.Detail.searchBody, text: $search).textFieldStyle(.roundedBorder)
                         if isJSON {
-                            Toggle("JSON 树", isOn: $tree).toggleStyle(.checkbox)
+                            Toggle(Strings.Detail.jsonTree, isOn: $tree).toggleStyle(.checkbox)
                                 .disabled(treeUnavailableReason != nil)
-                                .help(treeUnavailableReason ?? "按层级展开 JSON 正文")
+                                .help(treeUnavailableReason ?? Strings.Detail.expandTheJsonBodyAsATree)
                         }
                     } else {
-                        Text("JSON 查询").font(.caption.weight(.semibold))
+                        Text(Strings.Detail.jsonQuery).font(.caption.weight(.semibold))
                         Spacer()
                     }
                     Spacer(minLength: 8)
                     if messagePackApplied {
-                        Text("已解码 MessagePack")
+                        Text(Strings.Detail.decodedMessagepack)
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color.primary.opacity(0.08), in: Capsule())
-                            .help("MessagePack 正文已转换为 JSON")
+                            .help(Strings.Detail.messagepackBodyConvertedToJson)
                     }
                     if let label = decodedLabel {
-                        Text("已解码 \(label)")
+                        Text(Strings.Detail.decoded(String(describing: label)))
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color.primary.opacity(0.08), in: Capsule())
-                            .help("已按 Content-Encoding 自动解压")
+                            .help(Strings.Detail.automaticallyDecompressedUsingContentEncoding)
                     }
                     if isJSON {
-                        Button(showingQuery ? "返回正文" : "查询") {
+                        Button(showingQuery ? Strings.Detail.backToBody : Strings.Detail.query) {
                             showingQuery.toggle()
                         }
-                        .accessibilityLabel(showingQuery ? "返回正文" : "查询 JSON 正文")
+                        .accessibilityLabel(showingQuery ? Strings.Detail.backToBody : Strings.Detail.queryTheJsonBody)
                     }
                 }
                 .controlSize(.small).padding(5)
@@ -633,7 +656,7 @@ private struct ContentSideView: View {
                 BodySearchResults(data: data, revision: bodyRevision, query: search)
                     .id(ObjectIdentifier(tx))
             } else if let treeInput, treeResult?.input != treeInput {
-                ProgressView("正在解析 JSON…").controlSize(.small)
+                ProgressView(Strings.Detail.parsingJson).controlSize(.small)
             } else if treeInput != nil, let treeRoot = treeResult?.root {
                 ScrollView {
                     JSONTreeNodesView(node: treeRoot)
@@ -662,25 +685,25 @@ private struct ContentSideView: View {
         let head = RawMessageHead(startLine: startLine, headers: headers)
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(tx.isWebSocket ? "握手头部和原始 WebSocket 帧字节" :
-                     isHTTP2 ? "HTTP/2 伪头部和正文" : "按捕获的首行、头部和正文重组")
+                Text(tx.isWebSocket ? Strings.Detail.handshakeHeadersAndOriginalWebsocketFrameBytes :
+                     isHTTP2 ? Strings.Detail.http2PseudoHeadersAndBody : Strings.Detail.reconstructedFromTheCapturedFirstLineHeadersAndBody)
                 Spacer()
                 if !tx.isWebSocket, isCompressed || isHTTPProtobuf || messagePackApplied {
-                    Toggle("捕获字节", isOn: $showCapturedBytes)
+                    Toggle(Strings.Detail.capturedBytes, isOn: $showCapturedBytes)
                         .toggleStyle(.checkbox)
-                        .help("切换查看未解压、未转换的捕获正文")
+                        .help(Strings.Detail.viewTheCapturedBodyWithoutDecompressionOrConversion)
                 }
             }
             .font(.caption).foregroundStyle(.secondary).padding(6)
             if !complete && tx.state != .failed {
-                Text("捕获中").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
+                Text(Strings.Detail.capturing).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
             }
             if showCapturedBytes || tx.isWebSocket {
                 rawBodyPreview(capturedData, head: head, forceBinary: isCompressed || tx.isWebSocket)
             } else {
                 inspectBody(rawHead: head) {
                     if let decodedLabel {
-                        Text("正文已解码 \(decodedLabel) · 头部保留捕获值")
+                        Text(Strings.Detail.bodyDecodedAsHeadersRetainCapturedValues(String(describing: decodedLabel)))
                             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
                     }
                     if isHTTPProtobuf, grpcMediaType == nil {
@@ -700,35 +723,29 @@ private struct ContentSideView: View {
     private func rawBodyPreview(_ bytes: Data, head: RawMessageHead, forceBinary: Bool = false,
                                 contentType: String? = nil) -> some View {
         let binary = !bytes.isEmpty && (forceBinary || BodyContentView.isBinary(data: bytes, contentType: contentType ?? self.contentType))
-        return ScrollViewReader { scroll in
-            ScrollView {
-                RawMessageHeadView(head: head).equatable()
-                if binary {
-                    Text("二进制正文").font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
-                }
-                BodyPreview(data: bytes, format: binary ? .hex : .text, generation: bodyGeneration, rawHead: head) {
-                    scroll.scrollTo(BodyPreview.ScrollAnchor.pageTop, anchor: .top)
-                }
-                .id(ObjectIdentifier(tx))
-                if trailers.count > 0 {
-                    fields("Trailers", trailers.pairs.map { ($0.name, $0.value) }).padding(10)
-                }
+        return VStack(alignment: .leading, spacing: 0) {
+            if binary {
+                Text(Strings.Detail.binaryBody).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
             }
+            BodyPreview(data: bytes, format: binary ? .hex : .text, generation: bodyGeneration,
+                        rawHead: head, includeHead: true,
+                        suffixText: trailers.count > 0 ? "\r\nTrailers\r\n" + String(decoding: trailers.rawBytes, as: UTF8.self) : "")
+                .id(ObjectIdentifier(tx))
         }
     }
 
     private func fields(_ title: String, _ rows: [(String, String)]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-            if rows.isEmpty { Text("无").font(.caption).foregroundStyle(.secondary) }
+            Text(title).font(PresentationFonts.swiftUIFont(weight: .semibold)).foregroundStyle(.secondary)
+            if rows.isEmpty { Text(Strings.Detail.none).font(.caption).foregroundStyle(.secondary) }
             ForEach(rows.indices, id: \.self) { index in
                 HStack(alignment: .top, spacing: 8) {
                     Text(rows[index].0).fontWeight(.medium).frame(minWidth: 70, idealWidth: 108, alignment: .leading)
                     Text(rows[index].1).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .font(.system(size: 11)).textSelection(.enabled)
+                .font(PresentationFonts.swiftUIFont()).textSelection(.enabled)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -756,14 +773,14 @@ private struct BodySearchResults: View {
         Group {
             if let result {
                 ScrollView {
-                    Text(result.total == 0 ? "无匹配内容" : result.text)
+                    Text(result.total == 0 ? Strings.Detail.noMatchingContent : result.text)
                         .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(10)
                 }
-                Text("搜索正文前 1 MiB · 显示 \(min(result.total, 200))/\(result.total) 行")
+                Text(Strings.Detail.searchFirst1MibOfBodyShowingLines(min(result.total, 200), result.total))
                     .font(.caption).foregroundStyle(.secondary).padding(4)
             } else {
-                ProgressView("正在搜索…").controlSize(.small)
+                ProgressView(Strings.Detail.searching).controlSize(.small)
             }
         }
         .task(id: Key(revision: revision, query: query)) {

@@ -39,21 +39,23 @@ struct SourceFolder: Codable, Identifiable, Equatable {
     }
 }
 
-enum SourceFolderError: LocalizedError {
+enum SourceFolderError: LocalizedError, OperationIssueProviding {
     case blankName, duplicateName, missing, invalidFile
 
-    var errorDescription: String? {
+    var operationIssue: OperationIssue {
         switch self {
-        case .blankName: return "请输入文件夹名称。"
-        case .duplicateName: return "已有同名来源文件夹。"
-        case .missing: return "该来源文件夹已被删除。"
-        case .invalidFile: return "无法读取现有来源文件夹配置。"
+        case .blankName: return OperationIssue.modelSourceFolderNameRequired
+        case .duplicateName: return OperationIssue.modelSourceFolderDuplicate
+        case .missing: return OperationIssue.modelSourceFolderMissing
+        case .invalidFile: return OperationIssue.modelSourceFolderInvalid
         }
     }
+    var errorDescription: String? { operationIssue.diagnostic }
 }
 
 struct SourceFolderArchive: Codable {
-    private var version = 1
+    static let currentVersion = 2
+    private var version = Self.currentVersion
     private var folders: [SourceFolder]
 
     static var defaultURL: URL {
@@ -63,7 +65,7 @@ struct SourceFolderArchive: Codable {
     static func read(_ url: URL) throws -> [SourceFolder] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         guard let archive = try? JSONDecoder().decode(Self.self, from: Data(contentsOf: url)),
-              archive.version == 1, Set(archive.folders.map(\.id)).count == archive.folders.count else {
+              archive.version == Self.currentVersion, Set(archive.folders.map(\.id)).count == archive.folders.count else {
             throw SourceFolderError.invalidFile
         }
         return archive.folders.map { folder in

@@ -4,15 +4,15 @@ enum JSONPath {
     static let maxInputBytes = 1_048_576
 
     static func select(_ expression: String, from data: Data) throws -> [Any] {
-        guard data.count <= maxInputBytes else { throw QueryError("JSONPath 查询支持最大 1 MiB 的正文。") }
-        guard expression.utf8.count <= 8192 else { throw QueryError("JSONPath 表达式过长。") }
+        guard data.count <= maxInputBytes else { throw QueryError(Strings.Detail.jsonpathQueriesSupportBodiesUpTo1Mib) }
+        guard expression.utf8.count <= 8192 else { throw QueryError(Strings.Detail.theJsonpathExpressionIsTooLong) }
         var parser = Parser(expression)
         let segments = try parser.parse()
         let root: Any
         do {
             root = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         } catch {
-            throw QueryError("正文无法解析为 JSON。")
+            throw QueryError(Strings.Detail.unableToParseTheBodyAsJson)
         }
 
         var nodes = [root]
@@ -23,7 +23,7 @@ enum JSONPath {
                 var pending = [node]
                 while let candidate = pending.popLast() {
                     remainingWork -= segment.selectors.count
-                    guard remainingWork >= 0 else { throw QueryError("查询范围过大，请缩小 JSONPath 选择范围。") }
+                    guard remainingWork >= 0 else { throw QueryError(Strings.Detail.theQueryScopeIsTooLargeNarrowTheJsonpathSelection) }
                     try Task.checkCancellation()
                     for selector in segment.selectors {
                         try selector.appendMatches(in: candidate, to: &next)
@@ -85,7 +85,7 @@ enum JSONPath {
 
         private func append(_ values: [Any], to matches: inout [Any]) throws {
             guard matches.count + values.count <= 5000 else {
-                throw QueryError("匹配节点超过 5,000 个，请缩小 JSONPath 选择范围。")
+                throw QueryError(Strings.Detail.moreThan5000NodesMatchedNarrowTheJsonpathSelection)
             }
             matches.append(contentsOf: values)
         }
@@ -102,11 +102,11 @@ enum JSONPath {
         private var current: Unicode.Scalar? { position < input.count ? input[position] : nil }
 
         mutating func parse() throws -> [Segment] {
-            guard take("$") else { throw QueryError("JSONPath 必须从 $ 开始。") }
+            guard take("$") else { throw QueryError(Strings.Detail.aJsonpathExpressionMustStartWith) }
             var segments: [Segment] = []
             skipSpace()
             while current != nil {
-                guard segments.count < 128 else { throw syntax("路径层级过多") }
+                guard segments.count < 128 else { throw syntax(Strings.Detail.tooManyPathLevels) }
                 if take(".") {
                     let descendant = take(".")
                     if descendant, take("[") {
@@ -118,7 +118,7 @@ enum JSONPath {
                 } else if take("[") {
                     segments.append(Segment(descendant: false, selectors: try bracket()))
                 } else {
-                    throw syntax("预期成员、索引或通配符")
+                    throw syntax(Strings.Detail.expectedAMemberIndexOrWildcard)
                 }
                 skipSpace()
             }
@@ -129,14 +129,14 @@ enum JSONPath {
             var selectors: [Selector] = []
             repeat {
                 skipSpace()
-                guard selectors.count < 128 else { throw syntax("选择器过多") }
+                guard selectors.count < 128 else { throw syntax(Strings.Detail.tooManySelectors) }
                 if take("*") {
                     selectors.append(.wildcard)
                 } else if let quote = current, quote == "'" || quote == "\"" {
                     position += 1
                     selectors.append(.name(try quoted(quote)))
                 } else if current == "?" {
-                    throw syntax("筛选条件请使用 jq")
+                    throw syntax(Strings.Detail.useJqForFilterExpressions)
                 } else {
                     let start = try integer()
                     skipSpace()
@@ -153,17 +153,17 @@ enum JSONPath {
                     } else if let start {
                         selectors.append(.index(start))
                     } else {
-                        throw syntax("预期带引号的成员名、索引或切片")
+                        throw syntax(Strings.Detail.expectedAQuotedMemberNameIndexOrSlice)
                     }
                 }
                 skipSpace()
             } while take(",")
-            guard take("]") else { throw syntax("缺少 ]") }
+            guard take("]") else { throw syntax(Strings.Detail.missing) }
             return selectors
         }
 
         private mutating func member() throws -> String {
-            guard let first = current, isNameStart(first) else { throw syntax("缺少成员名") }
+            guard let first = current, isNameStart(first) else { throw syntax(Strings.Detail.missingMemberName) }
             let start = position
             position += 1
             while let scalar = current, isNameStart(scalar) || isDigit(scalar) {
@@ -185,15 +185,15 @@ enum JSONPath {
             let digits = position
             while let scalar = current, isDigit(scalar) { position += 1 }
             guard digits < position else {
-                if negative { throw syntax("预期数字") }
+                if negative { throw syntax(Strings.Detail.expectedANumber) }
                 return nil
             }
             if input[digits] == "0" && (negative || position - digits > 1) {
-                throw syntax("索引的数字格式无效")
+                throw syntax(Strings.Detail.invalidNumericIndex)
             }
             let text = String(String.UnicodeScalarView(input[start..<position]))
             guard let value = Int(text), (-9_007_199_254_740_991...9_007_199_254_740_991).contains(value) else {
-                throw syntax("索引超出范围")
+                throw syntax(Strings.Detail.indexOutOfRange)
             }
             return value
         }
@@ -206,11 +206,11 @@ enum JSONPath {
                     json += "\""
                     guard let value = try? JSONSerialization.jsonObject(
                         with: Data(json.utf8), options: [.fragmentsAllowed]
-                    ) as? String else { throw syntax("成员名包含无效转义") }
+                    ) as? String else { throw syntax(Strings.Detail.invalidEscapeInMemberName) }
                     return value
                 }
                 if scalar == "\\" {
-                    guard let escaped = current else { throw syntax("成员名转义不完整") }
+                    guard let escaped = current else { throw syntax(Strings.Detail.incompleteMemberNameEscape) }
                     position += 1
                     if escaped == "'" && quote == "'" { json += "'" }
                     else {
@@ -222,7 +222,7 @@ enum JSONPath {
                     json.unicodeScalars.append(scalar)
                 }
             }
-            throw syntax("成员名缺少结束引号")
+            throw syntax(Strings.Detail.missingClosingQuoteInMemberName)
         }
 
         private mutating func take(_ scalar: Unicode.Scalar) -> Bool {
@@ -236,7 +236,7 @@ enum JSONPath {
         }
 
         private func syntax(_ message: String) -> QueryError {
-            QueryError("JSONPath 第 \(position + 1) 个字符附近：\(message)。")
+            QueryError(Strings.Detail.jsonpathNearCharacter(position + 1, message))
         }
     }
 }

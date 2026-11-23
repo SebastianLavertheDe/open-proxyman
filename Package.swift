@@ -7,6 +7,7 @@ let includeSparkle = ProcessInfo.processInfo.environment["PM_ENABLE_SPARKLE"] ==
 
 let package = Package(
     name: "ProxyMirror",
+    defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "ProxyMirror", targets: ["ProxyMirror"]),
@@ -45,7 +46,8 @@ let package = Package(
                 .product(name: "NIOHTTP2", package: "swift-nio-http2"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
             ] + (includeSparkle ? [.product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS]))] : []),
-            path: "Sources/ProxyMirrorCore"
+            path: "Sources/ProxyMirrorCore",
+            resources: [.process("Resources")]
         ),
         // 应用壳
         .executableTarget(

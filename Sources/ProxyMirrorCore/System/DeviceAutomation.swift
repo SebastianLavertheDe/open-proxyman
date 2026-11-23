@@ -16,19 +16,22 @@ enum DeviceAutomation {
         var isBooted: Bool { state.lowercased().contains("booted") }
     }
 
-    enum AutomationError: LocalizedError, Equatable {
+    enum AutomationError: LocalizedError, OperationIssueProviding, Equatable {
         case noBootedSimulators
         case invalidOutput
         case unsupportedAndroidDevice
         case commandFailed(String)
+        case operationFailed(OperationIssue)
 
-        var errorDescription: String? {
+        var errorDescription: String? { operationIssue.diagnostic }
+        var operationIssue: OperationIssue {
             switch self {
-            case .noBootedSimulators: return "没有已启动的 iOS 模拟器。请先在 Xcode 里启动至少一台。"
+            case .noBootedSimulators: return OperationIssue.deviceAutomationNoIosSimulatorIsRunningStartAtLeast
             case .unsupportedAndroidDevice:
-                return "需要一个已连接的可写 Android 模拟器（Android 13 或更早）。实体设备请使用用户证书安装指南。"
-            case .invalidOutput: return "无法解析设备列表输出，请检查 Xcode 与 Command Line Tools 配置。"
-            case .commandFailed(let detail): return "命令执行失败：\(detail)"
+                return OperationIssue.deviceAutomationAConnectedWritableAndroidEmulatorRunningAndroid13
+            case .invalidOutput: return OperationIssue.deviceAutomationUnableToParseTheDeviceListCheckYour
+            case .operationFailed(let issue): return issue
+            case .commandFailed(let detail): return OperationIssue.deviceAutomationTheCommandFailed(String(detail))
             }
         }
     }
@@ -124,9 +127,9 @@ enum DeviceAutomation {
         var lines: [String] = []
         for device in booted {
             _ = try installRootCertificate(certificatePath, simulator: device.udid)
-            lines.append("已安装 CA：\(device.name)（\(device.udid.prefix(8))）")
+            lines.append(Strings.Errors.deviceAutomationInstalledCa(String(device.name), String(device.udid.prefix(8))))
         }
-        lines.append("模拟器应用走宿主网络栈：需要解密时请保持「接管系统代理」。")
+        lines.append(Strings.Errors.deviceAutomationSimulatorAppsUseTheHostNetworkStackKeep)
         return lines.joined(separator: "\n")
     }
 
@@ -152,10 +155,10 @@ enum DeviceAutomation {
     static func prepareAndroidUserCertificate(certificatePath: String) throws -> String {
         let devices = try androidDevices()
         guard devices.count == 1, let device = devices.first else {
-            throw AutomationError.commandFailed("请仅连接一台已授权 USB 调试的 Android 设备。")
+            throw AutomationError.operationFailed(OperationIssue.deviceAutomationConnectOnlyOneAndroidDeviceWithUsbDebugging)
         }
         _ = try adb(["-s", device, "push", certificatePath, "/sdcard/Download/ProxyMirror-CA.cer"])
-        return "证书已复制到设备的 Download 文件夹。请在 Android「设置 → 安全 → 安装 CA 证书」选择 ProxyMirror-CA.cer。"
+        return Strings.Errors.deviceAutomationTheCertificateWasCopiedToTheDeviceDownload
     }
 
     /// Only the explicitly connected writable emulator is eligible for adb root.
@@ -179,6 +182,6 @@ enum DeviceAutomation {
         let destination = "/system/etc/security/cacerts/\(hash).0"
         _ = try command(["push", certificatePath, destination])
         _ = try command(["shell", "chmod", "644", destination])
-        return "已为 Android 模拟器 \(serial)（API \(sdk)）安装系统 CA。请按模拟器镜像要求重启后验证。"
+        return Strings.Errors.deviceAutomationInstalledTheSystemCaOnAndroidEmulatorApi(String(serial), Int(sdk))
     }
 }

@@ -1,6 +1,7 @@
 """Check a packaged ProxyMirror app without launching its UI or changing macOS settings."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import platform
@@ -12,6 +13,7 @@ import sys
 from prepare_transparent_signing import (
     APP_GROUPS, APP_ID, APP_PROXY, INSTALL_EXTENSION, NETWORK_EXTENSION, TEAM_ID,
 )
+from test_localization_bundle import verify_resources
 
 
 def verify_transparent_extension(app, info):
@@ -98,6 +100,8 @@ def verify_bundle(app, expect_transparent=False):
         if info.get(key) != value:
             raise ValueError(f"{key}: expected {value!r}, got {info.get(key)!r}")
 
+    verify_resources(app, expect_transparent)
+
     executable = contents / "MacOS" / info["CFBundleExecutable"]
     helpers = [contents / "MacOS" / name
                for name in ("ProxyMirrorScriptWorker", "ProxyMirrorSystemProxyHelper")]
@@ -121,8 +125,14 @@ def verify_bundle(app, expect_transparent=False):
     if os.geteuid() != 0:
         for arguments in (["--install", str(os.geteuid()), "0" * 40], ["--uninstall"]):
             denial = subprocess.run([helpers[1], *arguments], capture_output=True, timeout=5)
-            if denial.returncode != 1 or "需要管理员授权" not in denial.stderr.decode("utf-8"):
+            if denial.returncode != 1 or not denial.stderr.strip() or denial.stdout:
                 raise ValueError("Unprivileged helper invocation did not fail closed")
+            diagnostic = denial.stderr.decode("utf-8").strip()
+            if not diagnostic.startswith("pm-error-v1:"):
+                raise ValueError("The helper did not return a stable authorization error")
+            error = json.loads(diagnostic.removeprefix("pm-error-v1:"))
+            if error.get("domain") != "ProxyMirror.SystemProxy" or error.get("code") != "authorizationRequired":
+                raise ValueError("The helper returned the wrong authorization error code")
 
     help_result = subprocess.run([executable, "--help"], check=True, capture_output=True,
                                  text=True, timeout=5)

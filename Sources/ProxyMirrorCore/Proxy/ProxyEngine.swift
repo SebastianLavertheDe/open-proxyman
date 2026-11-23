@@ -457,6 +457,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
     private let conn: ConnState
     private let tunnelRules: () -> RulesSnapshot
+    private let requestRules: () -> RulesSnapshot
     private weak var clientChannel: Channel?
 
     enum Mode {
@@ -482,6 +483,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
     // 当前请求上下文
     private var tx: Transaction?
+    private var diagnosticHeaders = DiagnosticHeaders()
     private var bodyCapture: TransactionCapture?
     private var mapLocalSender: MapLocalSender?
     private struct BreakpointTarget {
@@ -603,9 +605,11 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private var downstreamShutdownStarted = false
     private var downstreamInputClosed = false
 
-    init(conn: ConnState, tunnelRules: @escaping () -> RulesSnapshot = { RulesStore.shared.snapshot() }) {
+    init(conn: ConnState, tunnelRules: @escaping () -> RulesSnapshot = { RulesStore.shared.snapshot() },
+         requestRules: @escaping () -> RulesSnapshot = { RulesStore.shared.snapshot() }) {
         self.conn = conn
         self.tunnelRules = tunnelRules
+        self.requestRules = requestRules
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
@@ -778,6 +782,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         tx.originalURL = conn.reverseRoute?.clientURL(target: originalRequest.target)
         tx.state = .awaiting
         self.tx = tx
+        diagnosticHeaders = DiagnosticHeaders(requestID: tx.id)
         if recording, let loop = clientChannel?.eventLoop {
             bodyCapture = TransactionCapture(transaction: tx, on: loop, sink: conn.engine.sink)
         }
@@ -810,12 +815,13 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
         keepAlive = conn.http2WebSocket == nil && !HTTPClientWantsClose(req)
         // Block → Allow → Map Local → Map Remote → No Caching
-        let rules = RulesStore.shared.snapshot()
+        let rules = requestRules()
         let url = tx.fullURL
 
         // Block List / Allow List
         if rules.isBlocked(url: url) {
             tx.matchedByBlock = true
+            diagnosticHeaders.record(.block)
             finishWithSynthesizedResponse(tx: tx, status: 403, reason: "Forbidden",
                                           contentType: "text/plain",
                                           body: Data("ProxyMirror: blocked by Block List".utf8))
@@ -823,6 +829,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         }
         if !rules.isAllowed(url: url) {
             tx.matchedByBlock = true
+            diagnosticHeaders.record(.block)
             finishWithSynthesizedResponse(tx: tx, status: 403, reason: "Forbidden",
                                           contentType: "text/plain",
                                           body: Data("ProxyMirror: not in Allow List".utf8))
@@ -838,6 +845,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                 switch result {
                 case .success(let hit?):
                     tx.matchedByMapLocal = true
+                    self.diagnosticHeaders.record(.mapLocal)
                     self.finishWithSynthesizedResponse(tx: tx, status: hit.status, reason: TrafficStore.reason(for: hit.status),
                         contentType: hit.contentType, body: ByteBuffer(), contentLength: hit.contentLength,
                         extraHeaders: hit.headers, file: hit.body)
@@ -863,6 +871,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         var effectiveHeaders = req.headers
         if let target = rules.mapRemoteTarget(for: url) {
             tx.matchedByMapRemote = true
+            diagnosticHeaders.record(.mapRemote)
             if tx.originalURL == nil { tx.originalURL = url }
             tx.host = target.host
             tx.port = target.port
@@ -878,10 +887,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             effectiveHeaders.remove(name: "If-Modified-Since")
             effectiveHeaders.remove(name: "If-Unmodified-Since")
         }
-        if UserDefaults.standard.bool(forKey: "proxy.appendDiagnosticHeaders") {
-            effectiveHeaders.set(name: "X-ProxyMirror-Request-ID", value: tx.id.uuidString)
-            effectiveHeaders.set(name: "X-ProxyMirror-Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development")
-        }
+        effectiveHeaders = diagnosticHeaders.appending(to: effectiveHeaders)
         let effectiveReq = HTTPRequestHead(method: req.method, target: effectivePath, version: req.version, headers: effectiveHeaders)
         tx.requestHeaders = conn.http2WebSocket?.captureHeaders(effectiveHeaders) ?? effectiveHeaders
         tx.resolvedAddress = InterceptionConfig.shared.mappedIP(for: tx.host)
@@ -1068,6 +1074,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private func finishMockInterception(id: UUID, head: BreakpointHead, body: Data,
                                         mock: ScriptingMockResponse, logs: [String]) {
         guard breakpointGate?.id == id, let tx, let gate = takeBreakpoint(), case .request(let req) = head else { return }
+        if gate.script != nil { diagnosticHeaders.record(.scripting) }
+        if gate.rule != nil { diagnosticHeaders.record(.breakpoint) }
         if let label = gate.label { tx.breakpointRules.append(label) }
         if !logs.isEmpty { tx.appendScriptingLogs(logs) }
         tx.requestHeaders = conn.http2WebSocket?.captureHeaders(req.headers) ?? req.headers
@@ -1085,6 +1093,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
     private func finishInterception(id: UUID, head: BreakpointHead, body: Data, logs: [String]) {
         guard breakpointGate?.id == id, let tx, let gate = takeBreakpoint() else { return }
+        if gate.script != nil { diagnosticHeaders.record(.scripting) }
+        if gate.rule != nil { diagnosticHeaders.record(.breakpoint) }
         let label = gate.label
         switch head {
         case .request(let req):
@@ -1137,7 +1147,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         if ![204, 304].contains(status) {
             tx.responseHeaders.set(name: "Content-Length", value: status == 205 ? "0" : String(contentLength))
         }
-        tx.responseHeaders.set(name: "X-ProxyMirror", value: "Rule")
+        tx.requestHeaders = diagnosticHeaders.appending(to: tx.requestHeaders)
+        tx.responseHeaders = diagnosticHeaders.appending(to: tx.responseHeaders)
         if shouldClose { tx.responseHeaders.set(name: "Connection", value: "close") }
         tx.responseBodyComplete = file == nil
 
@@ -1222,6 +1233,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         tx.clientAddress = clientChannel?.remoteAddress?.ipAddress
         tx.state = .awaiting
         connectTx = tx
+        diagnosticHeaders = DiagnosticHeaders(requestID: tx.id)
         conn.sslRules = RulesStore.shared.snapshot()
         mode = .resolvingConnect
         if !trailing.isEmpty { bufferConnectBytes(ByteBuffer(bytes: trailing)) }
@@ -1317,11 +1329,14 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                                                          serverName: serverName) else { return false }
         let body = Data(reason.utf8)
         tx.matchedByBlock = true
+        diagnosticHeaders.record(.block)
         tx.statusCode = 403
         tx.statusReason = "Forbidden"
         tx.contentType = "text/plain"
-        tx.responseHeaders = HTTPHeaders([("Content-Type", "text/plain"), ("Content-Length", String(body.count)),
-                                           ("Connection", "close"), ("X-ProxyMirror", "Rule")])
+        tx.requestHeaders = diagnosticHeaders.appending(to: tx.requestHeaders)
+        tx.responseHeaders = diagnosticHeaders.appending(to: HTTPHeaders([
+            ("Content-Type", "text/plain"), ("Content-Length", String(body.count)), ("Connection", "close"),
+        ]))
         tx.appendResponseBody(body)
         tx.responseBodyComplete = true
         tx.state = .failed
@@ -1336,7 +1351,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         earlyConnectByteCount = 0
         mode = .closed
         if sendResponse {
-            writeRawAndClose("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n\(reason)")
+            let headers = String(decoding: tx.responseHeaders.rawBytes, as: UTF8.self)
+            writeRawAndClose("HTTP/1.1 403 Forbidden\r\n\(headers)\r\n\(reason)")
         } else { closeClient() }
         return true
     }
@@ -1848,6 +1864,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
     private func deliverResponseHead(_ resp: HTTPResponseHead) {
         guard let tx else { return }
+        var resp = resp
+        resp.headers = diagnosticHeaders.appending(to: resp.headers)
 
         // 101 协议升级（WebSocket 等）
         if resp.status == 101 {

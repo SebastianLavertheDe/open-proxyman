@@ -214,7 +214,7 @@ enum ComposeService {
 
         fileprivate func start(_ task: URLSessionTask, session: URLSession) throws {
             lock.lock(); defer { lock.unlock() }
-            guard !cancelled else { throw RequestError(message: "请求已取消") }
+            guard !cancelled else { throw RequestError(message: "Request cancelled") }
             self.networkTask = task; self.networkSession = session
             task.resume()
         }
@@ -228,7 +228,7 @@ enum ComposeService {
         fileprivate func start(_ process: Process) throws {
             lock.lock()
             defer { lock.unlock() }
-            guard !cancelled else { throw RequestError(message: "请求已取消") }
+            guard !cancelled else { throw RequestError(message: "Request cancelled") }
             try process.run()
             self.process = process
         }
@@ -314,7 +314,7 @@ enum ComposeService {
             for (key, value) in parsed.headers where !framing.contains(key.lowercased()) {
                 guard !key.isEmpty, key.utf8.allSatisfy(isTokenByte),
                       !value.contains("\r"), !value.contains("\n"), !value.contains("\0") else {
-                    throw RequestError(message: "请求头格式无效")
+                    throw RequestError(message: "Invalid request headers")
                 }
                 let header = value.isEmpty ? "\(key);" : "\(key): \(value)"
                 config.append("header = \(quoted(header))")
@@ -356,13 +356,13 @@ enum ComposeService {
             }
             let error: String?
             if process.terminationReason == .uncaughtSignal {
-                error = "请求已取消"
+                error = "Request cancelled"
             } else if process.terminationStatus != 0 {
                 error = (try? String(contentsOf: errorFile, encoding: .utf8))
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    ?? "发送失败 (curl \(process.terminationStatus))"
+                    ?? "Send failed (curl \(process.terminationStatus))"
             } else {
-                error = head == nil ? "未收到 HTTP 响应" : nil
+                error = head == nil ? "No HTTP response received" : nil
             }
             tx.receiveCapture(response: captured, responseBytes: count, charge: captured.count)
             tx.responseBodyComplete = error == nil
@@ -490,7 +490,7 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
     func scheduleDeadline() {
         guard request.timeoutSeconds > 0 else { return }
         queue.asyncAfter(deadline: .now() + Double(request.timeoutSeconds)) { [weak self] in
-            self?.finish(error: "WebSocket 请求超时")
+            self?.finish(error: "WebSocket request timed out")
         }
     }
 
@@ -530,7 +530,7 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
                     switch message {
                     case .string(let value): bytes = Data(value.utf8); opcode = 1
                     case .data(let value): bytes = value; opcode = 2
-                    @unknown default: self.finish(error: "无法识别的 WebSocket 消息"); return
+                    @unknown default: self.finish(error: "Unrecognized WebSocket message"); return
                     }
                     self.transaction.appendResponseBody(bytes)
                     var frames = self.transaction.websocketFrames
@@ -551,14 +551,14 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
             if let response = task.response as? HTTPURLResponse, transaction.statusCode == 0 {
                 transaction.statusCode = response.statusCode
             }
-            finish(error: error?.localizedDescription ?? (transaction.statusCode == 101 ? nil : "WebSocket 握手失败"))
+            finish(error: error?.localizedDescription ?? (transaction.statusCode == 101 ? nil : "WebSocket handshake failed"))
         }
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         queue.async { [self] in
-            finish(error: closeCode == .normalClosure ? nil : "WebSocket 已关闭 (\(closeCode.rawValue))")
+            finish(error: closeCode == .normalClosure ? nil : "WebSocket closed (\(closeCode.rawValue))")
         }
     }
 

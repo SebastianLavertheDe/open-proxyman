@@ -41,11 +41,11 @@ enum ScriptingRuntimeSettings {
     static func save(_ value: ScriptEnvironmentConfig) throws {
         guard (1000...30_000).contains(value.networkWallTimeMilliseconds),
               (100...value.networkWallTimeMilliseconds).contains(value.networkRequestTimeoutMilliseconds) else {
-            throw RuntimeError("脚本网络总等待需在 1–30 秒内，单请求超时需在 100 毫秒到总等待之间")
+            throw RuntimeError(OperationIssue.modelScriptNetworkLimits)
         }
         guard value.variables.count <= 256,
               value.variables.allSatisfy({ !$0.key.isEmpty && $0.key.utf8.count <= 256 && $0.value.utf8.count <= 8192 }) else {
-            throw RuntimeError("环境变量最多 256 项，名称上限 256 字节，值上限 8 KiB")
+            throw RuntimeError(OperationIssue.modelScriptEnvironmentLimits)
         }
         let bytes = try JSONEncoder().encode(value)
         let url = RulesFileIO.dir.appendingPathComponent("script-environment.json")
@@ -64,7 +64,7 @@ enum ScriptingRuntimeSettings {
         var environment = settings.includeSystemEnvironment ? ProcessInfo.processInfo.environment : [:]
         environment.merge(settings.variables) { _, replacement in replacement }
         guard (try JSONSerialization.data(withJSONObject: environment)).count <= 256 * 1024 else {
-            throw RuntimeError("环境变量总量超过 256 KiB")
+            throw RuntimeError(OperationIssue.modelScriptEnvironmentSize)
         }
         let settingsPort = Int(AppSettings.shared.port)
         let host = AppSettings.shared.lanAddress
@@ -81,7 +81,7 @@ enum ScriptingRuntimeSettings {
     static func commit(_ output: [String: Any]) throws {
         guard let next = output["sharedState"] as? [String: Any] else { return }
         guard (try JSONSerialization.data(withJSONObject: next)).count <= 256 * 1024 else {
-            throw RuntimeError("sharedState 超过 256 KiB")
+            throw RuntimeError(OperationIssue.modelScriptStateSize)
         }
         state = next
     }
@@ -100,11 +100,11 @@ enum ScriptingRuntimeSettings {
             guard url.resolvingSymlinksInPath().path.hasPrefix(root.path + "/") else { continue }
             let count = values.fileSize ?? Int.max
             guard result.count < 64, count <= 256 * 1024, total <= 1024 * 1024 - count else {
-                throw RuntimeError("Addons 最多 64 个文件、每个 256 KiB、总计 1 MiB")
+                throw RuntimeError(OperationIssue.modelScriptAddonLimits)
             }
             let data = try Data(contentsOf: url)
             guard data.count <= 256 * 1024, let source = String(data: data, encoding: .utf8) else {
-                throw RuntimeError("Addon 必须是 UTF-8 CommonJS/JSON 文件")
+                throw RuntimeError(OperationIssue.modelScriptAddonEncoding)
             }
             total += data.count
             result[String(url.path.dropFirst(root.path.count + 1))] = source
@@ -112,8 +112,10 @@ enum ScriptingRuntimeSettings {
         return result
     }
 
-    struct RuntimeError: LocalizedError {
-        let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+    struct RuntimeError: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 }

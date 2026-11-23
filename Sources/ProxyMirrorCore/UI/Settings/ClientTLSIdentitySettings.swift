@@ -16,15 +16,15 @@ struct ClientTLSIdentitySettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("上游客户端证书 (mTLS)").font(.headline)
-            Text("按目标主机选择 PEM 证书链与私钥，或导入口令保护的 P12 身份。精确主机优先于子域规则。")
+            Text(Strings.Settings.upstreamClientCertificatesMtls).font(.headline)
+            Text(Strings.Settings.chooseAPemCertificateChainAndPrivateKey)
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(entries) { item in
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.host).fontWeight(.medium)
                         Text(item.subject).font(.caption).foregroundStyle(.secondary)
-                        Text("到期：\(item.expiry.formatted(date: .abbreviated, time: .omitted))")
+                        Text(Strings.Settings.expires(item.expiry.formatted(date: .abbreviated, time: .omitted)))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -32,30 +32,30 @@ struct ClientTLSIdentitySettings: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("移除 \(item.host) 的客户端证书")
+                    .accessibilityLabel(Strings.Settings.removeClientCertificateFor(item.host))
                     .disabled(saving)
                 }
             }
-            Picker("身份格式", selection: $usePKCS12) {
-                Text("PEM 证书 + 私钥").tag(false)
+            Picker(Strings.Settings.identityFormat, selection: $usePKCS12) {
+                Text(Strings.Settings.pemCertificatePrivateKey).tag(false)
                 Text("PKCS#12 (.p12/.pfx)").tag(true)
             }.pickerStyle(.segmented)
-            TextField("目标主机或 *.example.com", text: $host)
-                .accessibilityLabel("mTLS 目标主机")
+            TextField(Strings.Settings.targetHostOrExampleCom, text: $host)
+                .accessibilityLabel(Strings.Settings.mtlsTargetHost)
             HStack {
-                Button(certificate?.lastPathComponent ?? "选择证书链…") { certificate = choose() ?? certificate }
-                    .accessibilityLabel("选择客户端证书链")
+                Button(certificate?.lastPathComponent ?? Strings.Settings.chooseCertificateChain) { certificate = choose() ?? certificate }
+                    .accessibilityLabel(Strings.Settings.chooseClientCertificateChain)
                 if !usePKCS12 {
-                    Button(privateKey?.lastPathComponent ?? "选择私钥…") { privateKey = choose() ?? privateKey }
-                        .accessibilityLabel("选择客户端私钥")
+                    Button(privateKey?.lastPathComponent ?? Strings.Settings.choosePrivateKey) { privateKey = choose() ?? privateKey }
+                        .accessibilityLabel(Strings.Settings.chooseClientPrivateKey)
                 }
             }
-            if usePKCS12 { SecureField("P12 口令", text: $password) }
+            if usePKCS12 { SecureField(Strings.Settings.p12Password, text: $password) }
             HStack {
-                Button("保存客户端身份") { save() }
+                Button(Strings.Settings.saveClientIdentity) { save() }
                     .disabled(saving || certificate == nil || (!usePKCS12 && privateKey == nil) || ClientTLSIdentities.hostPattern(host) == nil)
                 if saving { ProgressView().controlSize(.small) }
-                Button("证书导入向导…") { CertificateToolWindows.showImporter(purpose: .client) }
+                Button(Strings.Settings.certificateImportWizard) { CertificateToolWindows.showImporter(purpose: .client) }
             }
             if let feedback = feedback ?? ClientTLSIdentities.shared.loadError {
                 Text(feedback).font(.caption)
@@ -83,7 +83,7 @@ struct ClientTLSIdentitySettings: View {
         let key = privateKey, p12 = usePKCS12, secret = password
         password = ""
         let targetHost = host
-        perform("客户端身份已保存，应用于新建上游 TLS 连接。") {
+        perform(Strings.Settings.clientIdentitySavedItAppliesToNewUpstream) {
             if p12 {
                 try ClientTLSIdentities.shared.install(host: targetHost, p12: certificate, password: secret)
             } else if let key {
@@ -97,7 +97,7 @@ struct ClientTLSIdentitySettings: View {
     }
 
     private func remove(_ id: UUID) {
-        perform("已移除客户端身份。") { try ClientTLSIdentities.shared.remove(id) }
+        perform(Strings.Settings.clientIdentityRemoved) { try ClientTLSIdentities.shared.remove(id) }
     }
 
     private func perform(_ success: String, operation: @Sendable @escaping () throws -> Void,
@@ -114,7 +114,7 @@ struct ClientTLSIdentitySettings: View {
                 failed = false
                 after()
             } catch {
-                feedback = error.localizedDescription
+                feedback = LocalizedErrorPresentation.message(for: error)
                 failed = true
             }
         }

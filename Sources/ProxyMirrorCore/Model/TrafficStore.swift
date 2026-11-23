@@ -104,6 +104,12 @@ final class TrafficStore: ObservableObject {
     var transactions: [Transaction] { data.transactions }
     var hasLiveTransactions: Bool { !data.live.isEmpty }
     var transferredBytes: (request: Int64, response: Int64) { data.transferredBytes }
+    /// Monotonic network counters for rates. Retention and deletion never subtract traffic.
+    var cumulativeTransferredBytes: (request: Int64, response: Int64) { data.cumulativeTransferredBytes }
+    var completedLiveRequestCount: Int { data.completedLiveRequestCount }
+
+    @discardableResult
+    func removeOldestCompleted(count: Int) -> Int { data.removeOldestCompleted(count: count) }
     var saved: [Transaction] { data.saved }
     var sourceFolders: [SourceFolder] { data.sourceFolders }
     var savedRequestFolders: [SavedRequestFolder] { data.savedRequestFolders }
@@ -114,7 +120,7 @@ final class TrafficStore: ObservableObject {
     }
     func savedRequests(in folder: UUID?) -> [Transaction] { data.savedRequests(in: folder) }
     func savedRequestFolderPath(_ id: UUID?) -> String {
-        guard let id else { return "Saved（未分组）" }
+        guard let id else { return Strings.Models.savedUnfiled }
         var current: UUID? = id
         var names: [String] = []
         var seen = Set<UUID>()
@@ -433,11 +439,7 @@ final class TrafficStore: ObservableObject {
     }
 
     private func isVisible(_ tx: Transaction) -> Bool {
-        if hideAppleTraffic {
-            let host = tx.host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            let appleDomains = ["apple.com", "icloud.com", "icloud-content.com", "mzstatic.com", "aaplimg.com", "apple-dns.net"]
-            if appleDomains.contains(where: { host == $0 || host.hasSuffix("." + $0) }) { return false }
-        }
+        if hideAppleTraffic, Self.isSimulatorAppleBackgroundTraffic(tx) { return false }
         guard !tx.hideFromList,
               extraChips.isEmpty ? tx.matches(chip: activeChip) : extraChips.contains(where: { tx.matches(chip: $0) })
         else { return false }
@@ -455,6 +457,16 @@ final class TrafficStore: ObservableObject {
             guard data.foldersByID[id]?.matches(tx) == true else { return false }
         }
         return (filter.isEmptyActive || filter.matches(tx)) && matchesConditions(tx)
+    }
+
+    static func isSimulatorAppleBackgroundTraffic(_ tx: Transaction) -> Bool {
+        guard tx.isIOSSimulator else { return false }
+        let host = tx.host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        // Only known service endpoints; an app deliberately visiting apple.com remains visible.
+        let domains = ["mesu.apple.com", "gdmf.apple.com", "configuration.apple.com", "xp.apple.com",
+                       "push.apple.com", "gateway.icloud.com", "pancake.apple.com", "captive.apple.com",
+                       "time.apple.com", "time-ios.apple.com", "apple-dns.net"]
+        return domains.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     func isChipSelected(_ chip: FilterChip) -> Bool {
@@ -821,6 +833,9 @@ private final class TrafficData {
 
     private(set) var live = CircularBuffer<Transaction>()
     var transactions: [Transaction] { Array(live) }
+    var completedLiveRequestCount: Int {
+        live.reduce(0) { $0 + (($1.state == .completed || $1.state == .failed) ? 1 : 0) }
+    }
     private struct LiveEntry {
         let transaction: Transaction
         let summary: LiveSummary
@@ -828,11 +843,13 @@ private final class TrafficData {
 
     private var liveByID: [UUID: LiveEntry] = [:]
     private(set) var transferredBytes: (request: Int64, response: Int64) = (0, 0)
+    private(set) var cumulativeTransferredBytes: (request: Int64, response: Int64) = (0, 0)
     private(set) var saved: [Transaction] = []
     private(set) var savedByID: [UUID: Transaction] = [:]
     private(set) var savedRequestFolders: [SavedRequestFolder] = []
     private(set) var savedFolderRecords: [UUID: [Transaction]] = [:]
-    private(set) var savedError: String?
+    private var savedIssue: OperationIssue?
+    var savedError: String? { savedIssue?.localizedPresentation }
     private(set) var sourceFolders: [SourceFolder] = []
     private(set) var foldersByID: [UUID: SourceFolder] = [:]
     var folderCounts: [UUID: Int]?
@@ -936,6 +953,8 @@ private final class TrafficData {
         let old = liveByID.updateValue(entry, forKey: tx.id)?.summary
         transferredBytes.request += summary.request - (old?.request ?? 0)
         transferredBytes.response += summary.response - (old?.response ?? 0)
+        cumulativeTransferredBytes.request += max(0, summary.request - (old?.request ?? 0))
+        cumulativeTransferredBytes.response += max(0, summary.response - (old?.response ?? 0))
         if old?.host != summary.host {
             if let old { removeDomain(old.host, sequence: tx.seq) }
             if domainCounts[summary.host] == nil {
@@ -1004,6 +1023,17 @@ private final class TrafficData {
         liveChanged(batch: false)
     }
 
+    @discardableResult
+    func removeOldestCompleted(count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        let ids = Set(live.filter { $0.state == .completed || $0.state == .failed }
+            .sorted { $0.startedAt == $1.startedAt ? $0.seq < $1.seq : $0.startedAt < $1.startedAt }
+            .prefix(count).map(\.id))
+        guard !ids.isEmpty else { return 0 }
+        remove(ids)
+        return ids.count
+    }
+
     func clear() {
         live.removeAll()
         liveByID.removeAll()
@@ -1037,7 +1067,7 @@ private final class TrafficData {
     }
 
     func mutateSavedLibrary(_ mutation: (inout SavedRequestFolderArchive) throws -> Void) throws {
-        guard savedState == .ready else { throw SavedRequestFolderArchive.Failure(savedState == .loading ? "Saved 请求库正在加载，请稍后重试。" : savedError ?? "Saved 请求库不可用，原文件未修改。") }
+        guard savedState == .ready else { throw SavedRequestFolderArchive.Failure(savedState == .loading ? OperationIssue.modelSavedLoading : savedIssue ?? OperationIssue.modelSavedUnavailable) }
         var archive = savedLibrarySnapshot()
         try mutation(&archive)
         try archive.validate()
@@ -1058,7 +1088,7 @@ private final class TrafficData {
             queuedEdits.append { try $0.add(records, to: nil) }
         } else {
             do { try mutateSavedLibrary { try $0.add(records, to: nil) } }
-            catch { savedError = error.localizedDescription; changed.send(.saved) }
+            catch { savedIssue = (error as? OperationIssueProviding)?.operationIssue ?? .technical(error.localizedDescription); changed.send(.saved) }
         }
     }
 
@@ -1092,7 +1122,7 @@ private final class TrafficData {
             if loaded.migrated || !edits.isEmpty { persistSaved() }
         } catch {
             savedState = .unavailable
-            savedError = "无法加载已保存流量：\(error.localizedDescription)"
+            savedIssue = OperationIssue.modelSavedLoadFailed(error.localizedDescription)
             completeSaveWaiters(false)
         }
         changed.send(.saved)
@@ -1128,10 +1158,10 @@ private final class TrafficData {
         if nextWrite != nil { writeNextSaved(); return }
         switch result {
         case .success:
-            savedError = nil
+            savedIssue = nil
             completeSaveWaiters(true)
         case .failure(let error):
-            savedError = "保存流量失败：\(error.localizedDescription)"
+            savedIssue = OperationIssue.modelSavedSaveFailed(error.localizedDescription)
             completeSaveWaiters(false)
         }
         changed.send(.saved)

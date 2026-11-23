@@ -37,64 +37,64 @@ struct FlowSummaryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Toggle("仅统计当前筛选内的所选请求", isOn: $onlySelection)
+                Toggle(Strings.Tools.includeOnlySelectedRequestsWithinTheCurrentFilter, isOn: $onlySelection)
                 Spacer()
-                Toggle("自动刷新", isOn: $automatic)
-                Button("刷新", action: refresh)
+                Toggle(Strings.Tools.autoRefresh, isOn: $automatic)
+                Button(Strings.Tools.refresh, action: refresh)
                 if model.calculating { ProgressView().controlSize(.small) }
             }
             let stats = model.statistics
             HStack(spacing: 25) {
-                metric("请求", String(stats.total))
-                metric("已完成", String(stats.completed))
-                metric("传输失败", String(stats.transportFailed))
+                metric(Strings.Tools.request, String(stats.total))
+                metric(Strings.Tools.completed, String(stats.completed))
+                metric(Strings.Tools.transportFailed, String(stats.transportFailed))
                 metric("HTTP 4xx / 5xx", String(stats.httpErrors))
-                metric("平均耗时", duration(stats.averageMilliseconds))
+                metric(Strings.Tools.averageDuration, duration(stats.averageMilliseconds))
             }
             HStack(spacing: 28) {
                 metric("P50", duration(stats.p50Milliseconds))
                 metric("P95", duration(stats.p95Milliseconds))
                 metric("P99", duration(stats.p99Milliseconds))
                 Spacer()
-                Text("上传 \(size(stats.uploadedBytes)) · 下载 \(size(stats.downloadedBytes))").monospacedDigit()
+                Text(Strings.Tools.trafficTransferTotals(String(describing: size(stats.uploadedBytes)), String(describing: size(stats.downloadedBytes)))).monospacedDigit()
             }
-            Text("耗时统计已完成请求中的有效非负数值（\(stats.durationCount) 条）；分位数采用 nearest-rank。\(stats.invalidCompletedDurations > 0 ? "已排除 \(stats.invalidCompletedDurations) 条无效耗时。" : "")")
+            Text(Strings.Tools.timingStatisticsExplanation(Int(stats.durationCount), String(describing: stats.invalidCompletedDurations > 0 ? Strings.Tools.excludedInvalidDurationValues(stats.invalidCompletedDurations) : "")))
                 .font(.caption).foregroundStyle(.secondary)
             HSplitView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("状态分桶").font(.headline)
+                    Text(Strings.Tools.statusBuckets).font(.headline)
                     ForEach(FlowSummaryStatistics.Bucket.allCases) { bucket in
-                        bar(bucket.rawValue, count: stats.buckets[bucket] ?? 0,
+                        bar(bucket.localizedTitle, count: stats.buckets[bucket] ?? 0,
                             maximum: stats.buckets.values.max() ?? 0, color: bucket == .failed ? .red : .accentColor)
                     }
-                    Text("传输失败单独计数；未完成或没有有效 HTTP 状态的请求归入「未完成 / 未响应」。")
+                    Text(Strings.Tools.transportFailuresAreCountedSeparatelyIncompleteRequestsOrRequests)
                         .font(.caption).foregroundStyle(.secondary)
-                    Text("已完成请求的具体状态码").font(.headline).padding(.top, 4)
+                    Text(Strings.Tools.statusCodesOfCompletedRequests).font(.headline).padding(.top, 4)
                     List(stats.statusCounts) { entry in
                         HStack { Text(String(entry.status)); Spacer(); Text(String(entry.count)).monospacedDigit() }
                     }.frame(minHeight: 90)
-                    if stats.statusCounts.isEmpty { Text("暂无已完成的 HTTP 状态码").font(.caption).foregroundStyle(.secondary) }
+                    if stats.statusCounts.isEmpty { Text(Strings.Tools.noCompletedHttpStatusCodes).font(.caption).foregroundStyle(.secondary) }
                 }.frame(minWidth: 290)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("耗时分布（毫秒 ms）").font(.headline)
+                    Text(Strings.Tools.durationDistributionMilliseconds).font(.headline)
                     ForEach(stats.durationBins) { bin in
                         bar(bin.label, count: bin.count, maximum: stats.durationBins.map(\.count).max() ?? 0, color: .teal)
                     }
-                    Text("区间左闭右开，例如 10–<50 表示 ≥10 ms 且 <50 ms；最后一档包含 5000 ms 及以上。")
+                    Text(Strings.Tools.rangesIncludeTheLowerBoundAndExcludeTheUpper)
                         .font(.caption).foregroundStyle(.secondary)
-                    Text("按主机汇总").font(.headline).padding(.top, 4)
+                    Text(Strings.Tools.summaryByHost).font(.headline).padding(.top, 4)
                     List(stats.hosts) { host in
                         HStack {
                             Text(host.name).lineLimit(1).textSelection(.enabled)
                             Spacer()
-                            Text("\(host.count) 条 · ↓\(size(host.downloadedBytes))").foregroundStyle(.secondary).monospacedDigit()
+                            Text(Strings.Tools.hostRequestCount(Int(host.count), String(describing: size(host.downloadedBytes)))).foregroundStyle(.secondary).monospacedDigit()
                         }
                     }.frame(minHeight: 90)
-                    if stats.total == 0 { Text("当前范围没有请求").font(.caption).foregroundStyle(.secondary) }
+                    if stats.total == 0 { Text(Strings.Tools.noRequestsInTheCurrentScope).font(.caption).foregroundStyle(.secondary) }
                 }.padding(.leading, 12).frame(minWidth: 340)
             }
             if let date = model.refreshedAt {
-                Text("统计快照：\(date.formatted(date: .omitted, time: .standard))；自动刷新最多每秒一次，聚合在后台计算。")
+                Text(Strings.Tools.snapshot1AutomaticRefreshRunsAtMostOncePer(String(describing: date.formatted(date: .omitted, time: .standard))))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -118,13 +118,13 @@ struct FlowSummaryView: View {
 
     private func metric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text((title)).font(.caption).foregroundStyle(.secondary)
             Text(value).font(.title3.monospacedDigit())
         }
     }
     private func bar(_ label: String, count: Int, maximum: Int, color: Color) -> some View {
         HStack(spacing: 6) {
-            Text(label).font(.caption.monospacedDigit()).frame(width: 112, alignment: .leading)
+            Text((label)).font(.caption.monospacedDigit()).frame(width: 112, alignment: .leading)
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3).fill(color.opacity(0.08))
@@ -133,7 +133,7 @@ struct FlowSummaryView: View {
                 }
             }.frame(height: 13)
             Text(String(count)).font(.caption.monospacedDigit()).frame(minWidth: 36, alignment: .trailing)
-        }.accessibilityElement(children: .ignore).accessibilityLabel("\(label)：\(count) 条")
+        }.accessibilityElement(children: .ignore).accessibilityLabel(Strings.Tools.countAccessibility(String(describing: label), Int(count)))
     }
     private func duration(_ ms: Double?) -> String { ms.map { String(format: "%.1f ms", $0) } ?? "—" }
     private func size(_ count: Int64) -> String { ByteCountFormatter.string(fromByteCount: count, countStyle: .file) }

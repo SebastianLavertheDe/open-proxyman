@@ -56,6 +56,40 @@ func checkCertInstaller(_ test: CoreAssertions) throws {
     test.equal(try CertInstaller.resetFingerprint(fixtureCertificate(commonName: nil)), nil,
                "没有 CN 的合法证书正常跳过")
 
+    let statusDirectory = try makeCheckDirectory()
+    defer { try? FileManager.default.removeItem(at: statusDirectory) }
+    let authority = CertificateAuthority(storageDirectory: statusDirectory.appendingPathComponent("CA"))
+    let currentDER = try authority.caDER()
+    var trustEvaluations = 0
+    let stale = CertInstaller.certificateStatus(authority: authority,
+        installedCertificates: { [SecCertificateCopyData(exact) as Data] },
+        evaluateTrust: { _ in trustEvaluations += 1; return true })
+    test.expect(!stale.installed && !stale.trusted && trustEvaluations == 0,
+                "同名旧 CA 不代表当前 CA 已安装，且不会绕过当前指纹检查")
+    let importedOnly = CertInstaller.certificateStatus(authority: authority,
+        installedCertificates: { [currentDER] }, evaluateTrust: { _ in false })
+    test.expect(importedOnly.installed && !importedOnly.trusted,
+                "当前 CA 已导入但未信任时准确区分安装与信任")
+    let trusted = CertInstaller.certificateStatus(authority: authority,
+        installedCertificates: { [currentDER] }, evaluateTrust: { $0 == currentDER })
+    test.expect(trusted.installed && trusted.trusted && trusted.commonName == "ProxyMirror CA"
+                && trusted.notBefore != nil && trusted.notAfter != nil,
+                "当前 CA 的真实信任结果与名称和有效期一并返回")
+    let unavailable = CertInstaller.certificateStatus(authority: authority,
+        installedCertificates: { throw FixtureError.query }, evaluateTrust: { _ in true })
+    test.expect(!unavailable.installed && !unavailable.trusted && !unavailable.statusText.isEmpty,
+                "钥匙串查询失败不会显示绿色信任状态")
+    var invalidPeriodEvaluations = 0
+    for invalidDate in [trusted.notBefore!.addingTimeInterval(-1), trusted.notAfter!] {
+        let invalidPeriod = CertInstaller.certificateStatus(authority: authority,
+            installedCertificates: { [currentDER] }, evaluateTrust: { _ in invalidPeriodEvaluations += 1; return true },
+            now: invalidDate)
+        test.expect(invalidPeriod.installed && !invalidPeriod.trusted,
+                    "当前 CA 尚未生效或已过期时，即使 anchor 验证宽松也不得显示信任")
+    }
+    test.equal(invalidPeriodEvaluations, 0, "CA 有效期门控先于平台信任验证")
+    try checkCATrustProbe(test, authority: authority)
+
     let matchingCertificates: CertInstaller.CertificateFinder = { _ in ["AAAA"] }
     for (status, message) in [(Int32(1), "User canceled. (-128)"), (Int32(23), "keychain deletion failed")] {
         var reset = false
@@ -146,4 +180,61 @@ func checkCertInstaller(_ test: CoreAssertions) throws {
     }
     test.rejects(try CertInstaller.runCommand(directory.appendingPathComponent("missing-command").path, []),
                  with: CocoaError.self, "实际进程启动失败以 Swift 错误返回")
+}
+
+private func checkCATrustProbe(_ test: CoreAssertions, authority: CertificateAuthority) throws {
+    let now = Date()
+    let original = try authority.makeTrustProbe(now: now)
+    let leaf = try X509.Certificate(derEncoded: Array(original.leafDER))
+    let root = try X509.Certificate(derEncoded: Array(original.authorityDER))
+    test.equal(leaf.issuer, root.subject, "信任探测使用当前 CA 直接签发的实际叶子")
+    test.expect(try leaf.extensions.basicConstraints == .notCertificateAuthority,
+                "SSL 信任验证的首张证书是非 CA 叶子")
+    test.expect(try leaf.extensions.extendedKeyUsage?.contains(.serverAuth) == true,
+                "信任探测叶子声明 TLS serverAuth")
+    test.expect(try leaf.extensions.subjectAlternativeNames?.contains(.dnsName(original.hostname)) == true,
+                "信任探测使用固定 .invalid 域名 SAN")
+    test.expect(original.hostname.hasSuffix(".invalid") && leaf.notValidAfter <= root.notValidAfter,
+                "信任探测无需网络，且叶子有效期不超根 CA")
+    test.equal(try authority.makeTrustProbe(now: now), original, "同一 CA 复用未过期探测链")
+    let renewed = try authority.makeTrustProbe(now: original.expiresAt)
+    test.expect(renewed.leafDER != original.leafDER && renewed.authorityDER == original.authorityDER,
+                "探测叶子过期后刷新证书，不更改 CA")
+    authority.setCustomCertificateProvider { _ in
+        preconditionFailure("信任探测不得查询自定义域名证书 provider")
+    }
+    _ = try authority.makeTrustProbe(now: renewed.expiresAt)
+    authority.setCustomCertificateProvider(nil)
+
+    // Test-only, in-memory anchors verify the generated signature and hostname.
+    // Production certificateStatus never supplies anchors; no keychain is modified.
+    func verify(_ probe: CertificateAuthority.TrustProbe, hostname: String, anchor: Data) -> Bool {
+        guard let leaf = SecCertificateCreateWithData(nil, probe.leafDER as CFData),
+              let root = SecCertificateCreateWithData(nil, probe.authorityDER as CFData),
+              let trustedRoot = SecCertificateCreateWithData(nil, anchor as CFData) else { return false }
+        var trust: SecTrust?
+        guard SecTrustCreateWithCertificates([leaf, root] as CFArray, SecPolicyCreateSSL(true, hostname as CFString), &trust) == errSecSuccess,
+              let trust else { return false }
+        SecTrustSetAnchorCertificates(trust, [trustedRoot] as CFArray)
+        SecTrustSetAnchorCertificatesOnly(trust, true)
+        SecTrustSetNetworkFetchAllowed(trust, false)
+        return SecTrustEvaluateWithError(trust, nil)
+    }
+    let verified = LockedBox<[Bool]>([])
+    let ready = DispatchSemaphore(value: 0)
+    DispatchQueue.global(qos: .userInitiated).async {
+        verified.set([
+            verify(original, hostname: original.hostname, anchor: original.authorityDER),
+            verify(original, hostname: "different.proxymirror.invalid", anchor: original.authorityDER),
+            CertInstaller.certificateStatus(authority: authority, installedCertificates: { [original.authorityDER] }).trusted,
+        ])
+        ready.signal()
+    }
+    test.expect(ready.wait(timeout: .now() + .seconds(10)) == .success, "探测链原生验证在后台完成")
+    test.equal(verified.value, [true, false, false],
+               "真实探测链通过本 CA 的内存验签，拒绝错误域名，生产路径不会自行信任未安装 CA")
+    try authority.resetCA()
+    let replaced = try authority.makeTrustProbe()
+    test.expect(replaced.authorityDER != original.authorityDER && replaced.leafDER != original.leafDER,
+                "CA 替换使缓存探测叶子与根链一起失效")
 }

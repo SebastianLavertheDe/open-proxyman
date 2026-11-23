@@ -55,6 +55,7 @@ struct SessionRecord: Codable, Sendable {
     let clientName: String?
     let clientPID: Int32?
     let clientBundle: String?
+    let isIOSSimulator: Bool?
     let clientAddress: String?
     let tConnected: Date?
     let tHeaderAt: Date?
@@ -114,6 +115,7 @@ struct SessionRecord: Codable, Sendable {
         clientName = tx.clientName
         clientPID = tx.clientPID
         clientBundle = tx.clientBundle
+        isIOSSimulator = tx.isIOSSimulator ? true : nil
         clientAddress = tx.clientAddress
         tConnected = tx.tConnected
         tHeaderAt = tx.tHeaderAt
@@ -172,6 +174,7 @@ struct SessionRecord: Codable, Sendable {
         tx.clientName = clientName
         tx.clientPID = clientPID
         tx.clientBundle = clientBundle
+        tx.isIOSSimulator = isIOSSimulator ?? false
         tx.clientAddress = clientAddress
         tx.tConnected = tConnected
         tx.tHeaderAt = tHeaderAt
@@ -182,18 +185,20 @@ struct SessionRecord: Codable, Sendable {
 }
 
 struct SessionFile: Codable, Sendable {
-    enum SessionError: LocalizedError {
+    enum SessionError: LocalizedError, OperationIssueProviding {
         case unsupportedVersion, duplicateIDs, invalidHAR
 
-        var errorDescription: String? {
+        var operationIssue: OperationIssue {
             switch self {
-            case .unsupportedVersion: return "此会话版本暂不支持"
-            case .duplicateIDs: return "会话包含重复的请求 ID"
-            case .invalidHAR: return "HAR 包含无法读取的 URL 或正文"
+            case .unsupportedVersion: return OperationIssue.modelSessionUnsupportedVersion
+            case .duplicateIDs: return OperationIssue.modelSessionDuplicateIds
+            case .invalidHAR: return OperationIssue.modelSessionHarInvalid
             }
         }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 
+    static let currentVersion = 2
     static let fileExtension = "proxymirror"
     static let fileQueue = DispatchQueue(label: "proxymirror.session-files", qos: .userInitiated)
     let version: Int
@@ -202,7 +207,7 @@ struct SessionFile: Codable, Sendable {
     let selected: [UUID]
 
     init(transactions: [Transaction], pinnedDomains: [String], selected: Set<UUID>) {
-        version = 1
+        version = Self.currentVersion
         records = transactions.map(SessionRecord.init)
         self.pinnedDomains = pinnedDomains
         self.selected = records.map(\.id).filter(selected.contains)
@@ -238,7 +243,7 @@ struct SessionFile: Codable, Sendable {
     }
 
     private init(records: [SessionRecord], pinnedDomains: [String], selected: [UUID]) {
-        version = 1; self.records = records; self.pinnedDomains = pinnedDomains; self.selected = selected
+        version = Self.currentVersion; self.records = records; self.pinnedDomains = pinnedDomains; self.selected = selected
     }
 
     private enum CodingKeys: String, CodingKey { case version, records, pinnedDomains, selected }
@@ -246,7 +251,7 @@ struct SessionFile: Codable, Sendable {
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         version = try fields.decode(Int.self, forKey: .version)
-        guard version == 1 else { throw SessionError.unsupportedVersion }
+        guard version == Self.currentVersion else { throw SessionError.unsupportedVersion }
         records = try fields.decode([SessionRecord].self, forKey: .records)
         guard Set(records.map(\.id)).count == records.count else { throw SessionError.duplicateIDs }
         pinnedDomains = try fields.decode([String].self, forKey: .pinnedDomains)

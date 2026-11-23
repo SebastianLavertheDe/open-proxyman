@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>app_state_transactions_can_be_imported_skipped</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@
+%2$#@importable@ · 跳过 %3$ld 条</string>
+		<key>importable</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>other</key>
+			<string>可导入 %ld 条事务</string>
+		</dict>
+	</dict>
+	<key>memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$@ · %3$#@caches@</string>
+		<key>caches</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>other</key>
+			<string>已清理 %ld 类可重建缓存；捕获记录与用户文件已保留。</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

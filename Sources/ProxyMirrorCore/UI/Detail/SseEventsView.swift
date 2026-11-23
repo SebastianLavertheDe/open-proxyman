@@ -23,10 +23,10 @@ struct SseEventsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Text("共 \(tx.sseEvents.count) 个事件")
-                if tx.sseEventsTruncated { Text("已截断") }
+                Text(Strings.Detail.events(tx.sseEvents.count))
+                if tx.sseEventsTruncated { Text(Strings.Detail.truncated) }
                 if let first = tx.sseEvents.first?.at, let last = tx.sseEvents.last?.at {
-                    Text(String(format: "· 跨度 %.1fs", max(last.timeIntervalSince(first), 0)))
+                    Text(Strings.Detail.span1fs(max(last.timeIntervalSince(first), 0)))
                 }
                 Spacer()
             }
@@ -35,7 +35,7 @@ struct SseEventsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             if tx.sseEvents.contains(where: { $0.at == nil }) {
-                Text("事件从捕获正文恢复，历史到达时间未记录。")
+                Text(Strings.Detail.eventsWereRestoredFromTheCapturedBodyOriginalArrivalTimesWere)
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
             }
             if let issue = tx.sseParseIssue {
@@ -43,9 +43,9 @@ struct SseEventsView: View {
                     .textSelection(.enabled).padding(.horizontal, 10)
             }
             if tx.sseEvents.isEmpty {
-                Text(tx.sseDecodingDeferred && tx.responseBodyComplete ? "正在恢复 SSE 事件…" :
+                Text(tx.sseDecodingDeferred && tx.responseBodyComplete ? Strings.Detail.recoveringSseEvents :
                      tx.responseBodyComplete || tx.state == .failed || (tx.sseParseIssue != nil && !tx.sseDecodingDeferred)
-                        ? "没有可显示的 SSE 事件" : "等待事件…")
+                        ? Strings.Detail.noSseEventsToDisplay : Strings.Detail.waitingForEvents)
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -106,7 +106,7 @@ struct SseEventsView: View {
                     Text(String(format: "+%.0f ms", max(0, at.timeIntervalSince(previous) * 1000)))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
-                Text(event.at?.formatted(date: .omitted, time: .standard) ?? "到达时间未记录")
+                Text(event.at?.formatted(date: .omitted, time: .standard) ?? Strings.Detail.arrivalTimeWasNotRecorded)
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             if let tree = JSONTreeService.build(from: Data(event.data.utf8)) {
@@ -120,7 +120,7 @@ struct SseEventsView: View {
         }
         .padding(8)
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
-        .contextMenu { Button("复制事件数据") { CopyPaste.copy(event.data) } }
+        .contextMenu { Button(Strings.Detail.copyEventData) { CopyPaste.copy(event.data) } }
     }
 
 }

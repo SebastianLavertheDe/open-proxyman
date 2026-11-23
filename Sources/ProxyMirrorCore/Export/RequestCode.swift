@@ -58,10 +58,10 @@ enum RequestCode {
         let needsEncoding = headers.contains { !$0.value.utf8.allSatisfy { $0 < 128 } }
         var lines: [String] = []
         if capturedHeaders.count != headers.count {
-            lines.append("// 浏览器会根据当前上下文生成受控请求头（如 Cookie、Origin）。")
+            lines.append("// The browser generates restricted headers such as Cookie and Origin for its current context.")
         }
         if Set(headers.map { $0.name.lowercased() }).count != headers.count {
-            lines.append("// Fetch 会合并重复请求头的值。")
+            lines.append("// Fetch combines duplicate request header values.")
         }
         if needsEncoding {
             lines.append("const utf8Header = (value) => Array.from(new TextEncoder().encode(value),")

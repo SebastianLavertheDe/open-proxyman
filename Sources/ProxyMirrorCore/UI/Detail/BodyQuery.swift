@@ -20,9 +20,9 @@ enum BodyQuery {
 
     static func run(_ expression: String, language: Language, data: Data) async throws -> Result {
         let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !expression.isEmpty else { throw QueryError("请输入查询表达式。") }
-        guard expression.utf8.count <= 8192 else { throw QueryError("查询表达式过长。") }
-        guard data.count <= JSONPath.maxInputBytes else { throw QueryError("查询支持最大 1 MiB 的正文。") }
+        guard !expression.isEmpty else { throw QueryError(Strings.Detail.enterAQueryExpression) }
+        guard expression.utf8.count <= 8192 else { throw QueryError(Strings.Detail.theQueryExpressionIsTooLong) }
+        guard data.count <= JSONPath.maxInputBytes else { throw QueryError(Strings.Detail.queriesSupportBodiesUpTo1Mib) }
         try Task.checkCancellation()
         switch language {
         case .jsonPath:
@@ -54,7 +54,7 @@ enum BodyQuery {
     private static func jq(_ expression: String, data: Data) async throws -> Result {
         let paths = ["/opt/homebrew/bin/jq", "/usr/local/bin/jq", "/opt/local/bin/jq", "/usr/bin/jq"]
         guard let executable = paths.first(where: FileManager.default.isExecutableFile(atPath:)) else {
-            throw QueryError("找不到 jq。可安装 Homebrew 或 MacPorts 提供的 jq，或切换到 JSONPath。")
+            throw QueryError(Strings.Detail.jqWasNotFoundInstallJqWithHomebrewOrMacportsOr)
         }
         let manager = FileManager.default
         let directory = manager.temporaryDirectory.appendingPathComponent("ProxyMirror-query-\(UUID().uuidString)",
@@ -109,20 +109,20 @@ enum BodyQuery {
                 _ = try readAvailable(stderr, into: &diagnostics, upTo: diagnosticLimit)
                 guard process.terminationStatus == 0 else {
                     let message = String(decoding: diagnostics, as: UTF8.self)
-                        .replacingOccurrences(of: filter.path, with: "表达式")
+                        .replacingOccurrences(of: filter.path, with: Strings.Detail.expression)
                         .trimmingCharacters(in: .whitespacesAndNewlines)
-                    throw QueryError(message.isEmpty ? "jq 退出，状态码 \(process.terminationStatus)。" : message)
+                    throw QueryError(message.isEmpty ? Strings.Detail.jqExitedWithStatus(Int(process.terminationStatus)) : message)
                 }
                 return Result(text: String(decoding: output, as: UTF8.self), matches: nil, truncated: truncated)
             }
-            guard DispatchTime.now() < deadline else { throw QueryError("jq 执行超时，请缩小查询范围。") }
+            guard DispatchTime.now() < deadline else { throw QueryError(Strings.Detail.theJqQueryTimedOutNarrowTheQueryScope) }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
     }
 
     private static func setNonblocking(_ descriptor: Int32) throws {
         guard fcntl(descriptor, F_SETFL, O_NONBLOCK) != -1 else {
-            throw QueryError("无法读取 jq 的输出。")
+            throw QueryError(Strings.Detail.unableToReadJqOutput)
         }
     }
 
@@ -138,7 +138,7 @@ enum BodyQuery {
             } else if count == 0 || errno == EAGAIN || errno == EWOULDBLOCK {
                 return false
             } else if errno != EINTR {
-                throw QueryError("读取 jq 输出失败。")
+                throw QueryError(Strings.Detail.failedToReadJqOutput)
             }
         }
     }

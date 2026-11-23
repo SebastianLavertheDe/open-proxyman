@@ -3,7 +3,7 @@ import Foundation
 
 func checkUpdateConfiguration(_ test: CoreAssertions) throws {
     test.expect(try AppUpdateConfiguration.read([:]) == nil,
-                "Updates: unconfigured builds use an explicit manual fallback")
+                "Updates: builds without a signed feed use the public release checker")
     let key = Data(repeating: 1, count: 32).base64EncodedString()
     let configuration = try AppUpdateConfiguration.read(["SUFeedURL": "https://updates.example.test/appcast.xml", "SUPublicEDKey": key])
     test.equal(configuration?.feedURL.scheme, "https", "Updates: configured feeds require HTTPS")

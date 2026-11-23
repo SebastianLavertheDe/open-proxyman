@@ -1,0 +1,849 @@
+/* ProxyMirror Errors — maintained native localization resources. */
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_allow_the_proxymirror_network_extension_in_macos_system" = "请在 macOS 系统设置中允许 ProxyMirror 网络扩展。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_android_emulator_setup_failed" = "Android 模拟器配置失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_applying_settings_and_restarting_the_proxy" = "正在应用并重启代理…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_ca_installation_failed" = "CA 安装失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel" = "取消";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel_transparent_capture_activation" = "取消透明抓包启动";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel_transparent_capture_awaiting_approval" = "取消透明抓包（等待系统批准）";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_cancel_transparent_proxy_connection" = "取消透明抓包连接";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_device" = "设备 %@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_disabling_the_system_proxy" = "正在关闭系统代理…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_enable_lan_access_in_settings_general_configure_the" = "请先在「设置 → 常规」启用局域网代理，设置设备 IP / CIDR 白名单，再启动监听。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_enable_the_system_proxy_manually" = "请手动接管系统代理。%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_enabling_the_system_proxy" = "正在接管系统代理…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_import" = "导入";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_import_charles_session" = "导入 Charles 会话";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_new_connections_from_will_use_passthrough" = "「%@」的新连接将使用透传。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_ok" = "好";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_record_proxymirror_tls_session_keys" = "记录 ProxyMirror TLS 会话密钥";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_removing_system_proxy_authorization" = "正在移除系统代理授权…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_restore_the_system_proxy_before_changing_the_listen" = "请先恢复系统代理，再调整监听地址或端口。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_restored_the_previous_listener_port" = "\n已恢复原监听端口 %ld。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_retry_stopping_transparent_capture" = "重试停止透明抓包";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_settings_applied_the_listener_is_not_running" = "设置已应用，监听尚未启动。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_settings_applied_the_proxy_has_restarted" = "设置已应用，代理已重启。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_simulator_setup_failed" = "模拟器配置失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_start_listening_before_enabling_the_system_proxy" = "请先启动监听，再接管系统代理。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_start_transparent_capture" = "启动透明抓包…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stop_transparent_capture" = "停止透明抓包";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stop_transparent_capture_before_changing_the_listen_address" = "请先停止透明抓包，再调整监听地址或端口。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stop_transparent_capture_before_enabling_the_system_proxy" = "请先停止透明抓包，再接管系统代理。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_stopping_transparent_capture" = "正在停止透明抓包…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_authorization_removed" = "系统代理授权已移除。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_enabled" = "系统代理已接管。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_enabled_127_0_0_1" = "系统代理已接管（127.0.0.1:%ld）";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_system_proxy_restored" = "系统代理已还原";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_ca_is_installed_and_trusted_system_wide" = "CA 证书已安装并系统级信任（浏览器刷新即生效）";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_certificate_was_imported_but_the_current_ca" = "证书已导入，但当前 CA 尚未通过系统信任验证。请检查钥匙串中的信任设置。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_comparison_pool_holds_up_to_100_requests" = "对比池最多保留 100 条请求，请先移除部分记录。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_keys_can_decrypt_network_data_for_corresponding" = "密钥可用于解读对应连接的网络数据。记录仅对代理终止的 TLS 握手生效。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_selected_requests_cannot_be_copied_as_check" = "所选请求无法复制为 %@。请确认请求捕获完整，或在设置中选择其他默认复制格式。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_ssl_rule_was_not_saved" = "SSL 规则未保存：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_the_system_proxy_service_disconnected_the_background_service" = "系统代理服务连接已断开，后台服务会尝试恢复原配置。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_this_build_has_no_transparent_proxy_extension_use" = "此版本没有透明代理扩展。请使用带网络扩展的签名版本。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_transactions_can_be_imported_skipped" = "%@\n可导入 %ld 条事务 · 跳过 %ld 条";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_transparent_capture_unavailable" = "透明抓包不可用…";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_copy_select_the_requests_again_and" = "复制失败，请重新选择请求后重试。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_copy_the_certificate" = "复制证书失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_disable_the_system_proxy" = "关闭系统代理失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_enable_the_system_proxy" = "系统代理未生效：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_open_the_session" = "打开会话失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_open_the_tls_key_log" = "TLS 密钥日志打开失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_remove_system_proxy_authorization" = "移除系统代理授权失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_save_the_passthrough_rule" = "保存透传规则失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_start_check_the_port_and_lan" = "启动失败：%@\n请在设置中检查端口与局域网地址。";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_unable_to_start_the_in_app_capture_listener" = "应用内捕获监听失败：%@";
+
+/* Sources/ProxyMirrorCore/App/AppState.swift */
+"app_state_wait_for_the_proxy_restart_to_finish" = "请等待代理重启完成。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_check_for_updates" = "检查更新…";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_check_project_releases_and_notify_you_about_new" = "检查项目 Releases 并提示新版本；下载与安装由你确认。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_check_project_releases_for_new_versions" = "从项目 Releases 检查新版本。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_checking_for_updates" = "正在检查更新…";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_download" = "前往下载";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_later" = "稍后";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_ok" = "好";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_signed_updates_are_currently_unavailable" = "签名更新暂不可用：%@";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_software_updates" = "软件更新";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_sparkle_verifies_signed_updates_automatic_checks_do_not" = "使用 Sparkle 验证签名更新。自动检查不会自动安装更新。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_the_signed_update_feed_must_use_a_valid" = "签名更新源必须是有效的 HTTPS URL。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_the_update_public_key_must_be_a_base64" = "更新公钥必须是 Base64 编码的 32 字节 Ed25519 公钥。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_there_are_no_downloadable_releases_yet" = "项目暂未发布可下载的新版本。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_unable_to_open_the_browser_visit_the_project" = "无法打开浏览器，请访问项目 Releases 页面。";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_update_check_failed" = "检查更新失败：%@";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_version_is_available" = "发现新版本 %@";
+
+/* Sources/ProxyMirrorCore/System/AppUpdateController.swift */
+"app_update_controller_you_are_up_to_date" = "当前已是最新版本。";
+
+/* System models */
+"automation_other_terminal" = "其他终端";
+
+/* System models */
+"certificate_export_der" = "CA 证书 DER";
+
+/* System models */
+"certificate_export_key" = "加密私钥 PEM";
+
+/* System models */
+"certificate_export_p12" = "CA 与私钥 PKCS#12";
+
+/* System models */
+"certificate_export_pem" = "CA 证书 PEM";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_a_ca_certificate_must_declare_ca_basic_constraints" = "CA 用途要求证书声明 CA 基本约束，不能导入普通服务端/客户端证书。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_certificate_conversion_failed_check_the_password_file_format" = "证书转换失败：请检查口令、文件格式及系统 OpenSSL 支持的算法。旧版 P12 的 RC2 等算法可能不受支持。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_certificate_format_conversion_timed_out" = "证书格式转换超时。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_enter_a_valid_target_host_or_example_com" = "请填写有效目标主机或 *.example.com。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_mtls_and_server_identities_require_a_leaf_certificate" = "mTLS/服务端身份需要叶子证书，不能使用 CA 私钥。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_no_usable_certificate_was_found" = "没有可用证书。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_select_a_regular_file_between_1_byte_and" = "文件应为 1 byte 到 8 MiB 的普通文件。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_select_a_valid_pem_or_der_cer_certificate" = "请选择有效 PEM、DER/CER 证书，或带 .p12/.pfx 扩展名的 PKCS#12 文件。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_set_a_nonempty_password_for_the_private_key" = "请为私钥或 P12 设置非空口令。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_ca_certificate_key_usage_does_not_permit" = "CA 证书的 Key Usage 不允许签发证书。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_chain_contains_a_certificate_that_is" = "证书链中存在尚未生效或已过期的证书。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_chain_is_empty" = "证书链为空。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_does_not_match_the_private_key" = "证书与私钥不匹配。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_extended_key_usage_does_not_permit" = "此证书的扩展用途不允许 TLS 客户端认证。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_extended_key_usage_does_not_permit_2" = "此证书的扩展用途不允许 TLS 服务端认证。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_key_usage_does_not_support_the" = "证书的 Key Usage 不支持所选 TLS 身份用途。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_certificate_san_does_not_match_the_server" = "证书 SAN 与服务端域名规则不匹配；通配证书只能覆盖一个子域层级。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_file_exceeds_8_mib" = "文件超过 8 MiB。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_file_is_empty" = "文件为空。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_first_certificate_in_the_chain_does_not" = "证书链首张证书与私钥不匹配。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_password_cannot_contain_a_newline_or_nul" = "口令不可包含换行或 NUL，且不能超过 4096 字节。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_pem_certificate_chain_is_invalid_or_contains" = "PEM 证书链无效或超过 64 张。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_root_ca_changed_during_export_export_it" = "根 CA 在导出期间发生变化，请重新导出。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_the_server_certificate_has_no_subject_alternative_name" = "服务端证书缺少 Subject Alternative Name；请使用包含目标主机的证书。";
+
+/* Sources/ProxyMirrorCore/System/CertificateFormats.swift */
+"certificate_formats_this_purpose_requires_a_matching_private_key_select" = "此用途需要匹配的私钥；请选择私钥或带身份的 P12 文件。";
+
+/* System models */
+"certificate_purpose_client" = "上游 mTLS 身份";
+
+/* System models */
+"certificate_purpose_root" = "抓包根 CA";
+
+/* System models */
+"certificate_purpose_server" = "按域名服务端身份";
+
+/* System models */
+"certificate_purpose_upstream" = "上游 CA 信任链";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_a_connection_termination_action_cannot_be_converted_to" = "%@：连接终止动作无法转换为 HTTP 403";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_charles_rules_exceed_2_mib_split_the_export" = "Charles 规则超过 2 MiB。请按工具拆分。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_directory_mapping_cannot_be_converted_equivalently" = "%@：目录映射无法等价转换";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_export_the_native_session_as_xml_or_json" = "请先在 Charles 中将原生会话导出为 XML 或 JSON Session。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_location_the_match_condition_cannot_be_converted" = "%@ 的位置 %@：匹配条件无法转换";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_no_enabled_locations_can_be_imported_rules" = "%@：没有可迁移的启用位置，共 %ld 条规则";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_rule_unsupported_rewrite_action_or_match_condition" = "%@ 的规则 %@：不支持的 Rewrite 操作或匹配条件";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_select_a_charles_rewrite_map_local_block_list" = "请选择 Charles 的 Rewrite、Map Local、Block List 或设置 XML 导出。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_select_a_charles_xml_session_export" = "请选择 Charles XML 会话导出文件。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_select_a_regular_file" = "请选择普通文件。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_body_contains_invalid_base64" = "Charles 正文的 Base64 无效。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_body_uses_an_unreadable_character_encoding" = "Charles 正文使用无法读取的字符编码。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_export_exceeds_the_size_limit" = "Charles 导出文件超出大小限制。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_json_body_uses_an_unreadable_encoding" = "Charles JSON 正文使用无法读取的编码。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_session_exceeds_128_mib_split_it" = "Charles 会话超过 128 MiB。请拆分后再导入。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_charles_xml_body_uses_an_unreadable_encoding" = "Charles XML 正文使用无法读取的编码。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_location_match_expression_is_too_long_or" = "%@：位置匹配表达式过长或无效";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_match_condition_cannot_be_converted" = "%@：匹配条件无法转换";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_match_condition_or_local_file_path_cannot" = "%@：匹配条件或本地文件路径无法转换";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_the_target_file_is_unreadable_on_this_mac" = "%@：目标文件在此 Mac 上不可读取，已关闭。\n%@";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_tool" = "工具 %@";
+
+/* Sources/ProxyMirrorCore/Export/CharlesImport.swift */
+"charles_import_unable_to_read_charles_xml_select_a_session" = "无法读取 Charles XML。请选择 Charles 导出的会话或规则文件。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesSessionConverter.swift */
+"charles_session_converter_charles_conversion_failed_or_exceeded_60_seconds_open" = "Charles 转换失败或超过 60 秒。请在 Charles 中确认文件能打开，再导出 HAR。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesSessionConverter.swift */
+"charles_session_converter_the_converted_har_exceeds_128_mib_split_the" = "转换后的 HAR 超过 128 MiB，请先拆分会话。";
+
+/* Sources/ProxyMirrorCore/Export/CharlesSessionConverter.swift */
+"charles_session_converter_this_is_a_native_charles_binary_session_install" = "此文件是 Charles 原生二进制会话。安装 Charles 后可自动转换，或先在 Charles 导出为 XML / JSON / HAR；XML 和 JSON 导入不需要 Charles。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_a_client_identity_must_use_a_leaf_certificate" = "客户端身份必须使用叶子证书，不能使用 CA 私钥。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_a_maximum_of_client_identities_can_be_saved" = "最多保存 %ld 个客户端身份。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_enter_a_hostname_ip_address_or_example_com" = "请输入主机名、IP 或 *.example.com。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_certificate_chain_is_empty" = "证书链为空。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_certificate_chain_or_private_key_exceeds_the" = "证书链或私钥超过大小上限。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_certificate_extended_key_usage_does_not_permit" = "证书的扩展用途不允许 TLS 客户端认证。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_certificate_is_not_yet_valid_or" = "客户端证书未生效或已过期。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_certificate_key_usage_does_not_permit" = "客户端证书的 Key Usage 不允许数字签名。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_count_exceeds_the_limit" = "客户端身份数量超出上限。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_file_is_too_large" = "客户端身份文件过大。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_host_is_invalid" = "客户端身份主机无效。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_client_identity_is_missing_its_private_key" = "客户端身份缺少私钥。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_file_exceeds_the_size_limit" = "文件超过大小上限。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_file_is_empty_too_large_or_not" = "文件为空、过大或不是普通文件。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_first_certificate_in_the_chain_does_not" = "证书链首张证书与私钥不匹配。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_the_identity_file_permissions_must_be_0600" = "身份文件权限应为 0600。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_unable_to_parse_the_client_certificate_or_private" = "无法解析客户端证书或私钥。请使用 PEM 证书链和无口令 PEM 私钥。";
+
+/* Sources/ProxyMirrorCore/System/ClientTLSIdentities.swift */
+"client_tlsidentities_unable_to_read_upstream_client_identities" = "无法读取上游客户端身份。%@";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_a_connected_writable_android_emulator_running_android_13" = "需要一个已连接的可写 Android 模拟器（Android 13 或更早）。实体设备请使用用户证书安装指南。";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_connect_only_one_android_device_with_usb_debugging" = "请仅连接一台已授权 USB 调试的 Android 设备。";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_installed_ca" = "已安装 CA：%@（%@）";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_installed_the_system_ca_on_android_emulator_api" = "已为 Android 模拟器 %@（API %ld）安装系统 CA。请按模拟器镜像要求重启后验证。";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_no_ios_simulator_is_running_start_at_least" = "没有已启动的 iOS 模拟器。请先在 Xcode 里启动至少一台。";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_simulator_apps_use_the_host_network_stack_keep" = "模拟器应用走宿主网络栈：需要解密时请保持「接管系统代理」。";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_the_certificate_was_copied_to_the_device_download" = "证书已复制到设备的 Download 文件夹。请在 Android「设置 → 安全 → 安装 CA 证书」选择 ProxyMirror-CA.cer。";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_the_command_failed" = "命令执行失败：%@";
+
+/* Sources/ProxyMirrorCore/System/DeviceAutomation.swift */
+"device_automation_unable_to_parse_the_device_list_check_your" = "无法解析设备列表输出，请检查 Xcode 与 Command Line Tools 配置。";
+
+/* Sources/ProxyMirrorCore/Export/ExportService.swift */
+"export_service_export_failed" = "%@ 导出失败：%@";
+
+/* Sources/ProxyMirrorCore/System/ExternalProxyPACValidation.swift */
+"external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example" = "PAC 已加载并执行，example.com 路由为 DIRECT。";
+
+/* Sources/ProxyMirrorCore/System/ExternalProxyPACValidation.swift */
+"external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example_2" = "PAC 已加载并执行，example.com 路由为 %@ %@:%ld。";
+
+/* Sources/ProxyMirrorCore/System/ExternalProxyPACValidation.swift */
+"external_proxy_pacvalidation_select_pac_mode_first" = "请先选择 PAC 模式。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_enter_a_github_token_with_gists_write_permission" = "请输入具有 Gists 写入权限的 GitHub Token。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_github_did_not_return_an_http_response" = "GitHub 未返回 HTTP 响应。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_github_publishing_failed_http_check_token_permissions_and" = "GitHub 发布失败 (HTTP %ld)。请检查 Token 权限和 API 额度。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_github_returned_an_invalid_gist_url" = "GitHub 返回了无效的 Gist 地址。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_select_the_requests_to_publish" = "请选择要发布的请求。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_the_preview_must_be_valid_har_json" = "预览必须是有效的 HAR JSON。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_this_gist_exceeds_8_mib_reduce_the_selection" = "此 Gist 超过 8 MiB，请缩小所选流量或移除不需要的正文。";
+
+/* Sources/ProxyMirrorCore/Export/GistService.swift */
+"gist_service_unable_to_access_the_keychain" = "无法访问钥匙串 (%ld)。";
+
+/* Sources/ProxyMirrorCore/System/MemoryPressureController.swift */
+"memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and" = "%@ · %@ · 已清理 %ld 类可重建缓存；捕获记录与用户文件已保留。";
+
+/* Sources/ProxyMirrorCore/System/MemoryPressureController.swift */
+"memory_pressure_controller_simulate_memory_warning" = "模拟内存警告";
+
+/* Sources/ProxyMirrorCore/System/MemoryPressureController.swift */
+"memory_pressure_controller_system_memory_pressure" = "系统内存压力";
+
+/* Sources/ProxyMirrorCore/System/NetworkAccessPolicy.swift */
+"network_access_policy_invalid_ip_address_or_cidr" = "无效的 IP 或 CIDR：%@";
+
+/* Sources/ProxyMirrorCore/System/NetworkAccessPolicy.swift */
+"network_access_policy_the_access_list_supports_up_to_entries" = "访问名单最多 %ld 项。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_install_firefox_first" = "请先安装 Firefox。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_install_iterm2_first" = "请先安装 iTerm2。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_launch_failed" = "启动失败（%ld）：%@";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_opened_a_terminal_with_proxy_and_ca_environment" = "已打开带代理与 CA 环境变量的终端。关闭该窗口即可结束本次配置。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_select_an_installed_app" = "请选择已安装的 %@ .app。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_select_an_installed_terminal_app" = "请选择已安装的终端 .app。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_start_the_proxy_listener_first" = "请先启动代理监听。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_started_an_isolated_firefox_profile_with_the_proxy" = "已启动带代理的 Firefox 独立 Profile。请先在 macOS 中信任 ProxyMirror CA。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_started_an_isolated_profile_using_the_proxymirror_proxy" = "已启动独立 Profile，并指定 ProxyMirror 代理。HTTPS 需要先安装并信任 ProxyMirror CA。";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_submitted_the_launch_request_launch_log" = "已提交 %@ 启动请求。启动日志：%@";
+
+/* Sources/ProxyMirrorCore/System/ProxyAutomation.swift */
+"proxy_automation_the_selected_terminal_must_support_the_e_command" = "所选终端需要支持 -e 启动命令参数。";
+
+/* Sources/ProxyMirrorCore/System/ReleaseUpdate.swift */
+"release_update_the_update_check_failed_http" = "更新检查失败（HTTP %@）。";
+
+/* Sources/ProxyMirrorCore/System/ReleaseUpdate.swift */
+"release_update_the_update_service_returned_invalid_release_information" = "更新服务返回了无效的版本信息。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_failed_exit_code" = "%@失败（退出码 %ld）。%@";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_install_the_ca_on" = "向 %@ 安装 CA";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_read_the_device_list" = "读取设备列表";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_select_an_existing_simulator_device_set_directory_containing" = "请选择包含 device_set.plist 的现有 Simulator device-set 目录。不会创建新的设备集。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_exceeded_seconds_and_was_stopped_check_xcode" = "simctl 执行超过 %ld 秒，已停止本次命令。请检查 Xcode 和目标 runtime。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_returned_a_duplicate_device_identifier" = "simctl 返回了重复设备标识。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_returned_an_invalid_device_identifier_or_name" = "simctl 返回了无效的设备标识或名称。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_simctl_standard_output_exceeds_4_mib" = "simctl 标准输出超过 4 MiB。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_start_in_xcode_or_simulator_then_refresh_the" = "请先在 Xcode 或 Simulator 中启动 %@，然后刷新列表。安装器不会自动启动设备。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_the_device_count_exceeds_1_000_select_a" = "设备数量超过 1000，请选择较小的设备集。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_the_simctl_device_list_exceeds_4_mib" = "simctl 设备列表超过 4 MiB。";
+
+/* Sources/ProxyMirrorCore/System/SimulatorCertificateInstaller.swift */
+"simulator_certificate_installer_unable_to_parse_the_simctl_device_list_check" = "无法解析 simctl 设备列表。请确认已选择可用的 Xcode 与 Simulator runtime。";
+
+/* System models */
+"simulator_state_booted" = "已启动";
+
+/* System models */
+"simulator_state_booting" = "正在启动";
+
+/* System models */
+"simulator_state_shutdown" = "已关闭";
+
+/* System models */
+"simulator_state_stopping" = "正在关闭";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_administrator_authorization_was_cancelled" = "已取消管理员授权。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_macos_could_not_authorize_the_system_proxy_service" = "macOS 无法授权更新系统代理后台服务（%ld）。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_proxymirror_needs_administrator_authorization_to_install_the_system" = "ProxyMirror 需要管理员授权来安装系统代理后台服务。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_proxymirror_needs_administrator_authorization_to_remove_the_system" = "ProxyMirror 需要管理员授权来移除系统代理后台服务。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_create_a_macos_authorization_session" = "无法创建 macOS 授权会话。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_prepare_the_system_proxy_service_installation" = "无法准备系统代理服务的安装参数。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_read_the_system_proxy_service_installation" = "无法读取系统代理服务安装结果。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxyAuthorization.swift */
+"system_proxy_authorization_unable_to_update_the_system_proxy_background_service" = "系统代理后台服务更新失败。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_enable_the_system_proxy_first" = "请先接管系统代理。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_imported_into_the_login_keychain" = "已将 %@ 导入登录钥匙串。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_importing_the_custom_certificate" = "正在导入自定义证书…";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_installed_authorization_is_required_for_this_application_version" = "已安装，需要为当前应用版本重新授权";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_installed_but_the_launchd_service_is_not_loaded" = "已安装，但 launchd 服务未加载";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_installed_launchd_service_loaded_and_code_signature_verified" = "已安装，launchd 服务已加载，签名有效";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_legacy_version_no_version_information" = "旧版（无版本接口）";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_not_installed" = "未安装";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_proxy_helper_check_failed" = "辅助工具检查失败：%@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_restore_the_system_proxy_before_removing_its_authorization" = "请先恢复系统代理，再移除系统代理授权。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_select_the_certificate_to_import_pem_cer_or" = "选择要导入的证书文件（.pem / .cer / .p12）";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_select_the_matching_private_key_pem_p_256" = "选择对应的私钥（PEM，支持 P-256 / Ed25519）";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_select_the_root_ca_certificate_pem" = "选择根 CA 证书（PEM）";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_certificate_command_failed_exit_code" = "证书命令执行失败（退出码 %ld）。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_current_ca_is_installed_and_trusted_for" = "当前 CA 已安装并通过 macOS SSL 信任验证";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_current_ca_is_installed_but_is_not" = "当前 CA 已安装，但尚未获得 SSL 信任或证书已失效";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_current_ca_is_not_installed" = "当前 CA 尚未安装";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_custom_root_ca_was_imported_reinstall_and" = "已导入自定义根 CA。请在各客户端重新安装并信任新 CA（证书菜单可导出）。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_helper_is_not_installed" = "尚未安装系统代理辅助工具";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_is_enabled_restore_the_original" = "系统代理已接管，请先恢复原配置。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_service_did_not_respond_try" = "系统代理服务未响应，请重试。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_service_interface_is_unavailable" = "系统代理服务接口不可用。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_the_system_proxy_service_is_missing_use_a" = "找不到系统代理服务，请使用完整的 .app 构建。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_check_the_current_ca" = "无法检查当前 CA：%@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_connect_to_the_system_proxy_service" = "无法连接系统代理服务。请检查 macOS 的后台项目权限。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_import_the_custom_certificate" = "导入自定义证书失败：%@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_import_the_root_ca" = "导入根 CA 失败：%@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_open_the_keychain" = "无法打开钥匙串：%@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_read_keychain_certificates" = "无法读取钥匙串证书：%@";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_read_the_installed_certificate_list" = "无法读取已安装证书列表。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unable_to_read_the_keychain_error_code" = "读取钥匙串失败（错误码 %ld）。";
+
+/* Sources/ProxyMirrorCore/System/SystemProxy.swift */
+"system_proxy_unknown" = "未知";
+
+/* Sources/ProxyMirrorCore/System/SystemTrustAnchors.swift */
+"system_trust_anchors_the_client_certificate_configured_for_the_target_host" = "目标主机配置的客户端证书未生效或已过期。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_proxymirror_transparent_capture" = "ProxyMirror 透明抓包";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_restart_your_mac_to_finish_activating_the_transparent" = "请重启 Mac 以完成透明代理系统扩展的激活。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_stop_the_current_transparent_capture_first" = "请先停止当前的透明抓包。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_the_local_listener_configuration_for_transparent_capture_is" = "透明抓包的本地监听配置无效。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_the_system_extension_returned_an_unknown_activation_state" = "系统扩展返回了未知的激活状态。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_the_transparent_proxy_connection_was_disconnected" = "透明代理连接已断开。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_this_app_bundle_does_not_contain_the_transparent" = "此应用包缺少透明代理系统扩展，请使用带扩展的签名版本。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_timed_out_waiting_for_the_transparent_proxy_connection" = "等待透明代理连接超时。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_timed_out_waiting_for_the_transparent_proxy_to" = "等待透明代理断开超时，请重试停止。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_transparent_capture_was_cancelled" = "已取消透明抓包。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_activate_the_transparent_proxy_system_extension" = "激活透明代理系统扩展失败。%@";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_establish_the_transparent_proxy_connection" = "透明代理连接建立失败。";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_start_transparent_capture" = "启动透明抓包失败";
+
+/* Sources/ProxyMirrorCore/System/TransparentProxyController.swift */
+"transparent_proxy_controller_unable_to_stop_transparent_capture" = "停止透明抓包失败";
+
+
+/* Shared helper error code: invalidPort */
+"helper_invalid_port" = "系统代理端口无效。";
+
+/* Shared helper error code: busy */
+"helper_busy" = "另一个 ProxyMirror 实例正在接管或恢复系统代理。";
+
+/* Shared helper error code: notOwner */
+"helper_not_owner" = "当前连接没有接管系统代理。";
+
+/* Shared helper error code: authorizationRequired */
+"helper_authorization_required" = "系统代理服务需要管理员授权。";
+
+/* Shared helper error code: invalidArguments */
+"helper_invalid_arguments" = "系统代理服务参数无效。";
+
+/* Shared helper error code: signatureInvalid */
+"helper_signature_invalid" = "无法验证 ProxyMirror 或系统代理服务的签名，请使用完整的 .app 构建。";
+
+/* Shared helper error code: lockUnavailable */
+"helper_lock_unavailable" = "无法打开系统代理锁。";
+
+/* Shared helper error code: restoreRecordInvalid */
+"helper_restore_record_invalid" = "无法读取未完成的系统代理恢复记录。";
+
+/* Shared helper error code: bypassRecordInvalid */
+"helper_bypass_record_invalid" = "系统代理旁路恢复记录无效。";
+
+/* Shared helper error code: takeoverRequired */
+"helper_takeover_required" = "请先接管系统代理。";
+
+/* Shared helper error code: bypassUpdateLimit */
+"helper_bypass_update_limit" = "本次接管已多次修改旁路列表，请先恢复后重新接管。";
+
+/* Shared helper error code: noOwnedServices */
+"helper_no_owned_services" = "未找到由 ProxyMirror 接管的网络服务。";
+
+/* Shared helper error code: installationFailed */
+"helper_installation_failed" = "无法启动已授权的系统代理安装程序。";
+
+/* Shared helper error code: invalidDirectory */
+"helper_invalid_directory" = "macOS 系统代理服务目录的所有者或权限不正确。";
+
+/* Shared helper error code: permissionsFailed */
+"helper_permissions_failed" = "无法设置系统代理服务文件权限。";
+
+/* Shared helper error code: stopFailed */
+"helper_stop_failed" = "无法停止已安装的系统代理服务。";
+
+/* Shared helper error code: loadFailed */
+"helper_load_failed" = "macOS 未能加载系统代理服务，请在系统设置中检查后台项目权限。";
+
+/* Shared helper error code: bypassTooLarge */
+"helper_bypass_too_large" = "系统代理旁路列表最多 1024 项、合计 64 KiB。";
+
+/* Shared helper error code: bypassInvalid */
+"helper_bypass_invalid" = "旁路条目无效：%@。请填写主机、IP、CIDR 或通配符，勿包含 URL 或空白。";
+
+"simulator_check_runtime" = "请检查 Xcode、runtime 与设备状态。";
+
+"memory_critical" = "严重";
+
+"memory_warning" = "警告";
+
+"transparent_system_operation_failed" = "%@（%@ %ld）。";
+
+"transparent_capture_cleanup_failed" = "捕获失败：%@ 清理失败：%@";

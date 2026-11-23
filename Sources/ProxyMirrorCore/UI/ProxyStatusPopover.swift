@@ -22,25 +22,25 @@ struct ProxyStatusPopover: View {
                         Button { CopyPaste.copy(address) } label: { Image(systemName: "doc.on.doc") }
                             .buttonStyle(.borderless)
                             .foregroundStyle(.secondary)
-                            .help("复制 IP 地址")
-                            .accessibilityLabel("复制 IP 地址")
+                            .help(Strings.Traffic.copyIpAddress)
+                            .accessibilityLabel(Strings.Traffic.copyIpAddress)
                     }
                 }
-                detail("代理端口") {
+                detail(Strings.Traffic.proxyPort) {
                     HStack(spacing: 7) {
                         Text(String(port)).monospacedDigit()
                         Button { openSettings(at: .listenPort) } label: { Image(systemName: "pencil") }
                             .buttonStyle(.borderless)
                             .foregroundStyle(.secondary)
-                            .help("编辑代理端口")
-                            .accessibilityLabel("编辑代理端口")
+                            .help(Strings.Traffic.editProxyPort)
+                            .accessibilityLabel(Strings.Traffic.editProxyPort)
                     }
                 }
-                detail("监听范围") {
-                    Text(lan.map { "本机与 \($0.device)" } ?? "仅本机")
+                detail(Strings.Traffic.listeningScope) {
+                    Text(lan.map { Strings.Traffic.thisMacAnd(String(describing: $0.device)) } ?? Strings.Traffic.thisMacOnly)
                 }
-                detail("HTTP 模式") {
-                    Picker("HTTP 模式", selection: Binding(
+                detail(Strings.Traffic.httpMode) {
+                    Picker(Strings.Traffic.httpMode, selection: Binding(
                         get: { settings.http2Enabled },
                         set: { enabled in
                             settings.http2Enabled = enabled
@@ -60,29 +60,29 @@ struct ProxyStatusPopover: View {
             Divider()
 
             VStack(spacing: 8) {
-                switchRow(isRecording ? "正在录制" : "录制", isOn: Binding(
+                switchRow(isRecording ? Strings.Traffic.recording2 : Strings.Traffic.record, isOn: Binding(
                     get: { isRecording },
                     set: { if $0 != isRecording { appState.toggleRecording() } }))
-                switchRow(appState.systemProxyBusy ? "macOS 代理切换中…" : "macOS 代理", isOn: Binding(
+                switchRow(appState.systemProxyBusy ? Strings.Traffic.switchingMacosProxy2 : Strings.Traffic.macosProxy, isOn: Binding(
                     get: { appState.systemProxyActive },
                     set: { enabled in
                         if enabled { appState.startSystemProxy() } else { appState.stopSystemProxy() }
                     }))
                     .disabled(!appState.proxyRunning || appState.systemProxyBusy || appState.transparentProxyNeedsStop)
-                switchRow("网络扩展", isOn: Binding(
+                switchRow(Strings.Traffic.networkExtension, isOn: Binding(
                     get: { appState.transparentProxyNeedsStop },
                     set: { if $0 != appState.transparentProxyNeedsStop { appState.toggleTransparentProxy() } }))
-                    .disabled(!TransparentProxyController.isAvailable || appState.systemProxyBusy || appState.systemProxyActive)
-                    .help(TransparentProxyController.isAvailable ? "透明抓包" : "此版本未包含网络扩展")
+                    .disabled(!TransparentProxyController.isAvailable || appState.systemProxyBusy)
+                    .help(TransparentProxyController.isAvailable ? Strings.Traffic.transparentCapture : Strings.Traffic.thisBuildDoesNotIncludeTheNetworkExtension)
             }
 
             HStack {
-                Button(appState.proxyRunning ? "停止监听" : "启动监听", action: appState.toggleProxy)
+                Button(appState.proxyRunning ? Strings.Traffic.stopListening : Strings.Traffic.startListening, action: appState.toggleProxy)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .disabled(appState.systemProxyBusy)
                 Spacer()
-                Button("高级设置…") { openSettings(at: .bodyLimit) }
+                Button(Strings.Traffic.advancedSettings) { openSettings(at: .bodyLimit) }
                     .buttonStyle(.borderless)
                     .foregroundStyle(Color.accentColor)
             }
@@ -92,7 +92,7 @@ struct ProxyStatusPopover: View {
         .font(.system(size: 13))
         .padding(.vertical, 13)
         .padding(.horizontal, 17)
-        .frame(width: 298)
+        .frame(width: 360)
     }
 
     private func detail<Value: View>(_ name: String, @ViewBuilder value: () -> Value) -> some View {

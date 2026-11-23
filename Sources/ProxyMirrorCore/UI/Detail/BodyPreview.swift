@@ -125,34 +125,33 @@ struct RawMessageHeadView: View, Equatable {
     }
 }
 
-/// Limits how much selectable text the main thread lays out at once. The task
-/// key changes as the current page fills, then remains stable on later appends.
+/// Rendering stays bounded to the preview limit. A single scrollable document
+/// gives Raw and binary views the same character minimap as normal Body text.
 struct BodyPreview: View {
     let data: Data
     let format: BodyPreviewRenderer.Format
     var generation: UInt64 = 0
     var rawHead: RawMessageHead?
+    var includeHead = false
+    var suffixText = ""
     var scrollToPageTop: (() -> Void)?
 
     enum ScrollAnchor: Hashable { case pageTop }
 
-    @State private var page = 0
     @State private var rendered: Rendered?
     @State private var copyTask: Task<Void, Never>?
     @State private var memoryEpoch: UInt64 = 0
     @AppStorage("ui.wordWrap") private var wordWrap = true
     @AppStorage("ui.showInvisibles") private var showInvisibles = false
-    @AppStorage("ui.showMinimap") private var showMinimap = false
 
     private struct Source: Equatable {
         let generation: UInt64
         let format: BodyPreviewRenderer.Format
+        let bytes: Int
     }
 
     private struct Input: Equatable {
         let source: Source
-        let page: Int
-        let range: Range<Int>
         let memoryEpoch: UInt64
     }
 
@@ -162,29 +161,16 @@ struct BodyPreview: View {
     }
 
     var body: some View {
-        let source = Source(generation: generation, format: format)
-        let pages = BodyPreviewRenderer.pageCount(bytes: data.count, format: format)
-        let selected = min(page, pages - 1)
-        let range = BodyPreviewRenderer.range(in: data, format: format, page: selected) ?? 0..<0
-        let input = Input(source: source, page: selected, range: range, memoryEpoch: memoryEpoch)
+        let source = Source(generation: generation, format: format, bytes: data.count)
+        let input = Input(source: source, memoryEpoch: memoryEpoch)
         VStack(alignment: .leading, spacing: 4) {
-            if pages > 1 || !data.isEmpty || rawHead?.startLine.isEmpty == false {
+            if !data.isEmpty || rawHead?.startLine.isEmpty == false {
                 HStack(spacing: 8) {
-                    if pages > 1 {
-                        Button { page = selected - 1 } label: { Image(systemName: "chevron.left") }
-                            .accessibilityLabel("上一页正文")
-                            .disabled(selected == 0)
-                        Text("第 \(selected + 1) / \(pages) 页")
-                            .monospacedDigit()
-                        Button { page = selected + 1 } label: { Image(systemName: "chevron.right") }
-                            .accessibilityLabel("下一页正文")
-                            .disabled(selected + 1 >= pages)
-                    }
                     Spacer(minLength: 0)
                     Button(action: copyPreview) {
-                        Label("复制预览", systemImage: "document.on.document")
+                        Label(Strings.Detail.copyPreview, systemImage: "document.on.document")
                     }
-                    .accessibilityLabel(rawHead == nil ? "复制正文预览" : "复制原文预览")
+                    .accessibilityLabel(rawHead == nil ? Strings.Detail.copyBodyPreview : Strings.Detail.copyRawPreview)
                     .disabled(copyTask != nil)
                 }
                 .font(.caption)
@@ -192,42 +178,30 @@ struct BodyPreview: View {
                 .padding(.horizontal, 10)
                 .id(ScrollAnchor.pageTop)
             }
-            if let rendered, rendered.input.source == source, rendered.input.page == selected {
-                HStack(alignment: .top, spacing: 4) {
-                    if wordWrap || format == .hex {
-                        previewText(rendered.text)
-                    } else {
-                        ScrollView(.horizontal) { previewText(rendered.text).fixedSize(horizontal: true, vertical: false) }
-                    }
-                    if showMinimap && pages > 1 {
-                        VStack(spacing: 2) {
-                            ForEach(0..<pages, id: \.self) { index in
-                                Button { page = index } label: {
-                                    Rectangle().fill(index == selected ? Color.accentColor : Color.secondary.opacity(0.35))
-                                        .frame(width: 28, height: max(2, min(8, 180 / CGFloat(pages))))
-                                }.buttonStyle(.plain).help("转到第 \(index + 1) 页")
-                            }
-                        }.padding(4).accessibilityLabel("正文分页缩略导航")
-                    }
-                }
+            if let rendered, rendered.input.source == source {
+                CodeDocument(text: (includeHead ? rawHead?.text ?? "" : "") + rendered.text + suffixText,
+                             fontSize: format == .hex ? 11 : 12,
+                             wordWrap: wordWrap || format == .hex,
+                             showInvisibles: showInvisibles && format == .text)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !data.isEmpty {
                 ProgressView().controlSize(.small)
                     .padding(.horizontal, 10)
             }
             if data.count > format.limit {
                 let limit = format == .hex ? "64 KiB" : "1 MiB"
-                Text("仅显示前 \(limit) · 捕获 \(data.count) 字节")
+                Text(Strings.Detail.showingFirstCapturedBytes(limit, data.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
             }
         }
-        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: input) {
             guard rendered?.input != input else { return }
             let snapshot = data
             let worker = Task.detached(priority: .userInitiated) {
-                BodyPreviewRenderer.render(snapshot, format: input.source.format, range: input.range)
+                BodyPreviewRenderer.renderAll(snapshot, format: input.source.format)
             }
             let text = await withTaskCancellationHandler {
                 await worker.value
@@ -236,11 +210,7 @@ struct BodyPreview: View {
             }
             if !Task.isCancelled, input.memoryEpoch == memoryEpoch, let text { rendered = Rendered(input: input, text: text) }
         }
-        .onChange(of: source) { _ in
-            page = 0
-            cancelCopy()
-        }
-        .onChange(of: selected) { _ in scrollToPageTop?() }
+        .onChange(of: source.generation) { _ in cancelCopy(); scrollToPageTop?() }
         .onDisappear(perform: cancelCopy)
         .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in
             cancelCopy()
@@ -249,20 +219,14 @@ struct BodyPreview: View {
         }
     }
 
-    private func previewText(_ text: String) -> some View {
-        CodeText(text: text, fontSize: format == .hex ? 10 : 11, wordWrap: wordWrap || format == .hex,
-                 showInvisibles: showInvisibles && format == .text)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-    }
-
     private func copyPreview() {
         let snapshot = data
         let format = format
         let head = rawHead
+        let suffix = suffixText
         copyTask = Task { @MainActor in
             let worker = Task.detached(priority: .userInitiated) {
-                BodyPreviewRenderer.renderAll(snapshot, format: format).map { (head?.text ?? "") + $0 }
+                BodyPreviewRenderer.renderAll(snapshot, format: format).map { (head?.text ?? "") + $0 + suffix }
             }
             let text = await withTaskCancellationHandler {
                 await worker.value

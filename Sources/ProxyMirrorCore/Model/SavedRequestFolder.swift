@@ -9,16 +9,19 @@ struct SavedRequestFolder: Codable, Sendable, Identifiable, Equatable {
 
 struct SavedRequestFolderArchive: Codable, Sendable {
     var format = "proxymirror.saved-request-folders"
-    var version = 1
+    static let currentVersion = 2
+    var version = Self.currentVersion
     var folders: [SavedRequestFolder] = []
     var unfiled: [SessionRecord] = []
     var requestsByFolder: [String: [SessionRecord]] = [:]
     static let fileLimit = 512 * 1024 * 1024
 
-    struct Failure: LocalizedError {
-        let message: String
-        init(_ message: String) { self.message = message }
-        var errorDescription: String? { message }
+    struct Failure: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+        var errorDescription: String? { operationIssue.diagnostic }
+        var message: String { operationIssue.diagnostic }
     }
 
     static func fileURL(for legacy: URL) -> URL {
@@ -33,21 +36,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
             return (archive, false)
         }
         guard FileManager.default.fileExists(atPath: legacy.path) else { return (Self(), false) }
-        let old = try JSONDecoder().decode(LegacySavedFile.self, from: read(legacy))
-        guard old.version == 1 else { throw Failure("旧 Saved 请求文件版本不受支持，原文件未修改。") }
-        let records = old.records
-        var archive = Self()
-        archive.unfiled = try appendPreserving(records, to: [])
-        try archive.validate()
-        // The original legacy file is retained verbatim, including on a failed migration write.
-        return (archive, true)
-    }
-
-    /// The legacy Saved file is the native v1 session wire format. Decode only its snapshot payload;
-    /// a SourceFolders.json (which has no records field) can never enter this migration path.
-    private struct LegacySavedFile: Decodable {
-        let version: Int
-        let records: [SessionRecord]
+        throw Failure(OperationIssue.modelSavedUnsupportedVersion)
     }
 
     static func read(_ url: URL) throws -> Data {
@@ -55,7 +44,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
         defer { try? handle.close() }
         var data = Data()
         while let next = try handle.read(upToCount: 65536), !next.isEmpty {
-            guard data.count + next.count <= fileLimit else { throw Failure("Saved 请求库超过 512 MiB。原文件未修改。") }
+            guard data.count + next.count <= fileLimit else { throw Failure(OperationIssue.modelSavedReadLimit) }
             data.append(next)
         }
         return data
@@ -64,7 +53,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
     func write(to url: URL) throws {
         try validate()
         let data = try JSONEncoder().encode(self)
-        guard data.count <= Self.fileLimit else { throw Failure("Saved 请求库超过 512 MiB，未覆盖原文件。") }
+        guard data.count <= Self.fileLimit else { throw Failure(OperationIssue.modelSavedWriteLimit) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PrivateAppFile.write(data, to: url)
     }
@@ -82,21 +71,21 @@ struct SavedRequestFolderArchive: Codable, Sendable {
     }
 
     func validate() throws {
-        guard format == "proxymirror.saved-request-folders", version == 1, folders.count <= 2000,
-              Set(folders.map(\.id)).count == folders.count else { throw Failure("Saved 请求文件夹格式或版本无效。") }
+        guard format == "proxymirror.saved-request-folders", version == Self.currentVersion, folders.count <= 2000,
+              Set(folders.map(\.id)).count == folders.count else { throw Failure(OperationIssue.modelSavedFormatInvalid) }
         let byID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
         var names = Set<String>()
         for folder in folders {
             let name = folder.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, name.utf8.count <= 512,
                   names.insert((folder.parentID?.uuidString ?? "root") + ":" + name.lowercased()).inserted else {
-                throw Failure("Saved 文件夹名称不能为空、超过 512 字节或与同级文件夹重名。")
+                throw Failure(OperationIssue.modelSavedNameInvalid)
             }
             var parent = folder.parentID
             var seen: Set<UUID> = [folder.id]
             while let id = parent {
                 guard let ancestor = byID[id], seen.insert(id).inserted, seen.count <= 32 else {
-                    throw Failure("Saved 文件夹父级不存在、形成循环或超过 32 层。")
+                    throw Failure(OperationIssue.modelSavedParentInvalid)
                 }
                 parent = ancestor.parentID
             }
@@ -104,14 +93,14 @@ struct SavedRequestFolderArchive: Codable, Sendable {
         var buckets = Set<UUID>()
         for key in requestsByFolder.keys {
             guard let id = UUID(uuidString: key), byID[id] != nil, buckets.insert(id).inserted else {
-                throw Failure("Saved 请求引用了不存在的文件夹，或同一文件夹存在重复记录桶。")
+                throw Failure(OperationIssue.modelSavedBucketInvalid)
             }
         }
         for records in [unfiled] + Array(requestsByFolder.values) {
-            guard Set(records.map(\.id)).count == records.count else { throw Failure("同一 Saved 文件夹内有重复请求 ID。") }
+            guard Set(records.map(\.id)).count == records.count else { throw Failure(OperationIssue.modelSavedFolderDuplicateRequest) }
         }
         let allIDs = unfiled.map(\.id) + requestsByFolder.values.flatMap { $0.map(\.id) }
-        guard Set(allIDs).count == allIDs.count else { throw Failure("Saved 请求库有重复快照 ID。") }
+        guard Set(allIDs).count == allIDs.count else { throw Failure(OperationIssue.modelSavedDuplicateSnapshot) }
     }
 
     @discardableResult
@@ -123,14 +112,14 @@ struct SavedRequestFolderArchive: Codable, Sendable {
 
     mutating func rename(_ id: UUID, name: String) throws {
         try committing { next in
-            guard let index = next.folders.firstIndex(where: { $0.id == id }) else { throw Failure("Saved 文件夹不存在。") }
+            guard let index = next.folders.firstIndex(where: { $0.id == id }) else { throw Failure(OperationIssue.modelSavedFolderMissing) }
             next.folders[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
     mutating func moveFolder(_ id: UUID, parentID: UUID?) throws {
         try committing { next in
-            guard let index = next.folders.firstIndex(where: { $0.id == id }) else { throw Failure("Saved 文件夹不存在。") }
+            guard let index = next.folders.firstIndex(where: { $0.id == id }) else { throw Failure(OperationIssue.modelSavedFolderMissing) }
             next.folders[index].parentID = parentID
         }
     }
@@ -138,7 +127,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
     /// Deleting containers moves every snapshot in the subtree back to Unfiled; no request is discarded.
     mutating func deletePreservingRequests(_ id: UUID) throws {
         try committing { next in
-            guard next.folders.contains(where: { $0.id == id }) else { throw Failure("Saved 文件夹不存在。") }
+            guard next.folders.contains(where: { $0.id == id }) else { throw Failure(OperationIssue.modelSavedFolderMissing) }
             var removing: Set<UUID> = [id]
             var previous = 0
             while removing.count != previous {
@@ -168,7 +157,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
             guard source != destination else { return }
             let sourceRecords = next.records(in: source)
             let moving = sourceRecords.filter { ids.contains($0.id) }
-            guard moving.count == ids.count else { throw Failure("部分所选 Saved 请求已不存在，请刷新后重试。") }
+            guard moving.count == ids.count else { throw Failure(OperationIssue.modelSavedSelectionMissing) }
             if !copy { next.setRecords(sourceRecords.filter { !ids.contains($0.id) }, in: source) }
             try next.add(moving, to: destination)
         }
@@ -183,7 +172,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
     }
 
     private func requireFolder(_ id: UUID?) throws {
-        if let id, !folders.contains(where: { $0.id == id }) { throw Failure("目标 Saved 文件夹不存在。") }
+        if let id, !folders.contains(where: { $0.id == id }) { throw Failure(OperationIssue.modelSavedTargetMissing) }
     }
 
     /// A collision represents two independently edited snapshots: keep both, assigning the incoming copy a new ID.
@@ -194,7 +183,7 @@ struct SavedRequestFolderArchive: Codable, Sendable {
             var value = record
             if !ids.insert(value.id).inserted {
                 guard var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any] else {
-                    throw Failure("无法复制 Saved 请求快照。")
+                    throw Failure(OperationIssue.modelSavedCopyFailed)
                 }
                 object["id"] = UUID().uuidString
                 value = try JSONDecoder().decode(SessionRecord.self, from: JSONSerialization.data(withJSONObject: object))

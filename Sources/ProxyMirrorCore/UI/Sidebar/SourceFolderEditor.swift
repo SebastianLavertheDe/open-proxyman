@@ -29,12 +29,12 @@ struct SourceFolderEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(folderID == nil ? "新建来源文件夹" : "编辑来源文件夹").font(.headline)
-            TextField("文件夹名称", text: $name)
-            TextField("搜索已捕获的来源", text: $search)
+            Text(folderID == nil ? Strings.Traffic.newSourceFolder : Strings.Traffic.editSourceFolder).font(.headline)
+            TextField(Strings.Traffic.folderName, text: $name)
+            TextField(Strings.Traffic.searchCapturedSources, text: $search)
             let items = candidates
             if items.isEmpty {
-                Text(search.isEmpty ? "捕获流量后可添加应用或域名。" : "未找到匹配来源。")
+                Text(search.isEmpty ? Strings.Traffic.captureTrafficToAddApplicationsOrDomains : Strings.Traffic.noMatchingSources)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 160)
             } else {
@@ -50,10 +50,10 @@ struct SourceFolderEditor: View {
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
-                Text("已选 \(selected.count) 个来源").font(.caption).foregroundStyle(.secondary)
+                Text(Strings.Traffic.sourcesSelected(selected.count)).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") { save() }
+                Button(Strings.Traffic.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Traffic.save) { save() }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
@@ -68,7 +68,7 @@ struct SourceFolderEditor: View {
             if folderID == nil { store.filterMode = .folder(id) }
             dismiss()
         } catch let failure {
-            error = failure.localizedDescription
+            error = LocalizedErrorPresentation.message(for: failure)
         }
     }
 }

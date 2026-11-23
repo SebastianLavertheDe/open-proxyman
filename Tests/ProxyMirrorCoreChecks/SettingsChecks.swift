@@ -19,6 +19,12 @@ func checkSettings(_ test: CoreAssertions) {
     test.equal(restored["HTTPProxy"] as? String, "original", "Restores previous HTTP endpoint")
     test.equal(restored["HTTPSProxy"] as? String, "external", "Preserves external HTTPS change")
     test.equal(restored["ExceptionsList"] as? [String], ["localhost"], "Preserves exception list")
+    let disabled = SystemProxySettings.restoredConfiguration(current, original: original,
+                                                             ownedPort: 9090, restorePrevious: false)
+    test.expect(disabled["HTTPEnable"] as? Int == 0 && disabled["HTTPProxy"] == nil && disabled["HTTPPort"] == nil,
+                "Disabling previous-proxy restoration removes only the application's owned HTTP endpoint")
+    test.equal(disabled["HTTPSProxy"] as? String, "external", "Disable-owned preserves a third-party HTTPS change")
+    test.equal(disabled["HTTPSPort"] as? Int, 8080, "Disable-owned preserves a third-party HTTPS port")
 
     let capturedHTTPS: [String: Any] = ["HTTPSEnable": 1, "HTTPSProxy": "127.0.0.1", "HTTPSPort": 9090,
                                        "ProxyAutoConfigEnable": 1]
@@ -39,6 +45,37 @@ func checkSettings(_ test: CoreAssertions) {
     test.equal(SettingsSearchTarget.results(for: "HTTP/2").first, .http2, "Settings search locates HTTP/2")
     test.equal(SettingsSearchTarget.results(for: "PAC 自动代理配置").first, .upstreamProxy, "Settings search locates PAC")
     test.expect(SettingsSearchTarget.results(for: "no-matching-setting").isEmpty, "Settings search reports no results")
+    checkSettingsSearchDestinations(test)
+}
+
+private func checkSettingsSearchDestinations(_ test: CoreAssertions) {
+    let destinations: [(query: String, control: SettingsSearchTarget, page: PreferencesPage, sheet: Bool)] = [
+        ("menu bar", .menuBar, .general, false), ("菜单栏", .menuBar, .general, false),
+        ("truncation", .truncation, .general, false), ("截断样式", .truncation, .general, false),
+        ("Apple traffic", .appleTraffic, .advanced, false), ("Apple 流量", .appleTraffic, .advanced, false),
+        ("MCP privacy", .mcpPrivacy, .mcp, false), ("AI 脱敏", .mcpPrivacy, .mcp, false),
+        ("脱敏 敏感头", .privacy, .privacy, false),
+        ("h2c", .h2c, .advanced, true), ("明文上游", .h2c, .advanced, true),
+        ("HTTP/2", .http2, .general, false),
+        ("Content layout", .contentLayout, .general, false),
+        ("Preserve original headers", .copyBehavior, .tools, false),
+        ("Use monospaced font", .displayBehavior, .appearance, false),
+        ("Scroll beyond last line", .displayBehavior, .appearance, false),
+        ("Warn before quitting", .appBehavior, .general, false)
+    ]
+    for destination in destinations {
+        let result = SettingsSearchTarget.results(for: destination.query).first
+        // PreferencesSetting and both ScrollViewReader paths use this same stable control ID.
+        test.expect(result?.id == destination.control.id && result?.page == destination.page
+                    && result?.opensConnectionSettings == destination.sheet,
+                    "Settings query \(destination.query) routes to its actual page, sheet and control ID")
+    }
+    for query in ["menu bar", "truncation", "Apple traffic"] {
+        test.expect(!SettingsSearchTarget.results(for: query).contains(.displayBehavior),
+                    "Moved setting \(query) no longer points to the appearance group")
+    }
+    test.expect(!SettingsSearchTarget.results(for: "redact sensitive").contains(.copyBehavior),
+                "Redaction search no longer points to tools after privacy controls moved")
 }
 
 

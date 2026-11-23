@@ -7,8 +7,8 @@ enum SavedRequestMenu {
     static func add(to menu: NSMenu, store: TrafficStore, transactions: [Transaction], reportError: @escaping (String) -> Void) {
         guard !transactions.isEmpty else { return }
         let source = store.activeSavedRequestFolderID
-        menu.addSubmenu("复制到 Saved 请求文件夹") { submenu in
-            submenu.addAction("Saved（未分组）") { perform(reportError) { try store.copyRequests(transactions, toSavedFolder: nil) } }
+        menu.addSubmenu(Strings.Traffic.copyToSavedRequestFolder) { submenu in
+            submenu.addAction(Strings.Traffic.savedUngrouped) { perform(reportError) { try store.copyRequests(transactions, toSavedFolder: nil) } }
             for folder in store.savedRequestFolders {
                 submenu.addAction(store.savedRequestFolderPath(folder.id)) {
                     perform(reportError) { try store.copyRequests(transactions, toSavedFolder: folder.id) }
@@ -16,8 +16,8 @@ enum SavedRequestMenu {
             }
         }
         if store.isBrowsingSavedRequests {
-            menu.addSubmenu("移动到 Saved 请求文件夹") { submenu in
-                submenu.addAction("Saved（未分组）", enabled: source != nil) {
+            menu.addSubmenu(Strings.Traffic.moveToSavedRequestFolder) { submenu in
+                submenu.addAction(Strings.Traffic.savedUngrouped, enabled: source != nil) {
                     perform(reportError) { try store.transferSavedRequests(ids: Set(transactions.map(\.id)), from: source, to: nil, copy: false) }
                 }
                 for folder in store.savedRequestFolders {
@@ -29,6 +29,6 @@ enum SavedRequestMenu {
         }
     }
     private static func perform(_ report: (String) -> Void, operation: () throws -> Void) {
-        do { try operation() } catch { report(error.localizedDescription) }
+        do { try operation() } catch { report(LocalizedErrorPresentation.message(for: error)) }
     }
 }

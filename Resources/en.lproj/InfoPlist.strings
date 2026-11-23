@@ -1,0 +1,6 @@
+/* App-owned metadata; system UI selects its language independently. */
+"CFBundleDisplayName" = "ProxyMirror";
+"NSAppleEventsUsageDescription" = "ProxyMirror opens Terminal or iTerm windows configured with the proxy.";
+"NSSystemExtensionUsageDescription" = "ProxyMirror uses this extension to capture TCP connections when transparent proxying is enabled.";
+"ProxyMirror Session" = "ProxyMirror Session";
+"ProxyMirror HAR" = "ProxyMirror HAR";

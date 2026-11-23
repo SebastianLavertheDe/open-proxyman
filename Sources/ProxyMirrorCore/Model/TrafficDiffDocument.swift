@@ -3,10 +3,21 @@ import Foundation
 /// Bounded comparison input. Captured wire bytes remain unchanged.
 enum TrafficDiffDocument {
     enum Component: String, CaseIterable, Identifiable {
-        case url = "URL", request = "请求", response = "响应"
-        case requestHeaders = "请求头", responseHeaders = "响应头"
-        case requestBody = "请求正文", responseBody = "响应正文"
+        case url, request, response
+        case requestHeaders, responseHeaders
+        case requestBody, responseBody
         var id: String { rawValue }
+        var localizedTitle: String {
+            switch self {
+            case .url: return Strings.Models.diffComponentUrl
+            case .request: return Strings.Models.diffComponentRequest
+            case .response: return Strings.Models.diffComponentResponse
+            case .requestHeaders: return Strings.Models.diffComponentRequestHeaders
+            case .responseHeaders: return Strings.Models.diffComponentResponseHeaders
+            case .requestBody: return Strings.Models.diffComponentRequestBody
+            case .responseBody: return Strings.Models.diffComponentResponseBody
+            }
+        }
     }
 
     enum Change: Equatable, Sendable { case equal, removed, inserted }
@@ -56,7 +67,7 @@ enum TrafficDiffDocument {
         guard !headersOnly else { return bounded(result) }
         if !bodyOnly { result.append("") }
         guard let data = InspectionBody.data(for: transaction, request: request, limit: bodyLimit, prefix: true) else {
-            return result + ["[无法解码正文：压缩数据可能尚未完整捕获或编码不受支持]"]
+            return result + [Strings.Models.diffBodyUndecodable]
         }
         let text: String
         if sortJSON, let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
@@ -75,14 +86,14 @@ enum TrafficDiffDocument {
         let truncated = request ? transaction.requestTruncated : transaction.responseTruncated
         let capturedCount = request ? transaction.requestBody.count : transaction.responseBody.count
         if truncated || capturedCount > bodyLimit || data.count >= bodyLimit {
-            result.append("[… 对比正文最多 256 KiB；捕获或显示可能已截断]")
+            result.append(Strings.Models.diffBodyLimit)
         }
         return bounded(result)
     }
 
     private static func bounded(_ lines: [String]) -> [String] {
         guard lines.count > lineLimit else { return lines }
-        return Array(lines.prefix(lineLimit)) + ["[… 对比最多显示 \(lineLimit) 行]"]
+        return Array(lines.prefix(lineLimit)) + [Strings.Models.diffLineLimit(lineLimit)]
     }
 
     static func compare(_ before: [String], _ after: [String]) -> Result {

@@ -1,0 +1,133 @@
+/* ProxyMirror Guides — maintained native localization resources. */
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_add_the_exported_proxymirror_ca_in_the_client" = "在客户端 CA 管理中添加导出的 ProxyMirror CA；使用 macOS 信任库的客户端可从证书菜单安装到 Mac。代理服务端 CA 与 mTLS 客户端身份是两个独立设置。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_after_app_ready_and_before_creating_a_browserwindow" = "在 app ready 后、创建 BrowserWindow 前，对其实际使用的 session 调用 setProxy。renderer 使用 Chromium 的信任链，应在 Mac 上安装并信任 CA。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_android_emulator_uses_10_0_2_2_physical" = "Android Emulator 使用 10.0.2.2，真机使用 Mac 局域网 IP；两端均需能访问端口 %ld。网络安全配置必须被 debug Manifest 的 android:networkSecurityConfig 引用。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_apple_install_a_certificate_manually_and_enable_trust" = "Apple：手动安装证书并开启信任";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_at_runtime_configure_the_http_https_proxy_and" = "运行时同时设置 HTTPS/HTTP 代理和复制后的 truststore。keytool 会提示输入该 truststore 的原口令；不把口令写入命令历史。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_check_that_java_home_points_to_the_jdk" = "确认 JAVA_HOME 指向应用实际使用的 JDK。复制它的 truststore，再交互式导入测试 CA；保留原 JDK 的信任库。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_choose_a_platform_in_the_certificate_menu_to" = "选择证书菜单中的具体平台，以查看对应网络栈的代理与 CA 配置。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_configure_the_node_proxy_and_ca_separately_for" = "主进程的 Node HTTP 请求需另配 Node 代理与 CA。不要用忽略所有证书错误的开关替代信任配置。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_configuring_a_ca_does_not_automatically_resolve_certificate" = "配置 CA 不会自动解决证书固定、VPN 流量隧道或 QUIC。针对自己的测试应用选择其支持的 HTTPS 代理路径，并核对实际捕获。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_containers_have_their_own_truststores_and_network_namespaces" = "容器有独立信任库和网络命名空间。把 CA 复制进测试镜像；仅在自己的调试镜像中安装。下方 Dockerfile 片段面向已包含 ca-certificates 的 Debian/Ubuntu 系镜像。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_dart_httpclient_can_set_findproxy_explicitly_and_add" = "Dart HttpClient 可以显式指定 findProxy，并用 SecurityContext 添加导出的测试 CA。把 PEM 声明为 debug 项目的 asset。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_docker_container_ca_certificates" = "Docker：容器 CA 证书";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_docker_desktop_normally_reaches_the_mac_through_host" = "Docker Desktop 中通常通过 host.docker.internal 访问 Mac。确认 ProxyMirror 监听地址、局域网授权和容器来源 IP 允许该连接；Linux Docker 需单独配置 host-gateway。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_export_the_ca_certificate_and_send_it_to" = "导出 CA 证书并发送到设备。安装描述文件后，在「设置 → 通用 → 关于本机 → 证书信任设置」为此 CA 开启完全信任。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_firefox_settings_network_settings_manually_configure_proxy_127" = "Firefox → 设置 → 网络设置：手动代理 127.0.0.1:%ld，同时用于 HTTPS。检查不使用代理的地址列表。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_for_ios_debug_builds_install_and_trust_the" = "iOS 调试构建先在设备/模拟器安装并信任 CA，再设置系统代理。Android debug 构建通过 Network Security Config 的 debug-overrides 信任用户 CA。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_for_ios_visionos_preview_trust_the_ca_in" = "iOS/visionOS Preview 需要在实际承载 Preview 的模拟器 runtime 中信任 CA，随后停止并重建 Canvas。macOS Preview 使用 Mac 信任。若 Preview 隐藏设备未出现在 simctl 列表，可先在可见 Simulator 运行同一应用验证；此入口不承诺自动定位所有 Xcode Preview 版本的隐藏设备。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_for_ruby_http_libraries_supporting_proxy_environment_variables" = "对支持环境代理的 Ruby HTTP 库，可为单次进程设置 http_proxy/https_proxy。证书路径应指向项目的测试 CA bundle。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_if_an_app_ignores_the_system_proxy_use" = "应用忽略系统代理时，使用它支持的显式代理配置，或在已签名的 ProxyMirror 中验证透明代理扩展与 VPN 的兼容性。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_in_postman_insomnia_paw_proxy_settings_use_http" = "在 Postman / Insomnia / Paw 的代理设置中填写 HTTP 代理 127.0.0.1:%ld，并检查客户端自己的 bypass 列表。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_in_the_device_wi_fi_settings_set_the" = "在设备 Wi-Fi 中把 HTTP 代理设为此 Mac 的局域网 IP 和当前监听端口；先在 ProxyMirror 中启用局域网访问并授权设备 IP。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_install_the_corresponding_simulator_runtime_in_xcode_start" = "在 Xcode 安装对应 Simulator Runtime，启动目标模拟器，然后从 simctl 列表复制它的 UDID。不要把宿主 Mac 的信任设置当作模拟器已安装证书。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_install_the_exported_ca_from_security_encryption_credentials" = "从「安全 / 加密与凭据 → 安装证书 → CA 证书」安装导出的 CA。Android 新版本的应用通常不会默认信任用户 CA。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_mozilla_firefox_certificates" = "Mozilla：Firefox 证书";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_net_http_can_explicitly_use_net_http_proxy" = "Net::HTTP 可显式使用 Net::HTTP::Proxy 和 ca_file；不要设置 VERIFY_NONE。实际行为取决于应用使用的 HTTP 库。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_node_js_proxy_environment_and_extra_cas" = "Node.js：代理环境与额外 CA";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_point_the_device_wi_fi_proxy_to_the" = "设备 Wi-Fi 代理指向 Mac 局域网 IP；Android Emulator 通常使用 10.0.2.2。启用局域网监听并授权实际来源 IP。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_postman_proxy_configuration" = "Postman：代理配置";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_privacy_security_certificates_view_certificates_authorities_import_the" = "隐私与安全 → 证书 → 查看证书 → 证书颁发机构 → 导入 CA，并允许它识别网站。Firefox 的证书管理与 Mac 信任库可能独立。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_proxymirror_does_not_provide_an_android_vpn_companion" = "ProxyMirror 尚未提供 Android VPN 配套应用。VPN 仅改变路由，不能通用地绕过 Android 系统 CA 写入权限或应用证书固定；不把用户 CA 安装表述为系统 CA 安装。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_react_native_fetch_uses_the_platform_native_network" = "React Native fetch 依赖平台原生网络栈；使用自带证书固定的库时，需要该调试构建提供可测试配置。不要把放宽信任配置加入 release 构建。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_requests_ssl_and_proxies" = "Requests：SSL 与代理";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_requests_uses_http_proxy_https_proxy_and_requests" = "Requests 使用 HTTP_PROXY/HTTPS_PROXY 与 REQUESTS_CA_BUNDLE；需要时把测试 CA 追加到项目自己的 CA bundle 副本，再指向该文件。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_run_add_root_cert_below_then_route_requests" = "执行下方 add-root-cert，并通过「接管系统代理」或应用自身代理配置将请求发送给 ProxyMirror。simctl keychain 是否可用取决于 Xcode 和具体 runtime；以本机 help 和命令结果为准。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_send_a_request_from_your_own_test_app" = "在自己的测试应用发起请求，并为目标域启用 SSL 解密。结束后恢复设备原代理配置。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_send_a_test_request_and_verify_decrypted_traffic" = "发送测试请求，核对 ProxyMirror 中的解密流量和状态；保持客户端 SSL 校验开启。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_set_node_extra_ca_certs_before_starting_node" = "在 Node.js 进程启动前设置 NODE_EXTRA_CA_CERTS。NODE_USE_ENV_PROXY 需支持此选项的 Node.js 版本（22.21+/24+）；各网络库仍应按其代理 API 检查。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_standard_libraries_such_as_urllib_ssl_use_their" = "urllib/ssl 等标准库使用自己的 SSLContext/SSL_CERT_FILE；其他库可能需要显式设置代理。下方示例针对 Requests，不关闭证书校验。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_the_10_0_2_2_address_below_targets" = "下方 10.0.2.2 面向 Android Emulator；iOS Simulator 可按实际连通性使用 127.0.0.1，真机使用 Mac 局域网 IP。插件原生请求需要单独配置。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_the_command_below_targets_the_next_js_node" = "下方命令针对 Next.js 的 Node runtime。Edge runtime、浏览器请求和原生模块是不同网络栈；浏览器需使用系统代理，旧 Node 可按项目所用 Undici/HTTP 客户端配置 ProxyAgent。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_verify_http_and_https_against_a_test_domain" = "先对测试域验证 HTTP 与 HTTPS。不要使用 NODE_TLS_REJECT_UNAUTHORIZED=0 代替 CA 信任。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_vpn_routes_the_system_http_proxy_and_proxymirror" = "VPN 路由、系统 HTTP 代理和 ProxyMirror 透明代理分别生效；确认 VPN 允许应用访问本机代理端口。先用显式 curl 代理确认链路。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_watchos_also_involves_the_paired_iphone_and_its" = "watchOS 还涉及配对 iPhone 和实际网络路径；真机不能用 simctl。tvOS/visionOS 真机请按平台支持的描述文件管理方式安装 CA，并检查代理是否可达。";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_your_own_debug_app_can_trust_user_certificates" = "自己的 debug 应用可以通过 Network Security Config 的 debug-overrides 信任用户证书。可写模拟器可用菜单中的 adb root 安装流程或仓库中的 Magisk 模块脚本。";

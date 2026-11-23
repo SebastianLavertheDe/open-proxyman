@@ -93,7 +93,13 @@ struct SSLApplicationRule: Codable, Identifiable, Equatable {
     enum Action: String, Codable, CaseIterable {
         case decrypt, passthrough
 
-        var title: String { self == .decrypt ? "解密" : "透传" }
+        var title: String { localizedTitle }
+        var localizedTitle: String {
+            switch self {
+            case .decrypt: return Strings.Models.sslActionDecrypt
+            case .passthrough: return Strings.Models.sslActionPassthrough
+            }
+        }
     }
 
     var enabled = true
@@ -404,7 +410,8 @@ final class RulesStore: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: storageURL),
-              let dto = try? JSONDecoder().decode(RuleBackup.self, from: data) else { return }
+              let dto = try? JSONDecoder().decode(RuleBackup.self, from: data),
+              dto.version == RuleBackup.currentVersion else { return }
         apply(dto)
     }
 

@@ -29,7 +29,7 @@ struct SourceSidebar: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     favoritesSection
-                    sectionTitle("所有").padding(.top, 2)
+                    sectionTitle(Strings.Traffic.all).padding(.top, 2)
                     appsSection
                     domainsSection
                     if !store.sourceFolders.isEmpty { foldersSection.padding(.top, 5) }
@@ -45,7 +45,7 @@ struct SourceSidebar: View {
             searchFocused = true
         }
         .contextMenu {
-            Button("清空已固定") { appState.pinnedDomains.removeAll() }
+            Button(Strings.Traffic.clearPinnedSources) { appState.pinnedDomains.removeAll() }
         }
         .sheet(item: $folderRequest) { request in
             SourceFolderEditor(store: store, folder: request.folder, initialMember: request.initialMember)
@@ -53,11 +53,11 @@ struct SourceSidebar: View {
         .sheet(item: $savedFolderRequest) { request in
             SavedRequestFolderEditor(store: store, folder: request.folder, initialParent: request.parent)
         }
-        .alert("文件夹操作", isPresented: Binding(
+        .alert(Strings.Traffic.folderActions, isPresented: Binding(
             get: { folderError != nil },
             set: { if !$0 { folderError = nil } }
         )) {
-            Button("好") { folderError = nil }
+            Button(Strings.Traffic.ok) { folderError = nil }
         } message: {
             Text(folderError ?? "")
         }
@@ -66,7 +66,7 @@ struct SourceSidebar: View {
     private var foldersSection: some View {
         let counts = store.sourceFolderCounts
         return Group {
-            sectionTitle("来源文件夹")
+            sectionTitle(Strings.Traffic.sourceFolders)
             ForEach(store.sourceFolders.filter { folder in
                 matchesSearch(folder.name) || folder.members.contains { matchesSearch($0.name) }
             }) { folder in
@@ -76,10 +76,10 @@ struct SourceSidebar: View {
                     countBadge(counts[folder.id, default: 0])
                 }
                 .contextMenu {
-                    Button("编辑文件夹…") { folderRequest = FolderRequest(folder: folder) }
-                    Button("删除文件夹", role: .destructive) {
+                    Button(Strings.Traffic.editFolder) { folderRequest = FolderRequest(folder: folder) }
+                    Button(Strings.Traffic.deleteFolder, role: .destructive) {
                         do { try store.removeSourceFolder(folder.id) }
-                        catch { folderError = error.localizedDescription }
+                        catch { folderError = LocalizedErrorPresentation.message(for: error) }
                     }
                 }
             }
@@ -95,39 +95,39 @@ struct SourceSidebar: View {
             }
     }
     private func savedOperation(_ action: () throws -> Void) {
-        do { try action() } catch { folderError = error.localizedDescription }
+        do { try action() } catch { folderError = LocalizedErrorPresentation.message(for: error) }
     }
 
     private func folderMembership(_ member: SourceFolderMember) -> some View {
-        Menu("来源文件夹") {
+        Menu(Strings.Traffic.sourceFolders) {
             ForEach(store.sourceFolders) { folder in
                 let contained = folder.members.contains(member.normalized)
-                Button(contained ? "从 \(folder.name) 移出" : "加入 \(folder.name)") {
+                Button(contained ? Strings.Traffic.removeFrom(String(describing: folder.name)) : Strings.Traffic.addTo(String(describing: folder.name))) {
                     do { try store.toggleSourceFolderMembership(member, folderID: folder.id) }
-                    catch { folderError = error.localizedDescription }
+                    catch { folderError = LocalizedErrorPresentation.message(for: error) }
                 }
             }
             if !store.sourceFolders.isEmpty { Divider() }
-            Button("新建文件夹…") { folderRequest = FolderRequest(initialMember: member) }
+            Button(Strings.Traffic.newFolder) { folderRequest = FolderRequest(initialMember: member) }
         }
     }
 
     private var favoritesSection: some View {
         Group {
-            sectionTitle("收藏夹")
+            sectionTitle(Strings.Traffic.favorites)
             sourceButton(.pinned) {
                 sourceSymbol("pin.fill", tint: .blue)
-                Text("已固定")
+                Text(Strings.Traffic.pinned)
                 countBadge(appState.pinnedDomains.count)
             }
             sourceButton(.saved) {
                 sourceSymbol("tray.and.arrow.down.fill", tint: .blue)
-                Text("Saved（未分组）")
+                Text(Strings.Traffic.savedUngrouped)
                 countBadge(store.saved.count)
             }
             .contextMenu {
-                Button("新建请求文件夹…") { savedFolderRequest = SavedFolderRequest() }
-                Button("将当前选择复制到这里", action: { savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: nil) } })
+                Button(Strings.Traffic.newRequestFolder) { savedFolderRequest = SavedFolderRequest() }
+                Button(Strings.Traffic.copyCurrentSelectionHere, action: { savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: nil) } })
                     .disabled(store.selectedTransactions.isEmpty)
             }
             ForEach(savedFolderEntries(parent: nil), id: \.folder.id) { entry in
@@ -137,18 +137,18 @@ struct SourceSidebar: View {
                     countBadge(store.savedRequests(in: entry.folder.id).count)
                 }
                 .contextMenu {
-                    Button("新建子文件夹…") { savedFolderRequest = SavedFolderRequest(parent: entry.folder.id) }
-                    Button("重命名 / 更改父级…") { savedFolderRequest = SavedFolderRequest(folder: entry.folder) }
-                    Button("将当前选择复制到这里") {
+                    Button(Strings.Traffic.newSubfolder) { savedFolderRequest = SavedFolderRequest(parent: entry.folder.id) }
+                    Button(Strings.Traffic.renameChangeParent) { savedFolderRequest = SavedFolderRequest(folder: entry.folder) }
+                    Button(Strings.Traffic.copyCurrentSelectionHere) {
                         savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: entry.folder.id) }
                     }.disabled(store.selectedTransactions.isEmpty)
                     if store.isBrowsingSavedRequests, store.activeSavedRequestFolderID != entry.folder.id {
-                        Button("将当前选择移动到这里") {
+                        Button(Strings.Traffic.moveCurrentSelectionHere) {
                             savedOperation { try store.transferSavedRequests(ids: store.selectedIDs, from: store.activeSavedRequestFolderID, to: entry.folder.id, copy: false) }
                         }.disabled(store.selectedIDs.isEmpty)
                     }
                     Divider()
-                    Button("删除文件夹，请求移回未分组") { savedOperation { try store.deleteSavedRequestFolder(entry.folder.id) } }
+                    Button(Strings.Traffic.deleteFolderAndMoveRequestsToUngrouped) { savedOperation { try store.deleteSavedRequestFolder(entry.folder.id) } }
                 }
             }
             if let archiveName = store.archiveName {
@@ -166,7 +166,7 @@ struct SourceSidebar: View {
         let showChildren = appsExpanded || !search.isEmpty
         let domainsByApp = appDomains()
         return Group {
-            sourceGroup("应用程序", icon: "folder.fill", count: apps.count, expanded: $appsExpanded)
+            sourceGroup(Strings.Traffic.applications, icon: "folder.fill", count: apps.count, expanded: $appsExpanded)
             if showChildren {
                 ForEach(apps, id: \.name) { app in
                     let domains = domainsByApp[app.name] ?? []
@@ -181,7 +181,7 @@ struct SourceSidebar: View {
                                 Text(app.name).lineLimit(1)
                                 Spacer(minLength: 0)
                             }
-                            .help("\(app.name) · \(app.count) 条请求")
+                            .help(Strings.Traffic.requests(app.name, app.count))
                         }
                         .padding(.leading, 25)
                         .background(store.filterMode == .client(app.name) ? ProxymanTheme.sidebarSelection : .clear,
@@ -199,11 +199,11 @@ struct SourceSidebar: View {
     private var domainsSection: some View {
         let domains = store.domainSummary
         return Group {
-            sourceGroup("域名", icon: "globe", count: domains.count, expanded: $domainsExpanded)
+            sourceGroup(Strings.Traffic.domains, icon: "globe", count: domains.count, expanded: $domainsExpanded)
             if domainsExpanded || !search.isEmpty {
                 ForEach(domains.filter { matchesSearch($0.host) }) { item in
                     domainRow(item.host, mode: .domain(item.host), indent: 45)
-                        .help("\(item.host) · \(item.count) 条请求")
+                        .help(Strings.Traffic.requests(item.host, item.count))
                 }
             }
         }
@@ -225,7 +225,7 @@ struct SourceSidebar: View {
         .help(host)
         .contextMenu {
             folderMembership(.domain(host))
-            Button(appState.pinnedDomains.contains(host) ? "取消固定" : "固定到收藏夹") {
+            Button(appState.pinnedDomains.contains(host) ? Strings.Traffic.unpin : Strings.Traffic.pinToFavorites) {
                 if appState.pinnedDomains.contains(host) {
                     appState.pinnedDomains.removeAll { $0 == host }
                 } else {
@@ -256,7 +256,7 @@ struct SourceSidebar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel((expanded ? "折叠" : "展开") + title)
+        .accessibilityLabel((expanded ? Strings.Traffic.collapse : Strings.Traffic.expand) + title)
     }
 
     private func sourceButton<Label: View>(_ mode: TrafficFilterMode, indent: CGFloat = 25,
@@ -313,21 +313,21 @@ struct SourceSidebar: View {
     private var sidebarFooter: some View {
         HStack(spacing: 7) {
             Menu {
-                Button("新建 Saved 请求文件夹…") { savedFolderRequest = SavedFolderRequest() }
-                Button("新建来源文件夹…") { folderRequest = FolderRequest() }
-                Button("全部流量") { store.filterMode = .all; search = "" }
-                Button("生成示例流量") { appState.store.addSampleData() }
+                Button(Strings.Traffic.newSavedRequestFolder2) { savedFolderRequest = SavedFolderRequest() }
+                Button(Strings.Traffic.newSourceFolder2) { folderRequest = FolderRequest() }
+                Button(Strings.Traffic.allTraffic) { store.filterMode = .all; search = "" }
+                Button(Strings.Traffic.generateSampleTraffic) { appState.store.addSampleData() }
             } label: {
                 Image(systemName: "plus").font(.system(size: 12))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("添加来源")
+            .accessibilityLabel(Strings.Traffic.addSource)
             HStack(spacing: 5) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.secondary)
-                TextField("筛选 (⇧⌘F)", text: $search)
+                TextField(Strings.Traffic.filterF2, text: $search)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .onExitCommand { search = "" }

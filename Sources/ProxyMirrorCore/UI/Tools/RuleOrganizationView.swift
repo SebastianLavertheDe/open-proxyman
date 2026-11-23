@@ -4,14 +4,14 @@ struct ToolsEnableMenu: View {
     @State private var revision = UUID()
     @State private var onlyEnabled = false
     var body: some View {
-        Menu("启用 / 停用工具") {
-            Toggle("只显示已启用工具", isOn: $onlyEnabled)
+        Menu(Strings.Tools.enableDisableTools) {
+            Toggle(Strings.Tools.showEnabledToolsOnly, isOn: $onlyEnabled)
             Divider()
             ForEach(RuleBackup.Section.allCases.filter { $0 != .settings && $0 != .organization && $0 != .h2c }, id: \.self) { tool in
                 if !onlyEnabled || RuleOrganizationStore.shared.isEnabled(tool.rawValue) {
                     Toggle(tool.title, isOn: Binding(get: { RuleOrganizationStore.shared.isEnabled(tool.rawValue) }, set: { value in
                         do { try RuleOrganizationStore.shared.setEnabled(value, tool: tool.rawValue); revision = UUID() }
-                        catch { AppState.shared.systemProxyMessage = error.localizedDescription }
+                        catch { AppState.shared.systemProxyMessage = LocalizedErrorPresentation.message(for: error) }
                     }))
                 }
             }
@@ -31,59 +31,59 @@ struct RuleOrganizationView: View {
     private var folders: [RuleFolder] { state.folders.filter { $0.tool == tool.rawValue } }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("工具", selection: $tool) {
+            Picker(Strings.Tools.tools, selection: $tool) {
                 ForEach(RuleBackup.Section.allCases.filter { ![.settings, .noCaching, .organization, .external, .h2c].contains($0) }, id: \.self) { Text($0.title).tag($0) }
             }.onChange(of: tool) { _ in selected = nil }
-            Toggle("启用此工具", isOn: Binding(get: { !state.disabledTools.contains(tool.rawValue) }, set: { enabled in
+            Toggle(Strings.Tools.enableThisTool, isOn: Binding(get: { !state.disabledTools.contains(tool.rawValue) }, set: { enabled in
                 perform { try RuleOrganizationStore.shared.setEnabled(enabled, tool: tool.rawValue) }
             }))
             HSplitView {
                 VStack(alignment: .leading) {
-                    Text("文件夹").font(.headline)
+                    Text(Strings.Tools.folder).font(.headline)
                     List(selection: $selected) {
                         ForEach(orderedFolders(parent: nil), id: \.folder.id) { entry in
                             Text(String(repeating: "　", count: entry.depth) + (entry.folder.enabled == false ? "○ " : "📁 ") + entry.folder.name)
                                 .tag(entry.folder.id)
                         }
                     }
-                    TextField("文件夹名称", text: $folderName)
+                    TextField(Strings.Tools.folderName, text: $folderName)
                     HStack {
-                        Button("新建") { perform { _ = try RuleOrganizationStore.shared.createFolder(tool: tool.rawValue, name: folderName) } }
-                        Button("新建子目录") { perform { _ = try RuleOrganizationStore.shared.createFolder(tool: tool.rawValue, name: folderName, parentID: selected) } }.disabled(selected == nil)
+                        Button(Strings.Tools.new2) { perform { _ = try RuleOrganizationStore.shared.createFolder(tool: tool.rawValue, name: folderName) } }
+                        Button(Strings.Tools.newSubfolder) { perform { _ = try RuleOrganizationStore.shared.createFolder(tool: tool.rawValue, name: folderName, parentID: selected) } }.disabled(selected == nil)
                     }.disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     HStack {
-                        Button("重命名") { if let selected { perform { try RuleOrganizationStore.shared.renameFolder(id: selected, name: folderName) } } }.disabled(selected == nil || folderName.isEmpty)
-                        Button("启用 / 停用") {
+                        Button(Strings.Tools.rename) { if let selected { perform { try RuleOrganizationStore.shared.renameFolder(id: selected, name: folderName) } } }.disabled(selected == nil || folderName.isEmpty)
+                        Button(Strings.Tools.enableDisable) {
                             if let folder = folders.first(where: { $0.id == selected }) {
                                 perform { try RuleOrganizationStore.shared.setFolderEnabled(id: folder.id, enabled: folder.enabled == false) }
                             }
                         }.disabled(selected == nil)
-                        Button("删除", role: .destructive) { if let selected { perform { try RuleOrganizationStore.shared.deleteFolder(id: selected) }; self.selected = nil } }.disabled(selected == nil)
+                        Button(Strings.Tools.delete, role: .destructive) { if let selected { perform { try RuleOrganizationStore.shared.deleteFolder(id: selected) }; self.selected = nil } }.disabled(selected == nil)
                     }
                 }.frame(minWidth: 260)
                 VStack(alignment: .leading) {
-                    Text("规则归属").font(.headline)
+                    Text(Strings.Tools.ruleMembership).font(.headline)
                     List {
                         ForEach(ruleRows, id: \.id) { row in
                             HStack {
                                 Text(row.title).lineLimit(2)
                                 Spacer()
-                                Picker("文件夹", selection: Binding(get: { state.assignments[tool.rawValue + ":" + row.id] ?? "" }, set: { folder in
+                                Picker(Strings.Tools.folder, selection: Binding(get: { state.assignments[tool.rawValue + ":" + row.id] ?? "" }, set: { folder in
                                     perform { try RuleOrganizationStore.shared.assign(ruleID: row.id, tool: tool.rawValue, folderID: UUID(uuidString: folder)) }
                                 })) {
-                                    Text("未分组").tag("")
+                                    Text(Strings.Tools.ungrouped).tag("")
                                     ForEach(orderedFolders(parent: nil), id: \.folder.id) { entry in
                                         Text(String(repeating: "　", count: entry.depth) + entry.folder.name).tag(entry.folder.id.uuidString)
                                     }
                                 }.labelsHidden().frame(width: 180)
                             }
                         }
-                        if ruleRows.isEmpty { Text("此工具还没有规则。先在工具编辑器中添加规则。").foregroundStyle(.secondary) }
+                        if ruleRows.isEmpty { Text(Strings.Tools.thisToolHasNoRulesYetAddARule).foregroundStyle(.secondary) }
                     }
                 }.frame(minWidth: 380)
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
-            Text("停用文件夹会同时停用其子目录中的规则。删除文件夹后，规则回到未分组。").font(.caption).foregroundStyle(.secondary)
+            Text(Strings.Tools.disablingAFolderAlsoDisablesRulesInItsSubfolders).font(.caption).foregroundStyle(.secondary)
         }.padding(16).frame(minWidth: 760, minHeight: 480)
         .onReceive(NotificationCenter.default.publisher(for: .ruleOrganizationChanged)) { _ in state = RuleOrganizationStore.shared.snapshot() }
     }
@@ -116,6 +116,6 @@ struct RuleOrganizationView: View {
     }
     private func perform(_ action: () throws -> Void) {
         do { try action(); state = RuleOrganizationStore.shared.snapshot(); error = nil }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = LocalizedErrorPresentation.message(for: error) }
     }
 }

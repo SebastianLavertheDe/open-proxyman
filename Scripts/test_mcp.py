@@ -61,6 +61,55 @@ def call(endpoint, token, name, arguments=None, *, is_error=False):
         return text
 
 
+def check_privacy_and_live_control(binary, env, endpoint, token, proxy_port, origin_url, support):
+    path = "/mcp/privacy?token=url-secret"
+    body = json.dumps({"nested": {"password": "body-secret", "ok": "visible"}}).encode()
+    conn = http.client.HTTPConnection(LOOPBACK, proxy_port, timeout=5)
+    try:
+        conn.request("POST", origin_url + path, body, {"Authorization": "Bearer header-secret", "Cookie": "sid=cookie-secret",
+                     "Content-Type": "application/json", "Connection": "close"})
+        response = conn.getresponse()
+        require(response.status == 200, "privacy capture failed")
+        response.read()
+    finally:
+        conn.close()
+    row = captured_row(binary, env, "/mcp/privacy")
+    raw = json.loads(command(binary, env, "flow", "--id", row["id"]))
+    detail = call(endpoint, token, "get_flow", {"id": row["id"]})
+    require(detail.get("_mcpRedacted") is True, "Redacted flow metadata is not labeled")
+    require(detail["requestHeaders"] != raw["requestHeaders"] and detail["requestBytes"] == raw["requestBytes"],
+            "MCP details should retain original captured byte metadata")
+    require(any(h["value"] == "Bearer header-secret" for h in raw["requestHeaders"]), "MCP privacy modified internal/CLI records")
+    require("body-secret" in base64.b64decode(raw["requestBody"]).decode(), "MCP privacy modified original body")
+    safe = json.dumps(detail) + base64.b64decode(detail["requestBody"]).decode() + base64.b64decode(detail["responseBody"]).decode()
+    for secret in ["url-secret", "header-secret", "cookie-secret", "body-secret"]:
+        require(secret not in safe, "MCP detail leaked " + secret)
+    summary = call(endpoint, token, "query_flows", {"id": row["id"]})
+    require("url-secret" not in json.dumps(summary), "MCP summary leaked the URL query")
+    code = call(endpoint, token, "copy_as_code", {"id": row["id"], "language": "curl"})["code"]
+    require("header-secret" not in code and "body-secret" not in code and "url-secret" not in code, "MCP generated code leaked credentials")
+    replay = json.loads(subprocess.check_output(["/bin/sh", "-c", code], env=env, stderr=subprocess.DEVNULL, timeout=10))
+    require("body-secret" not in replay["body"] and "visible" in replay["body"], "MCP generated shell command cannot replay the sanitized body")
+    exported = call(endpoint, token, "export_flows", {"id": row["id"], "format": "json"})
+    require("header-secret" not in json.dumps(exported), "MCP export leaked sensitive headers")
+    passed("MCP private summary/detail/export/code with original CLI records retained")
+
+    stopped = json.loads(command(binary, env, "mcp", "disable"))
+    require(not stopped["enabled"] and not stopped["running"] and not (support / ".control/mcp.json").exists(), "MCP disable did not stop live HTTP transport")
+    request = {"jsonrpc": "2.0", "id": 99, "method": "tools/call", "params": {"name": "query_flows", "arguments": {}}}
+    stdio = subprocess.run([binary, "mcp", "stdio"], env=env, input=json.dumps(request) + "\n",
+                           text=True, capture_output=True, timeout=10, check=True)
+    require(json.loads(stdio.stdout)["result"]["isError"], "Disabled MCP still allowed stdio data access")
+    restarted = json.loads(command(binary, env, "mcp", "enable"))
+    require(restarted["enabled"] and restarted["running"], "MCP could not restart live")
+    config = json.loads(command(binary, env, "mcp", "config"))
+    fresh_endpoint, fresh_token = config["url"], config["headers"]["Authorization"]
+    require(fresh_token != token, "Restarted MCP reused the previous token")
+    require(call(fresh_endpoint, fresh_token, "status")["listening"], "Restarted HTTP MCP cannot access the running listener")
+    passed("Live MCP disable/restart, stdio access gate and rotated HTTP configuration")
+    return fresh_endpoint, fresh_token
+
+
 class RecordingUpstream(socketserver.BaseRequestHandler):
     """HTTP CONNECT upstream which records tunnels and relays to the test origin."""
     def handle(self):
@@ -233,7 +282,7 @@ def check_native_logs(binary, env, endpoint, token, proxy_port, origin_url):
     for index in range(105):
         require(proxy_request(proxy_port, origin_url + f"/native-logs/{index}")[0] == 200, "native log fixture failed")
     all_logs = json.loads(command(binary, env, "export", "logs", "all"))
-    require(all_logs["version"] == 1 and len(all_logs["records"]) > 100, "logs export retained the flow query's 100-row limit")
+    require(all_logs["version"] == 2 and len(all_logs["records"]) > 100, "logs export retained the flow query's 100-row limit")
     require("pinnedDomains" in all_logs and "selected" in all_logs, "native logs lost session metadata")
     latest = json.loads(command(binary, env, "export", "flows", "--format", "json", "--limit", "1"))
     require(len(latest) == 1, "flows pagination was changed by logs export")
@@ -248,7 +297,7 @@ def check_native_logs(binary, env, endpoint, token, proxy_port, origin_url):
         require({group["domain"] for group in bundle["sessions"]} == {"alpha.logs.pm.test", "beta.logs.pm.test"}, "domain grouping/filtering failed")
         require(sum(len(group["session"]["records"]) for group in bundle["sessions"]) == 3, "domain grouping lost or duplicated a flow")
         for group in bundle["sessions"]:
-            require(group["session"]["version"] == 1 and all(row["host"] == group["domain"] for row in group["session"]["records"]),
+            require(group["session"]["version"] == 2 and all(row["host"] == group["domain"] for row in group["session"]["records"]),
                     "group is not a complete native session for its domain")
         mcp_bundle = call(endpoint, token, "export_logs", {"scope": "domains", "domains": ["beta.logs.pm.test"]})
         require(len(mcp_bundle["sessions"]) == 1 and len(mcp_bundle["sessions"][0]["session"]["records"]) == 1,
@@ -325,8 +374,9 @@ def run_suite(source, directory, identifier, log_path):
                 exported = json.loads(command(binary, env, "export", "flows", "--format", "har", "--after-id", first["id"], "--limit", "1"))
                 require(len(exported["log"]["entries"]) == 1, "CLI incremental HAR contains wrong flows")
                 session = json.loads(command(binary, env, "export", "logs", "--format", "session"))
-                require(session["version"] == 1 and isinstance(session["records"][0]["startedAt"], (int, float)), "native session date encoding is incompatible")
+                require(session["version"] == 2 and isinstance(session["records"][0]["startedAt"], (int, float)), "native session date encoding is incompatible")
                 passed("MCP full details/code generation and CLI incremental HAR/native session export")
+                endpoint, token = check_privacy_and_live_control(binary, env, endpoint, token, proxy_port, origin_url, support)
 
                 created = call(endpoint, token, "rules", {"tool": "blockList", "action": "add", "rule": {"pattern": origin_url + "/mcp/blocked"}})
                 rule_id = created["rule"]["id"]

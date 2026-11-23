@@ -4,9 +4,9 @@ import ImageIO
 
 enum JSONTreeAvailability {
     static func unavailableReason(bytes: Int, complete: Bool, truncated: Bool) -> String? {
-        if truncated { return "正文已截断，无法显示完整 JSON 树。" }
-        if !complete { return "完整接收正文后可查看 JSON 树。" }
-        if bytes > JSONTreeService.maxInput { return "JSON 树支持最大 256 KiB；可使用正文搜索或 JSON 查询。" }
+        if truncated { return Strings.Detail.theBodyIsTruncatedACompleteJsonTreeCannotBeDisplayed }
+        if !complete { return Strings.Detail.theJsonTreeIsAvailableAfterTheCompleteBodyIsReceived }
+        if bytes > JSONTreeService.maxInput { return Strings.Detail.jsonTreesSupportBodiesUpTo256KibUseBodySearch }
         return nil
     }
 }
@@ -27,7 +27,7 @@ struct BodyContentView: View {
                 Image(systemName: complete ? "tray" : "hourglass")
                     .font(.system(size: 26))
                     .foregroundColor(.secondary.opacity(0.6))
-                Text(complete ? "无 Body" : "接收中…")
+                Text(complete ? Strings.Detail.noBody : Strings.Detail.receiving)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
@@ -99,13 +99,8 @@ struct TextViewer: View {
         let input = Input(revision: revision, pretty: pretty, memoryEpoch: memoryEpoch)
         let formatted = rendered?.formatted
         let displayedText = formatted.map { String($0.characters) } ?? rendered?.plain ?? ""
-        ScrollView(settings.wordWrap ? [.vertical] : [.horizontal, .vertical]) {
-            CodeText(text: displayedText, attributed: formatted, wordWrap: settings.wordWrap,
-                     showInvisibles: settings.showInvisibles)
-                .fixedSize(horizontal: !settings.wordWrap, vertical: false)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-        }
+        CodeDocument(text: displayedText, attributed: formatted)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: input) {
             let worker = Task.detached(priority: .userInitiated) {
                 Self.render(data, pretty: input.pretty)
@@ -122,7 +117,7 @@ struct TextViewer: View {
 
     private static func render(_ data: Data, pretty: Bool) -> Rendered {
         let plain = String(decoding: data.prefix(maxRender), as: UTF8.self)
-            + (data.count > maxRender ? "\n\n…（超过 1MB，仅显示前 1MB）" : "")
+            + (data.count > maxRender ? Strings.Detail.over1MibShowingTheFirst1Mib : "")
         guard pretty, data.count <= maxRender, !Task.isCancelled,
               let obj = try? JSONSerialization.jsonObject(with: data),
               let prettyData = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
@@ -164,10 +159,10 @@ struct ImageViewer: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             } else if failed {
-                Text("无法解码图片")
+                Text(Strings.Detail.unableToDecodeImage)
                     .foregroundColor(.secondary)
             } else {
-                ProgressView(complete ? "正在解码…" : "接收中…")
+                ProgressView(complete ? Strings.Detail.decoding : Strings.Detail.receiving)
                     .controlSize(.small)
             }
         }
@@ -213,13 +208,7 @@ struct HexView: View {
     var generation: UInt64 = 0
 
     var body: some View {
-        ScrollViewReader { scroll in
-            ScrollView {
-                BodyPreview(data: data, format: .hex, generation: generation) {
-                    scroll.scrollTo(BodyPreview.ScrollAnchor.pageTop, anchor: .top)
-                }
-            }
-        }
+        BodyPreview(data: data, format: .hex, generation: generation)
     }
 
     var text: some View {

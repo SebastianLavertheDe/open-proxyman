@@ -54,37 +54,61 @@ extension ExternalProxyConfig {
         enabled && mode != .pac && port == listener && ExternalProxyHost(host)?.isLoopback == true
     }
 
-    var validationError: String? {
+    var validationError: String? { validationIssue?.diagnostic }
+    var localizedValidationError: String? { validationIssue?.localizedPresentation }
+
+    var validationIssue: OperationIssue? {
         if let includedTargets {
-            guard includedTargets.count <= 256 else { return "包含目标最多 256 项。" }
+            guard includedTargets.count <= 256 else {
+                return Self.validationProblem("external_target_limit") { Strings.Integration.externalTargetLimit }
+            }
             if let invalid = includedTargets.first(where: { ExternalProxyTarget($0) == nil }) {
-                return "包含目标格式无效：\(String(invalid.prefix(128)))"
+                let target = String(invalid.prefix(128))
+                return Self.validationProblem("external_invalid_target", arguments: [target]) { Strings.Integration.externalInvalidTarget(target) }
             }
         }
         if enabled, effectiveRoutingMode == .inclusive, includedTargets?.isEmpty != false {
-            return "仅包含列表模式至少需要一个目标主机或 URL。"
+            return Self.validationProblem("external_inclusive_required") { Strings.Integration.externalInclusiveRequired }
         }
         if let invalid = (bypassHosts ?? []).first(where: { pattern in
             if pattern.hasPrefix("*.") {
                 return ExternalProxyHost(String(pattern.dropFirst(2)))?.isDNS != true
             }
             return ExternalProxyHost(pattern) == nil
-        }) { return "直连主机格式无效：\(invalid)" }
-        if mode == .pac { return proxyPACURL == nil ? "请输入 HTTP、HTTPS 或本机文件的 PAC URL。" : nil }
-        guard ExternalProxyHost(host) != nil else { return "请输入主机名、IPv4 或 IPv6 地址。" }
-        guard (1...65535).contains(port) else { return "端口必须在 1–65535 之间。" }
+        }) {
+            return Self.validationProblem("external_invalid_bypass", arguments: [invalid]) { Strings.Integration.externalInvalidBypass(invalid) }
+        }
+        if mode == .pac {
+            return proxyPACURL == nil ? Self.validationProblem("external_pac_required") { Strings.Integration.externalPacRequired } : nil
+        }
+        guard ExternalProxyHost(host) != nil else {
+            return Self.validationProblem("external_host_required") { Strings.Integration.externalHostRequired }
+        }
+        guard (1...65535).contains(port) else {
+            return Self.validationProblem("external_port_range") { Strings.Integration.externalPortRange }
+        }
         guard useAuth else { return nil }
-        if username.isEmpty || password.isEmpty { return "请输入代理用户名和密码。" }
+        if username.isEmpty || password.isEmpty {
+            return Self.validationProblem("external_credentials_required") { Strings.Integration.externalCredentialsRequired }
+        }
         if mode == .socks5 && (username.utf8.count > 255 || password.utf8.count > 255) {
-            return "SOCKS5 用户名和密码各限 255 字节。"
+            return Self.validationProblem("external_socks_credentials_size") { Strings.Integration.externalSocksCredentialsSize }
         }
         if mode != .socks5 && (username.contains(":") || username.utf8.count + password.utf8.count > 4096) {
-            return "HTTP Basic 用户名不能包含冒号，凭据总长限 4096 字节。"
+            return Self.validationProblem("external_basic_credentials") { Strings.Integration.externalBasicCredentials }
         }
         if [username, password].contains(where: { $0.utf8.contains { $0 < 32 || $0 == 127 } }) {
-            return "代理凭据包含控制字符。"
+            return Self.validationProblem("external_control_characters") { Strings.Integration.externalControlCharacters }
         }
         return nil
+    }
+
+    private static func validationProblem(_ key: String, arguments: [CVarArg] = [],
+                                          render: @escaping @Sendable () -> String) -> OperationIssue {
+        let format = GeneratedEnglishFallbacks.value(table: "Integration", key: key)
+        let diagnostic = arguments.isEmpty ? format.replacingOccurrences(of: "%%", with: "%")
+            : String(format: format, locale: Locale(identifier: "en_US_POSIX"), arguments: arguments)
+        return OperationIssue(code: "external_proxy." + key, diagnostic: diagnostic, render: render)
     }
 }
 

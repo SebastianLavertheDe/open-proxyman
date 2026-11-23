@@ -4,14 +4,15 @@ import Foundation
 enum ScriptingPhase: String, Codable, Hashable, CaseIterable, Sendable {
     case request, response, webSocket
 
-    var label: String {
-        switch self {
-        case .request: return "请求"
-        case .response: return "响应"
-        case .webSocket: return "WebSocket"
+    var label: String { localizedTitle }
+        var localizedTitle: String {
+            switch self {
+            case .request: return Strings.Models.scriptingPhaseRequest
+            case .response: return Strings.Models.scriptingPhaseResponse
+            case .webSocket: return Strings.Models.scriptingPhaseWebSocket
+            }
         }
     }
-}
 
 struct ScriptingTarget: Sendable {
     let method: String
@@ -99,13 +100,21 @@ final class ScriptingActivity: ObservableObject {
             if trimmed.hasPrefix("[error]") { return .error }
             if trimmed.hasPrefix("[warn]") { return .warning }
             if ["[log]", "[info]", "[debug]"].contains(where: trimmed.hasPrefix) { return .user }
-            if trimmed.contains("繁忙") { return .warning }
-            if ["已执行", "此阶段", "Mock API 本地响应", "关闭连接", "丢弃帧", "改写帧负载"].contains(where: trimmed.contains) { return .system }
+            if trimmed.hasPrefix("[system]") { return .system }
             return .error
         }
     }
 
-    enum Level: String, CaseIterable { case user = "用户", warning = "警告", error = "错误", system = "系统" }
+    enum Level: String, CaseIterable { case user, warning, error, system
+        var localizedTitle: String {
+            switch self {
+            case .user: return Strings.Models.scriptLevelUser
+            case .warning: return Strings.Models.scriptLevelWarning
+            case .error: return Strings.Models.scriptLevelError
+            case .system: return Strings.Models.scriptLevelSystem
+            }
+        }
+    }
 
     @Published private(set) var entries: [Entry] = []
     @Published var pendingTarget: ScriptingTarget?
@@ -195,15 +204,15 @@ enum ScriptingService {
                 do {
                     let output = try entry.action.run(before, original: result)
                     result = try output.message.applying(to: result)
-                    logs.append("\(plan.phase.label) · \(entry.label) · 已执行")
+                    logs.append("[system] \(plan.phase.rawValue) · \(entry.label) · executed")
                     logs += output.logs.map { "  \($0)" }
-                    if let mock = output.mock { mockResponse = mock; logs.append("请求 · \(entry.label) · Mock API 本地响应"); break }
+                    if let mock = output.mock { mockResponse = mock; logs.append("[system] request · \(entry.label) · mock response"); break }
                 } catch {
                     if let failure = error as? ScriptExecutionFailure { logs += failure.capturedLogs.map { "  \($0)" } }
-                    logs.append("\(plan.phase.label) · \(entry.label) · \(error.localizedDescription)")
+                    logs.append("[error] \(plan.phase.rawValue) · \(entry.label) · \(error.localizedDescription)")
                 }
             }
-            if candidates.count > maxRules { logs.append("此阶段按顺序执行前 \(maxRules) 条脚本") }
+            if candidates.count > maxRules { logs.append("[system] phase script limit: \(maxRules)") }
             report(plan: plan, logs: logs)
             completion(ScriptingResult(head: result.head, body: result.body, graphqlOperationName: operation, logs: logs, mockResponse: mockResponse))
         }
@@ -241,20 +250,20 @@ enum ScriptingService {
             guard let source = entry.action.scriptSource else { continue }
             do {
                 let (value, entryLogs) = try ScriptWorker.runFrame(source: source, message: message)
-                logs.append("WebSocket · \(entry.label) · 已执行")
+                logs.append("[system] WebSocket · \(entry.label) · executed")
                 logs += entryLogs.map { "  \($0)" }
                 if let verdict = interpretFrameValue(value), verdict != .pass {
                     switch verdict {
                     case .close:
                         action = .close
-                        logs.append("WebSocket · \(entry.label) · 关闭连接")
+                        logs.append("[system] WebSocket · \(entry.label) · close")
                     case .drop:
                         action = .drop
-                        logs.append("WebSocket · \(entry.label) · 丢弃帧")
+                        logs.append("[system] WebSocket · \(entry.label) · drop frame")
                     case .modify(let newPayload, let kind):
                         guard newPayload != frame.payload else { continue }
                         action = .modify(payload: newPayload, note: kind)
-                        logs.append("WebSocket · \(entry.label) · 改写帧负载（\(kind)）")
+                        logs.append("[system] WebSocket · \(entry.label) · modify payload (\(kind))")
                     case .pass:
                         continue
                     }
@@ -276,7 +285,7 @@ enum ScriptingService {
         guard let value else { return nil }
         switch value {
         case .bool(false): return .drop
-        case .string(let text): return .modify(payload: Data(text.utf8), note: "文本")
+        case .string(let text): return .modify(payload: Data(text.utf8), note: "text")
         case .object(let dict):
             if case .string(let action)? = dict["action"] {
                 switch action {
@@ -289,10 +298,10 @@ enum ScriptingService {
             }
             if case .bool(false)? = dict["drop"] { return .drop }
             if case .string(let base64)? = dict["base64"], let data = Data(base64Encoded: base64) {
-                return .modify(payload: data, note: "二进制")
+                return .modify(payload: data, note: "binary")
             }
             if case .string(let body)? = dict["body"] {
-                return .modify(payload: Data(body.utf8), note: "文本")
+                return .modify(payload: Data(body.utf8), note: "text")
             }
             return nil
         case .null, .bool(true), .number, .array:
@@ -305,7 +314,7 @@ enum ScriptingService {
                                  work: @escaping @Sendable () -> Void) {
         guard !candidates.isEmpty else { busy([]); return }
         guard capacity.wait(timeout: .now()) == .success else {
-            let logs = ["\(plan.phase.label) · 脚本执行繁忙，原报文继续处理"]
+            let logs = ["[warn] \(plan.phase.rawValue) · script execution busy; original message continues"]
             report(plan: plan, logs: logs)
             busy(logs)
             return
@@ -398,10 +407,10 @@ private struct WireMessage: Codable {
         guard headers.count <= 512,
               headers.allSatisfy({ !$0.name.contains(":") && !$0.name.contains(where: \.isNewline)
                   && !$0.value.contains(where: \.isNewline) }) else {
-            throw BreakpointMessage.InvalidEdit("脚本输出的头部无效")
+            throw BreakpointMessage.InvalidEdit(OperationIssue.modelScriptHeadersInvalid)
         }
         guard original.body != nil || body == nil else {
-            throw BreakpointMessage.InvalidEdit("此报文仅支持改写头部")
+            throw BreakpointMessage.InvalidEdit(OperationIssue.modelScriptHeadersOnly)
         }
         let lines = [firstLine] + headers.map { "\($0.name): \($0.value)" }
         let updatedBody = original.body.map { bytes in body ?? String(decoding: bytes, as: UTF8.self) }
@@ -410,9 +419,16 @@ private struct WireMessage: Codable {
     }
 }
 
-private struct ScriptExecutionFailure: LocalizedError {
-    let errorDescription: String?
-    var capturedLogs: [String] = []
+private struct ScriptExecutionFailure: LocalizedError, OperationIssueProviding {
+    let operationIssue: OperationIssue
+    let capturedLogs: [String]
+    init(errorDescription issue: OperationIssue, capturedLogs: [String] = []) {
+        operationIssue = issue; self.capturedLogs = capturedLogs
+    }
+    init(errorDescription diagnostic: String, capturedLogs: [String] = []) {
+        operationIssue = .technical(diagnostic); self.capturedLogs = capturedLogs
+    }
+    var errorDescription: String? { operationIssue.diagnostic }
 }
 
 private enum ScriptWorker {
@@ -423,20 +439,20 @@ private enum ScriptWorker {
         let output = try execute(source: source, message: message) { result in
             let bytes = try JSONSerialization.data(withJSONObject: result)
             guard let packet = try JSONDecoder().decode(Response.self, from: bytes).message else {
-                throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message")
+                throw Failure(errorDescription: OperationIssue.modelScriptMessageRequired)
             }
             // Host-side framing/body validation must succeed before sharedState commits.
             _ = try packet.applying(to: original)
         }
         let data = try JSONSerialization.data(withJSONObject: output)
         let response = try JSONDecoder().decode(Response.self, from: data)
-        guard let packet = response.message else { throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message") }
+        guard let packet = response.message else { throw Failure(errorDescription: OperationIssue.modelScriptMessageRequired) }
         return (packet, logs(output), try mock(output["mock"], phase: message.phase))
     }
 
     static func beautify(_ source: String) throws -> String {
         let output = try execute(source: source, operation: "beautify")
-        guard let result = output["source"] as? String else { throw Failure(errorDescription: "无法格式化脚本") }
+        guard let result = output["source"] as? String else { throw Failure(errorDescription: OperationIssue.modelScriptFormatFailed) }
         return result
     }
 
@@ -448,36 +464,36 @@ private enum ScriptWorker {
         guard let value, !(value is NSNull) else { return nil }
         guard phase == .request, let object = value as? [String: Any],
               let status = object["status"] as? Int, (200...599).contains(status) else {
-            throw Failure(errorDescription: "Mock 响应需要请求阶段和 200...599 状态码")
+            throw Failure(errorDescription: OperationIssue.modelScriptMockStatusInvalid)
         }
         let body: Data
         if let base64 = object["base64"] as? String {
-            guard let decoded = Data(base64Encoded: base64) else { throw Failure(errorDescription: "Mock base64 无效") }
+            guard let decoded = Data(base64Encoded: base64) else { throw Failure(errorDescription: OperationIssue.modelScriptMockBase64Invalid) }
             body = decoded
         } else {
-            guard object["body"] == nil || object["body"] is String else { throw Failure(errorDescription: "Mock body 必须是 UTF-8 文本，可用 base64 发送二进制") }
+            guard object["body"] == nil || object["body"] is String else { throw Failure(errorDescription: OperationIssue.modelScriptMockBodyEncoding) }
             body = Data((object["body"] as? String ?? "").utf8)
         }
         guard body.count <= ScriptingService.bodyLimit,
-              !BreakpointMessage.noBodyStatus(status) || body.isEmpty else { throw Failure(errorDescription: "Mock 正文过大或状态码不允许正文") }
+              !BreakpointMessage.noBodyStatus(status) || body.isEmpty else { throw Failure(errorDescription: OperationIssue.modelScriptMockBodyInvalid) }
         let fields: [(String, String)]
         if let pairs = object["headers"] as? [[String: String]] {
-            guard pairs.allSatisfy({ $0["name"] != nil && $0["value"] != nil }) else { throw Failure(errorDescription: "Mock 头部无效") }
+            guard pairs.allSatisfy({ $0["name"] != nil && $0["value"] != nil }) else { throw Failure(errorDescription: OperationIssue.modelScriptMockHeadersInvalid) }
             fields = pairs.map { ($0["name"]!, $0["value"]!) }
         } else if let values = object["headers"] as? [String: String] { fields = values.map { ($0.key, $0.value) } }
         else {
-            guard object["headers"] == nil else { throw Failure(errorDescription: "Mock headers 必须是字符串字典或 name/value 数组") }
+            guard object["headers"] == nil else { throw Failure(errorDescription: OperationIssue.modelScriptMockHeadersType) }
             fields = []
         }
         guard fields.count <= 256, fields.reduce(0, { $0 + $1.0.utf8.count + $1.1.utf8.count }) <= 128 * 1024 else {
-            throw Failure(errorDescription: "Mock 头部过大")
+            throw Failure(errorDescription: OperationIssue.modelScriptMockHeadersSize)
         }
         var headers = HTTPHeaders()
         let reserved: Set<String> = ["content-length", "transfer-encoding", "connection", "proxy-connection", "keep-alive", "upgrade", "trailer", "te"]
         for (name, value) in fields {
             guard !name.isEmpty, name.utf8.allSatisfy({ byte in
                 (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte) || "!#$%&'*+-.^_`|~".utf8.contains(byte)
-            }), value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }) else { throw Failure(errorDescription: "Mock 头部无效") }
+            }), value.utf8.allSatisfy({ $0 == 9 || ($0 >= 32 && $0 != 127) }) else { throw Failure(errorDescription: OperationIssue.modelScriptMockHeadersInvalid) }
             if !reserved.contains(name.lowercased()) { headers.append(name, value) }
         }
         headers.set(name: "Content-Length", value: String(body.count))
@@ -488,9 +504,9 @@ private enum ScriptWorker {
     /// Serializing read/execute/commit preserves sharedState under concurrent flows.
     private static func execute(source: String, message: WireMessage? = nil, operation: String? = nil,
                                 validate: (([String: Any]) throws -> Void)? = nil) throws -> [String: Any] {
-        guard source.utf8.count <= ScriptingService.sourceLimit else { throw Failure(errorDescription: "脚本超过 256 KiB") }
+        guard source.utf8.count <= ScriptingService.sourceLimit else { throw Failure(errorDescription: OperationIssue.modelScriptSourceSize) }
         guard let executable = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("ProxyMirrorScriptWorker"),
-              FileManager.default.isExecutableFile(atPath: executable.path) else { throw Failure(errorDescription: "找不到脚本执行组件") }
+              FileManager.default.isExecutableFile(atPath: executable.path) else { throw Failure(errorDescription: OperationIssue.modelScriptWorkerMissing) }
         ScriptingRuntimeSettings.executionLock.lock()
         defer { ScriptingRuntimeSettings.executionLock.unlock() }
         var object = try ScriptingRuntimeSettings.input()
@@ -501,7 +517,7 @@ private enum ScriptWorker {
         let wallTime = operation == nil ? ((object["network"] as? [String: Any])?["wallTimeMs"] as? Int ?? 10_000) + 1000 : 1000
         if let message { object["message"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) }
         let data = try JSONSerialization.data(withJSONObject: object)
-        guard data.count <= 2 * 1024 * 1024 else { throw Failure(errorDescription: "脚本输入超过 2 MiB") }
+        guard data.count <= 2 * 1024 * 1024 else { throw Failure(errorDescription: OperationIssue.modelScriptInputSize) }
         let input = try scratchFile()
         defer { try? input.close() }
         let output = try scratchFile()
@@ -517,19 +533,19 @@ private enum ScriptWorker {
         guard done.wait(timeout: .now() + .milliseconds(wallTime)) == .success else {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             _ = done.wait(timeout: .now() + .milliseconds(150))
-            throw Failure(errorDescription: "脚本网络或执行超过 \(wallTime) ms wall time")
+            throw Failure(errorDescription: OperationIssue.modelScriptWallTime(wallTime))
         }
         try output.seek(toOffset: 0)
         guard let bytes = try output.read(upToCount: 2 * 1024 * 1024 + 1),
               bytes.count <= 2 * 1024 * 1024,
               let result = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
-            throw Failure(errorDescription: "脚本执行组件返回了无效结果")
+            throw Failure(errorDescription: OperationIssue.modelScriptWorkerOutputInvalid)
         }
         if let error = result["error"] as? String { throw Failure(errorDescription: error, capturedLogs: logs(result)) }
-        guard process.terminationStatus == 0 else { throw Failure(errorDescription: "脚本执行组件异常退出 (\(process.terminationStatus))") }
+        guard process.terminationStatus == 0 else { throw Failure(errorDescription: OperationIssue.modelScriptWorkerExit(Int(process.terminationStatus))) }
         if let message, message.phase != .webSocket {
             guard (try JSONDecoder().decode(Response.self, from: bytes)).message != nil else {
-                throw Failure(errorDescription: "脚本需要返回完整报文或直接修改 message")
+                throw Failure(errorDescription: OperationIssue.modelScriptMessageRequired)
             }
             _ = try mock(result["mock"], phase: message.phase)
         }
@@ -542,8 +558,8 @@ private enum ScriptWorker {
     private static func scratchFile() throws -> FileHandle {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("pm-script-\(UUID().uuidString)").path
         let descriptor = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, mode_t(0o600))
-        guard descriptor >= 0 else { throw Failure(errorDescription: "无法创建脚本输入输出缓冲") }
-        guard unlink(path) == 0 else { close(descriptor); throw Failure(errorDescription: "无法隔离脚本输入输出缓冲") }
+        guard descriptor >= 0 else { throw Failure(errorDescription: OperationIssue.modelScriptBufferCreateFailed) }
+        guard unlink(path) == 0 else { close(descriptor); throw Failure(errorDescription: OperationIssue.modelScriptBufferIsolationFailed) }
         return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 }

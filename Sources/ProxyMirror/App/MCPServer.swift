@@ -56,10 +56,8 @@ final class MCPServer {
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "com.proxymirror.mcp.accept"))
         let server = MCPServer(source: source, token: token, port: UInt16(bigEndian: address.sin_port))
         source.setEventHandler { [weak server] in server?.accept(fd) }
-        let path = descriptorURL.path
         source.setCancelHandler {
             Darwin.close(fd)
-            _ = unlink(path)
         }
         do { try server.writeConfiguration() }
         catch {
@@ -76,8 +74,37 @@ final class MCPServer {
         self.source = source; self.token = token; self.port = port
     }
 
-    func stop() { source.cancel() }
-    deinit { source.cancel() }
+    func stop() {
+        // Remove this instance's descriptor synchronously. An asynchronous old
+        // cancel handler must never delete a newly restarted server's token.
+        if let headers = Self.configuration?["headers"] as? [String: String],
+           headers["Authorization"] == "Bearer \(token)" { _ = unlink(Self.descriptorURL.path) }
+        source.cancel()
+    }
+    deinit { stop() }
+
+    static func clientConfiguration(client: MCPPreferencesController.Client,
+                                    transport: MCPPreferencesController.Transport) -> String? {
+        let server: [String: Any]
+        if transport == .http {
+            guard let config = configuration, let url = config["url"] as? String,
+                  let headers = config["headers"] as? [String: String] else { return nil }
+            server = ["type": "http", "url": url, "headers": headers]
+        } else {
+            server = ["command": Bundle.main.executableURL?.path ?? "proxymirror-cli", "args": ["mcp", "stdio"]]
+        }
+        if client == .codex {
+            func literal(_ string: String) -> String {
+                String(decoding: (try? JSONEncoder().encode(string)) ?? Data("\"\"".utf8), as: UTF8.self)
+            }
+            if transport == .http {
+                let headers = server["headers"] as? [String: String] ?? [:]
+                return "[mcp_servers.proxymirror]\nurl = \(literal(server["url"] as? String ?? ""))\nhttp_headers = { Authorization = \(literal(headers["Authorization"] ?? "")) }\n"
+            }
+            return "[mcp_servers.proxymirror]\ncommand = \(literal(server["command"] as? String ?? "proxymirror-cli"))\nargs = [\"mcp\", \"stdio\"]\n"
+        }
+        return (try? AutomationControl.json(["mcpServers": ["proxymirror": server]])).map { String(decoding: $0, as: UTF8.self) }
+    }
 
     private func writeConfiguration() throws {
         let url = "http://127.0.0.1:\(port)/mcp"

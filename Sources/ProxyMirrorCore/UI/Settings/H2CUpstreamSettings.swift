@@ -8,13 +8,13 @@ struct H2CUpstreamSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("HTTP/2 流使用明文上游 (h2c)", isOn: $draft.enabled)
+            Toggle(Strings.Settings.useCleartextHttp2UpstreamH2c, isOn: $draft.enabled)
             if draft.enabled {
-                TextField("目标主机，用逗号分隔", text: $hosts)
-                Text("填入支持 h2c 的主机。适用于 HTTP/2 流转发到 HTTP 地址，例如 Map Remote 指向本地 gRPC 服务。")
+                TextField(Strings.Settings.targetHostsSeparatedByCommas, text: $hosts)
+                Text(Strings.Settings.enterHostsThatSupportH2cUsedWhenForwarding)
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Button("应用 h2c 设置") {
+            Button(Strings.Settings.applyH2cSettings) {
                 draft.hosts = hosts.components(separatedBy: CharacterSet(charactersIn: ",，\n")).map {
                     $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 }.filter { !$0.isEmpty }
@@ -22,7 +22,7 @@ struct H2CUpstreamSettings: View {
                 backup.h2c = draft
                 do { try RulesStore.shared.install(backup); failed = false }
                 catch { failed = true }
-                message = failed ? "保存失败" : "h2c 设置已应用于新流量"
+                message = failed ? Strings.Settings.saveFailed : Strings.Settings.h2cSettingsAppliedToNewTraffic
             }
             .disabled(draft.enabled && hosts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             if let message { Text(message).font(.caption).foregroundStyle(failed ? .red : .secondary) }

@@ -60,7 +60,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>zh-Hans</string>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array><string>zh-Hans</string><string>en</string></array>
 	<key>CFBundleDisplayName</key>
 	<string>ProxyMirror</string>
 	<key>CFBundleExecutable</key>
@@ -86,7 +88,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>ProxyMirror 使用自动化打开带代理配置的 Terminal 或 iTerm 窗口。</string>
+	<string>ProxyMirror opens Terminal or iTerm windows configured with the proxy.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
@@ -151,8 +153,15 @@ build_flags=()
 if [[ "$CONFIG" == release ]]; then
   build_flags=(-Xswiftc -enable-testing)
 fi
+python3 Scripts/check_localization.py
 swift build -j "${PM_BUILD_JOBS:-2}" -c "$CONFIG" "${build_flags[@]}" 2>&1 | tail -10
-BIN_DIR=".build/$CONFIG"
+BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+LOCALIZATION_BUNDLE="ProxyMirror_ProxyMirrorCore.bundle"
+if [[ ! -d "$BIN_DIR/$LOCALIZATION_BUNDLE" ]]; then
+  echo "Missing SwiftPM localization bundle: $BIN_DIR/$LOCALIZATION_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$BIN_DIR/$LOCALIZATION_BUNDLE" "$APP/Contents/Resources/$LOCALIZATION_BUNDLE"
 cp "$BIN_DIR/ProxyMirror" "$APP/Contents/MacOS/ProxyMirror"
 for helper in ProxyMirrorScriptWorker ProxyMirrorSystemProxyHelper; do
   cp "$BIN_DIR/$helper" "$APP/Contents/MacOS/$helper"
@@ -167,6 +176,12 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Ship licenses for the embedded scripting libraries and Zstandard decoder.
 mkdir -p "$APP/Contents/Resources/ThirdParty"
+for language in en zh-Hans; do
+  localization="Resources/$language.lproj"
+  [[ -f "$localization/InfoPlist.strings" ]]
+  mkdir -p "$APP/Contents/Resources/$language.lproj"
+  cp "$localization/InfoPlist.strings" "$APP/Contents/Resources/$language.lproj/InfoPlist.strings"
+done
 cp "ThirdParty/ScriptingLibraries.md" "$APP/Contents/Resources/ThirdParty/ScriptingLibraries.md"
 cp "Sources/ProxyMirrorZstd/LICENSE" "$APP/Contents/Resources/ThirdParty/Zstandard-LICENSE"
 
@@ -193,6 +208,10 @@ if (( TRANSPARENT )); then
   host_id=$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")
   extension="$APP/Contents/Library/SystemExtensions/$host_id.transparent-proxy.systemextension"
   cp "$BIN_DIR/ProxyMirrorTransparentExtension" "$extension/Contents/MacOS/ProxyMirrorTransparentExtension"
+  for language in en zh-Hans; do
+    mkdir -p "$extension/Contents/Resources/$language.lproj"
+    cp "Resources/TransparentExtension/$language.lproj/InfoPlist.strings" "$extension/Contents/Resources/$language.lproj/InfoPlist.strings"
+  done
   plutil -lint "$extension/Contents/Info.plist"
   codesign "${signature_args[@]}" --entitlements "$STAGING/extension.entitlements" "$extension"
   codesign --verify --strict "$extension"

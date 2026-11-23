@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 func checkExportInteractions(_ test: CoreAssertions) throws {
+    checkMCPPreferencesRuntime(test)
     let directory = try makeCheckDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let tx = Transaction()
@@ -37,6 +38,24 @@ func checkExportInteractions(_ test: CoreAssertions) throws {
     tunnel.port = 8443
     test.expect(ExportService.curlCommand(tunnel).contains("'https://[::1]:8443'"),
                 "Copied tunnel cURL uses a valid bracketed IPv6 authority")
+    let settings = AppSettings.shared
+    let previousProxy = settings.appendProxyToCommands
+    let previousPreserve = settings.preserveOriginalHeaders
+    defer { settings.appendProxyToCommands = previousProxy; settings.preserveOriginalHeaders = previousPreserve }
+    settings.appendProxyToCommands = false
+    test.expect(!ExportService.curlCommand(tunnel).contains("--proxy"), "CONNECT copies respect the proxy preference")
+    settings.appendProxyToCommands = true
+    test.expect(ExportService.curlCommand(tunnel).contains("--proxy"), "CONNECT copies can include the proxy")
+    tx.requestHeaders.append("Content-Length", "5")
+    tx.requestHeaders.append("Accept-Encoding", "gzip")
+    tx.requestHeaders.append("Content-Encoding", "identity")
+    settings.preserveOriginalHeaders = false
+    test.expect(!ExportService.curlCommand(tx).contains("Content-Length: 5"), "Default cURL copies omit captured framing")
+    settings.preserveOriginalHeaders = true
+    for header in ["Content-Length: 5", "Accept-Encoding: gzip", "Content-Encoding: identity"] {
+        test.expect(ExportService.curlCommand(tx).contains(header), "cURL can preserve \(header)")
+        test.expect(ExportService.httpieCommand(tx).contains(header), "HTTPie can preserve \(header)")
+    }
 
     let csv = directory.appendingPathComponent("traffic.csv")
     try ExportService.writeCSV([tx], to: csv)

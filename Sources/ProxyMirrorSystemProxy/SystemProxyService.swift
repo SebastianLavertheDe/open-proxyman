@@ -8,6 +8,7 @@ package protocol SystemProxyServiceProtocol {
     func enableWithBypass(_ port: Int, hosts: [String], reply: @escaping (String?) -> Void)
     func updateBypass(_ hosts: [String]?, reply: @escaping (String?) -> Void)
     func restore(reply: @escaping (String?) -> Void)
+    func disableOwned(reply: @escaping (String?) -> Void)
 }
 
 package enum SystemProxyService {
@@ -22,6 +23,7 @@ package enum SystemProxyService {
     package static let name = "com.sebastianLavertheDe.proxymirror.system-proxy"
     package static let appIdentifier = "com.sebastianLavertheDe.proxymirror"
     package static let helperName = "ProxyMirrorSystemProxyHelper"
+    package static let version = "1.1.0"
     package static let executable = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/\(name)")
     package static let plist = URL(fileURLWithPath: "/Library/LaunchDaemons/\(name).plist")
     package static let journal = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/\(name).recovery.plist")
@@ -39,7 +41,7 @@ package enum SystemProxyService {
               SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
               let info = info as? [String: Any], info[kSecCodeInfoIdentifier as String] as? String == identifier,
               let digest = info[kSecCodeInfoUnique as String] as? Data, digest.count == 20 else {
-            throw SystemProxyError("无法验证 ProxyMirror 或系统代理服务的签名，请使用完整的 .app 构建。")
+            throw SystemProxyError(.signatureInvalid)
         }
         return digest.map { String(format: "%02x", $0) }.joined()
     }
@@ -63,12 +65,12 @@ package enum SystemProxyService {
 
     package static func acquireLock() throws -> Int32 {
         let fd = Darwin.open(lockPath, O_CREAT | O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw SystemProxyError("无法打开系统代理锁。") }
+        guard fd >= 0 else { throw SystemProxyError(.lockUnavailable) }
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
               info.st_uid == 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else {
             Darwin.close(fd)
-            throw SystemProxyError("另一个 ProxyMirror 实例正在接管或恢复系统代理。")
+            throw SystemProxyError(.busy)
         }
         return fd
     }

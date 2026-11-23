@@ -44,19 +44,23 @@ func checkPresentationSettings(_ test: CoreAssertions) throws {
 
     let date = Date(timeIntervalSince1970: 13 * 3600 + 4 * 60 + 5.123)
     let utc = TimeZone(secondsFromGMT: 0)!
+    let english = Locale(identifier: "en_US_POSIX")
     settings.use24HourClock = true; settings.showFullDate = false
-    test.equal(PresentationTime.string(from: date, settings: settings, timeZone: utc), "13:04:05.123",
+    test.equal(PresentationTime.string(from: date, settings: settings, timeZone: utc, locale: english), "13:04:05.123",
                "Shared traffic and WebSocket formatter honors 24-hour time")
     settings.use24HourClock = false
-    test.equal(PresentationTime.string(from: date, settings: settings, timeZone: utc), "01:04:05.123 PM",
+    test.equal(PresentationTime.string(from: date, settings: settings, timeZone: utc, locale: english), "01:04:05.123 PM",
                "Changing clock preferences invalidates the formatter cache key")
     settings.showFullDate = true
-    test.equal(PresentationTime.string(from: date, settings: settings, timeZone: utc), "1970-01-01 01:04:05.123 PM",
-               "Full-date timestamps include the date with the selected clock style")
+    test.equal(PresentationTime.string(from: date, settings: settings, timeZone: utc, locale: english), "1970-01-01 01:04:05.123 PM +00:00",
+               "Full-date timestamps include the selected clock style and explicit time-zone offset")
+    test.equal(PresentationTime.string(from: date, uses24HourClock: true, includesDate: true,
+                                       timeZone: TimeZone(secondsFromGMT: 8 * 3600)!, locale: english), "1970-01-01 21:04:05.123 +08:00",
+               "Full dates preserve the displayed time zone instead of presenting an ambiguous local time")
     test.equal(PresentationTime.string(from: date, uses24HourClock: true, includesDate: false,
-                                       timeZone: TimeZone(secondsFromGMT: 8 * 3600)!), "21:04:05.123",
+                                       timeZone: TimeZone(secondsFromGMT: 8 * 3600)!, locale: english), "21:04:05.123",
                "Formatter cache keys include time zone changes")
-    test.equal(PresentationTime.string(from: date, uses24HourClock: true, includesDate: false, timeZone: utc), "13:04:05.123",
+    test.equal(PresentationTime.string(from: date, uses24HourClock: true, includesDate: false, timeZone: utc, locale: english), "13:04:05.123",
                "Reusing an earlier format retrieves the correctly keyed formatter")
 
     _ = NSApplication.shared
@@ -86,6 +90,7 @@ func checkPresentationSettings(_ test: CoreAssertions) throws {
                     "Changing tab width moves the following glyph in NSTextView's real layout")
     } else { test.expect(false, "Code editor provides an AppKit layout manager") }
     test.equal(editor.string, "a\tb", "Tab preferences preserve the original selectable text")
+    try checkAppearanceDisplayEngine(test, settings: settings)
 
     let selected = TrafficRowPresentation.background(selected: true, highlight: .red, alternate: true)
     test.equal(selected, ProxymanTheme.tableSelectionColor, "Selection color has priority over highlights and zebra rows")
@@ -107,6 +112,7 @@ func checkPresentationSettings(_ test: CoreAssertions) throws {
                "Shift-Command-C routes to fixed cURL generation")
     test.expect(TrafficCopyShortcut.resolve(characters: "c", modifiers: [.command, .option]) == nil,
                 "Unrelated copy key combinations remain with the responder chain")
+    checkTrafficLocalization(test)
     try checkDefaultCopyKeyboard(test, settings: settings)
 }
 
@@ -161,4 +167,28 @@ private func checkDefaultCopyKeyboard(_ test: CoreAssertions, settings: AppSetti
     window.makeFirstResponder(nil)
     _ = table.performKeyEquivalent(with: preferred)
     test.equal(preferredCalls, 1, "An unfocused request table preserves text editors' normal Command-C")
+}
+
+
+@MainActor
+private func checkTrafficLocalization(_ test: CoreAssertions) {
+    let expectedIDs = ["sequence", "url", "client", "method", "status", "time", "duration", "request", "response", "ssl", "edited", "comment", "tools", "graphql"]
+    test.equal(TrafficColumn.allCases.map(\.id), expectedIDs, "Built-in traffic columns use stable language-independent IDs")
+    test.equal(TrafficColumn.request.localizedTitle(language: "en"), "Request", "Column headers resolve explicit English resources")
+    test.equal(TrafficColumn.request.localizedTitle(language: "zh-Hans"), "请求", "Column headers resolve explicit Simplified Chinese resources")
+    test.equal(TrafficColumn.request.id, "request", "Resolving another language never changes a column identity")
+    let custom = TrafficColumn.custom(CustomTrafficColumn(title: "用户列", source: .query, key: "name"))
+    test.equal(custom.localizedTitle(language: "en"), "用户列", "A custom column title remains user content in English")
+    test.equal(custom.localizedTitle(language: "zh-Hans"), "用户列", "A custom column title remains user content in Chinese")
+
+    for count in [0, 1, 2, 101, 1000] {
+        let english = L10n.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches", language: "en")
+        test.equal(english, count == 1 ? "1 Match" : "\(count) Matches", "English query match counts use the appropriate plural for \(count)")
+        let chinese = L10n.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches", language: "zh-Hans")
+        test.equal(chinese, "匹配 \(count) 项", "Chinese query match counts use the Chinese quantity template")
+        let requestLabel = L10n.render(table: "Traffic", key: "requests", arguments: ["api.example.test", count],
+            englishFallback: "%1$@ · %2$ld requests", language: "en")
+        test.equal(requestLabel, "api.example.test · \(count) " + (count == 1 ? "request" : "requests"),
+                   "A user-owned domain and positional plural count render together without changing the domain")
+    }
 }

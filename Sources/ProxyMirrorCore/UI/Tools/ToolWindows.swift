@@ -3,17 +3,42 @@ import SwiftUI
 // MARK: - 工具窗口类型（对齐 Proxyman Tools 菜单）
 
 enum ToolKind: String, Identifiable, CaseIterable {
-    case compose = "Compose Request"
-    case mapLocal = "Map Local"
-    case mapRemote = "Map Remote"
-    case blockList = "Block List"
-    case allowList = "Allow List"
-    case sslProxyingList = "SSL Proxying List"
-    case sslApplications = "按应用配置 SSL"
-    case dnsMapping = "DNS 映射"
-    case reverseProxy = "反向代理"
-    case customCertificates = "自定义服务端证书"
+    case compose, mapLocal, mapRemote, blockList, allowList, sslProxyingList
+    case sslApplications, dnsMapping, reverseProxy, customCertificates
     var id: String { rawValue }
+    var localizedTitle: String {
+        switch self {
+        case .compose: return Strings.Tools.composeRequest
+        case .mapLocal: return Strings.Tools.mapLocal
+        case .mapRemote: return Strings.Tools.mapRemote
+        case .blockList: return Strings.Tools.blockList
+        case .allowList: return Strings.Tools.allowList
+        case .sslProxyingList: return Strings.Tools.sslProxyingList
+        case .sslApplications: return Strings.Tools.sslByApplication
+        case .dnsMapping: return Strings.Tools.dnsMapping
+        case .reverseProxy: return Strings.Tools.reverseProxy
+        case .customCertificates: return Strings.Tools.customServerCertificates
+        }
+    }
+    var searchAliases: [String] {
+        let key: String
+        switch self {
+        case .compose: key = "compose_request"
+        case .mapLocal: key = "map_local"
+        case .mapRemote: key = "map_remote"
+        case .blockList: key = "block_list"
+        case .allowList: key = "allow_list"
+        case .sslProxyingList: key = "ssl_proxying_list"
+        case .sslApplications: key = "ssl_by_application"
+        case .dnsMapping: key = "dns_mapping"
+        case .reverseProxy: key = "reverse_proxy"
+        case .customCertificates: key = "custom_server_certificates"
+        }
+        return [rawValue,
+                L10n.render(table: "Tools", key: key, englishFallback: rawValue, language: "en"),
+                L10n.render(table: "Tools", key: key, englishFallback: rawValue, language: "zh-Hans")]
+    }
+
 }
 
 struct ComposeRequestView: View {
@@ -41,13 +66,13 @@ struct ComposeRequestView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(transaction == nil ? "构建请求" : "编辑并重发").font(.headline)
+                Text(transaction == nil ? Strings.Tools.composeRequest : Strings.Tools.editAndResend).font(.headline)
                 Spacer()
-                Toggle("直连", isOn: $direct).help("关闭时请求经过 ProxyMirror 的规则。")
-                Button(task == nil ? "关闭" : "取消请求") {
+                Toggle(Strings.Tools.direct, isOn: $direct).help(Strings.Tools.whenDisabledRequestsPassThroughProxymirrorRules)
+                Button(task == nil ? Strings.Tools.close : Strings.Tools.cancelRequest) {
                     if let task { task.cancel() } else { dismiss() }
                 }
-                Button("发送") { execute() }
+                Button(Strings.Tools.send) { execute() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .disabled(task != nil)
@@ -56,18 +81,18 @@ struct ComposeRequestView: View {
             HSplitView {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Picker("编辑方式", selection: Binding(get: { rawMode }, set: changeMode)) {
-                            Text("表单").tag(false)
-                            Text("Raw").tag(true)
+                        Picker(Strings.Tools.editor, selection: Binding(get: { rawMode }, set: changeMode)) {
+                            Text(Strings.Tools.form).tag(false)
+                            Text(Strings.Tools.raw).tag(true)
                         }
                         .pickerStyle(.segmented)
-                        Menu("模板") {
+                        Menu(Strings.Tools.template) {
                             ForEach(ComposeService.Template.allCases) { template in
-                                Button(template.rawValue) { load(template.request(url: url)) }
+                                Button(template.localizedTitle) { load(template.request(url: url)) }
                             }
-                            Button("导入 cURL…") { importingCurl = true }
+                            Button(Strings.Tools.importCurl) { importingCurl = true }
                         }
-                        Menu("历史") {
+                        Menu(Strings.Tools.history) {
                             ForEach(appState.composeHistory.indices, id: \.self) { index in
                                 let item = appState.composeHistory[index]
                                 Button("\(item.method) \(item.url)") { load(item) }
@@ -76,51 +101,51 @@ struct ComposeRequestView: View {
                         .disabled(appState.composeHistory.isEmpty)
                     }
                     HStack {
-                        Picker("超时", selection: $timeoutSeconds) {
-                            Text("不限制").tag(0); Text("15 秒").tag(15); Text("30 秒").tag(30); Text("60 秒").tag(60)
-                            if ![0, 15, 30, 60].contains(timeoutSeconds) { Text("\(timeoutSeconds) 秒").tag(timeoutSeconds) }
+                        Picker(Strings.Tools.timeout, selection: $timeoutSeconds) {
+                            Text(Strings.Tools.unlimited).tag(0); Text(Strings.Tools.step15Seconds).tag(15); Text(Strings.Tools.step30Seconds).tag(30); Text(Strings.Tools.step60Seconds).tag(60)
+                            if ![0, 15, 30, 60].contains(timeoutSeconds) { Text(Strings.Tools.seconds(Int(timeoutSeconds))).tag(timeoutSeconds) }
                         }.frame(width: 165)
-                        Toggle("跟随重定向", isOn: $followRedirects)
+                        Toggle(Strings.Tools.followRedirects, isOn: $followRedirects)
                     }
                     if url.hasPrefix("ws://") || url.hasPrefix("wss://") {
-                        Text("WebSocket：正文作为首条消息发送，收到一条消息后关闭。WSS 使用系统证书信任。")
+                        Text(Strings.Tools.websocketSendsTheBodyAsTheFirstMessageThen)
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if rawMode {
-                        editor("HTTP 报文", text: $rawText)
+                        editor(Strings.Tools.httpMessage, text: $rawText)
                     } else {
                         HStack {
-                            TextField("方法", text: $method).frame(width: 74)
+                            TextField(Strings.Tools.method, text: $method).frame(width: 74)
                             TextField("https://example.com/path", text: $url)
                         }
                         .textFieldStyle(.roundedBorder)
-                        TextField("查询参数（例如 tag=a&tag=b）", text: $query).textFieldStyle(.roundedBorder)
-                        editor("请求头", text: $headers).frame(minHeight: 100)
+                        TextField(Strings.Tools.queryParametersForExampleTagATagB, text: $query).textFieldStyle(.roundedBorder)
+                        editor(Strings.Tools.requestHeaders, text: $headers).frame(minHeight: 100)
                         if let binaryBody {
                             HStack {
-                                Text("已保留 \(binaryBody.count) 字节二进制正文")
-                                Button("替换为文本") { self.binaryBody = nil }
+                                Text(Strings.Tools.retainedBytesOfBinaryBody(Int(binaryBody.count)))
+                                Button(Strings.Tools.replaceWithText) { self.binaryBody = nil }
                             }
                         } else {
-                            editor("正文", text: $bodyText).frame(minHeight: 100)
+                            editor(Strings.Tools.body, text: $bodyText).frame(minHeight: 100)
                         }
                     }
                 }
                 .frame(minWidth: 350)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("响应").font(.headline)
+                    Text(Strings.Tools.response).font(.headline)
                     if let result {
-                        Text(result.state == .failed ? result.errorText ?? "发送失败" : result.statusText)
+                        Text(result.state == .failed ? result.errorText ?? Strings.Tools.sendFailed : result.statusText)
                             .font(.system(.body, design: .monospaced))
                         BodyContentView(data: result.responseBody, contentType: result.contentType, pretty: true,
                                         complete: result.responseBodyComplete, truncated: result.responseTruncated,
                                         revision: result.responseBodyRevision)
                             .id(ObjectIdentifier(result))
                     } else if task != nil {
-                        ProgressView("等待响应…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                        ProgressView(Strings.Tools.waitingForResponse).frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        Text("尚无响应").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Text(Strings.Tools.noResponseYet).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .padding(.leading, 8)
@@ -137,23 +162,23 @@ struct ComposeRequestView: View {
                 if let request = ComposeService.replayRequest(from: transaction) {
                     load(request)
                 } else {
-                    error = "请求正文不完整，无法预填编辑器。"
+                    error = Strings.Tools.theRequestBodyIsIncompleteAndCannotPrefillThe
                 }
             }
         }
         .onDisappear { task?.cancel() }
         .sheet(isPresented: $importingCurl) {
             VStack(alignment: .leading, spacing: 10) {
-                editor("cURL 命令", text: $curlText)
+                editor(Strings.Tools.curlCommand, text: $curlText)
                 HStack {
                     Spacer()
-                    Button("取消") { importingCurl = false }
-                    Button("导入") {
+                    Button(Strings.Tools.cancel) { importingCurl = false }
+                    Button(Strings.Tools.import) {
                         if let parsed = ComposeService.parseCurl(curlText) {
                             load(parsed)
                             error = nil
                         } else {
-                            error = "无法解析 cURL。可导入 URL、方法、请求头和内联正文。"
+                            error = Strings.Tools.unableToParseCurlImportSupportsAUrlMethod
                         }
                         importingCurl = false
                     }
@@ -218,14 +243,14 @@ struct ComposeRequestView: View {
     private func changeMode(_ raw: Bool) {
         if raw {
             guard binaryBody == nil else {
-                error = "二进制正文请在表单模式中保留，或先替换为文本。"
+                error = Strings.Tools.keepTheBinaryBodyInFormModeOrReplace
                 return
             }
             if let request = parsed() { rawText = ComposeService.rawText(from: request) }
         } else if let request = parsed() {
             load(request)
         } else if !rawText.isEmpty {
-            error = "请先修正 Raw 报文，再切换到表单。"
+            error = Strings.Tools.correctTheRawMessageBeforeSwitchingToFormMode
             return
         }
         error = nil
@@ -233,7 +258,7 @@ struct ComposeRequestView: View {
     }
 
     private func execute() {
-        guard let request = parsed() else { error = "请输入有效的 HTTP 方法和 URL。"; return }
+        guard let request = parsed() else { error = Strings.Tools.enterAValidHttpMethodAndUrl; return }
         if !direct && !appState.proxyRunning { appState.startProxy(automaticallyTakeOver: false) }
         guard direct || appState.proxyRunning else { error = appState.proxyStartError; return }
         error = nil
@@ -247,7 +272,7 @@ struct ComposeRequestView: View {
             result = tx
             if proxyPort == nil || tx.state == .failed { appState.store.add(tx) }
         }
-        if task == nil { error = "URL 必须使用 http、https、ws 或 wss；WebSocket 方法为 GET。" }
+        if task == nil { error = Strings.Tools.theUrlMustUseHttpHttpsWsOrWss }
     }
 }
 
@@ -273,46 +298,46 @@ struct RulesEditorView: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                Text(kind.rawValue).font(.system(size: 13, weight: .semibold))
+                Text(kind.localizedTitle).font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Menu("移到文件夹") {
-                    Button("未分组") { for id in selection { folderAssignments[id] = "" } }
+                Menu(Strings.Tools.moveToFolder) {
+                    Button(Strings.Tools.ungrouped) { for id in selection { folderAssignments[id] = "" } }
                     ForEach(folders) { folder in
                         Button(folderPath(folder)) { for id in selection { folderAssignments[id] = folder.id.uuidString } }
                     }
                 }.disabled(selection.isEmpty)
-                Button("编辑") { if let currentRule { edit(currentRule) } }.disabled(currentRule == nil)
+                Button(Strings.Tools.edit) { if let currentRule { edit(currentRule) } }.disabled(currentRule == nil)
                 Button { move(-1) } label: { Image(systemName: "arrow.up") }
-                    .help("提前执行").disabled(currentIndex == nil || currentIndex == 0)
+                    .help(Strings.Tools.runEarlier).disabled(currentIndex == nil || currentIndex == 0)
                 Button { move(1) } label: { Image(systemName: "arrow.down") }
-                    .help("延后执行").disabled(currentIndex == nil || currentIndex == rules.count - 1)
-                Button("移除所选") { removeSelected() }
+                    .help(Strings.Tools.runLater).disabled(currentIndex == nil || currentIndex == rules.count - 1)
+                Button(Strings.Tools.removeSelected) { removeSelected() }
                     .disabled(selection.isEmpty)
             }
             table
             addRow
             if kind == .blockList || kind == .allowList {
-                Text("透传 HTTPS 按域名和端口判断；匹配具体路径需启用 SSL 解密。")
+                Text(Strings.Tools.httpsTunnelsAreMatchedByDomainAndPortMatching)
                     .font(.caption).foregroundStyle(.secondary)
             }
             if kind == .mapLocal {
                 HStack {
-                    TextField("状态码", text: $newStatus).frame(width: 72)
-                    TextField("额外响应头（每行一项）", text: $newHeaders, axis: .vertical).lineLimit(1...3)
+                    TextField(Strings.Tools.statusCode, text: $newStatus).frame(width: 72)
+                    TextField(Strings.Tools.extraResponseHeadersOnePerLine, text: $newHeaders, axis: .vertical).lineLimit(1...3)
                 }
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
-                Text(kind == .sslProxyingList ? "主机名支持 *.example.com，通配符匹配子域" :
-                     (kind == .mapLocal ? "目录映射按请求路径查找文件" : "按列表顺序应用首条匹配规则"))
+                Text(kind == .sslProxyingList ? Strings.Tools.hostnamesSupportExampleComWildcardsMatchSubdomains :
+                     (kind == .mapLocal ? Strings.Tools.directoryMappingsFindFilesUsingTheRequestPath : Strings.Tools.theFirstMatchingRuleInListOrderApplies))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") {
+                Button(Strings.Tools.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.save) {
                     if canAdd { addRule() }
                     do { try commit(); dismiss() }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = LocalizedErrorPresentation.message(for: error) }
                 }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(editing != nil && !canAdd)
@@ -371,7 +396,7 @@ struct RulesEditorView: View {
         List(selection: $selection) {
             ForEach(rules) { rule in
                 HStack(spacing: 8) {
-                    Toggle("", isOn: Binding(
+                    Toggle(Strings.Tools.enableRule, isOn: Binding(
                         get: { rule.enabled },
                         set: { on in
                             if let idx = rules.firstIndex(where: { $0.id == rule.id }) {
@@ -409,23 +434,23 @@ struct RulesEditorView: View {
     @ViewBuilder
     private var addRow: some View {
         HStack(spacing: 6) {
-            TextField("pattern (e.g. https://api.example.com/*)", text: $newPattern)
+            TextField(Strings.Tools.patternEGHttpsApiExampleCom, text: $newPattern)
                 .textFieldStyle(.roundedBorder)
             if kind == .mapLocal {
-                Button("Choose File…") {
+                Button(Strings.Tools.chooseFile) {
                     let panel = NSOpenPanel()
                     panel.canChooseFiles = true
                     panel.canChooseDirectories = true
                     if panel.runModal() == .OK, let url = panel.url { newTarget = url.path }
                 }
-                TextField("local file path", text: $newTarget)
+                TextField(Strings.Tools.localFilePath, text: $newTarget)
                     .textFieldStyle(.roundedBorder)
             } else if kind == .mapRemote {
-                TextField("target (https://newhost/base)", text: $newTarget)
+                TextField(Strings.Tools.targetHttpsNewhostBase, text: $newTarget)
                     .textFieldStyle(.roundedBorder)
             }
-            Button(editing == nil ? "添加" : "更新规则") { addRule() }.disabled(!canAdd)
-            if editing != nil { Button("结束编辑") { clearEditor() } }
+            Button(editing == nil ? Strings.Tools.add : Strings.Tools.updateRule) { addRule() }.disabled(!canAdd)
+            if editing != nil { Button(Strings.Tools.finishEditing) { clearEditor() } }
         }
     }
 

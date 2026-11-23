@@ -55,14 +55,14 @@ final class ClientTLSIdentities: @unchecked Sendable {
         do {
             let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
             guard (attrs[.posixPermissions] as? NSNumber)?.intValue == 0o600 else {
-                throw ClientTLSIdentityError("身份文件权限应为 0600。")
+                throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheIdentityFilePermissionsMustBe0600)
             }
             let bytes = try Self.read(path, upTo: Self.maxStoreBytes)
             let stored = try JSONDecoder().decode([Stored].self, from: bytes)
-            guard stored.count <= Self.maxRecords else { throw ClientTLSIdentityError("客户端身份数量超出上限。") }
+            guard stored.count <= Self.maxRecords else { throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheClientIdentityCountExceedsTheLimit) }
             entries = try stored.map(Self.parse)
         } catch {
-            storedError = "无法读取上游客户端身份。\(error.localizedDescription)"
+            storedError = Strings.Errors.clientTlsidentitiesUnableToReadUpstreamClientIdentities(String(error.localizedDescription))
         }
     }
 
@@ -99,27 +99,27 @@ final class ClientTLSIdentities: @unchecked Sendable {
 
     func install(host: String, material: CertificateFormats.Material) throws {
         try CertificateFormats.validate(material, purpose: .client, host: host)
-        guard let key = material.privateKeyPEM else { throw ClientTLSIdentityError("客户端身份缺少私钥。") }
+        guard let key = material.privateKeyPEM else { throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheClientIdentityIsMissingItsPrivateKey) }
         try install(host: host, certificate: Data(material.certificatePEM.utf8), key: Data(key.utf8))
     }
 
     private func install(host: String, certificate: Data, key: Data) throws {
         guard let host = Self.hostPattern(host) else {
-            throw ClientTLSIdentityError("请输入主机名、IP 或 *.example.com。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesEnterAHostnameIpAddressOrExampleCom)
         }
         guard certificate.count <= 256 * 1024, key.count <= 128 * 1024 else {
-            throw ClientTLSIdentityError("证书链或私钥超过大小上限。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheCertificateChainOrPrivateKeyExceedsThe)
         }
         let entry = try Self.parse(Stored(id: UUID(), host: host, certificate: certificate, key: key))
         let now = Date()
         guard entry.identity.validFrom <= now, entry.identity.expiry > now else {
-            throw ClientTLSIdentityError("客户端证书未生效或已过期。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheClientCertificateIsNotYetValidOr)
         }
         lock.lock()
         defer { lock.unlock() }
         let replacement = entries.filter { $0.stored.host != host } + [entry]
         guard replacement.count <= Self.maxRecords else {
-            throw ClientTLSIdentityError("最多保存 \(Self.maxRecords) 个客户端身份。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesAMaximumOfClientIdentitiesCanBeSaved(Int(Self.maxRecords)))
         }
         try save(replacement)
         entries = replacement
@@ -144,31 +144,31 @@ final class ClientTLSIdentities: @unchecked Sendable {
     }
 
     private static func parse(_ value: Stored) throws -> Entry {
-        guard hostPattern(value.host) == value.host else { throw ClientTLSIdentityError("客户端身份主机无效。") }
+        guard hostPattern(value.host) == value.host else { throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheClientIdentityHostIsInvalid) }
         let chain: [NIOSSLCertificate]
         let key: NIOSSLPrivateKey
         let cert: Certificate
         let comparableKey: Certificate.PrivateKey
         do {
             chain = try NIOSSLCertificate.fromPEMBytes(Array(value.certificate))
-            guard let leaf = chain.first else { throw ClientTLSIdentityError("证书链为空。") }
+            guard let leaf = chain.first else { throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheCertificateChainIsEmpty) }
             cert = try Certificate(derEncoded: leaf.toDERBytes())
             key = try NIOSSLPrivateKey(bytes: Array(value.key), format: .pem)
             comparableKey = try Certificate.PrivateKey(pemEncoded: String(decoding: value.key, as: UTF8.self))
         } catch {
-            throw ClientTLSIdentityError("无法解析客户端证书或私钥。请使用 PEM 证书链和无口令 PEM 私钥。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesUnableToParseTheClientCertificateOrPrivate)
         }
         guard cert.publicKey == comparableKey.publicKey else {
-            throw ClientTLSIdentityError("证书链首张证书与私钥不匹配。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheFirstCertificateInTheChainDoesNot)
         }
         if try CertificateFormats.isCertificateAuthority(cert) {
-            throw ClientTLSIdentityError("客户端身份必须使用叶子证书，不能使用 CA 私钥。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesAClientIdentityMustUseALeafCertificate)
         }
         if let usage = try cert.extensions.extendedKeyUsage, !usage.contains(.clientAuth), !usage.contains(.any) {
-            throw ClientTLSIdentityError("证书的扩展用途不允许 TLS 客户端认证。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheCertificateExtendedKeyUsageDoesNotPermit)
         }
         if let usage = try cert.extensions.keyUsage, !usage.digitalSignature {
-            throw ClientTLSIdentityError("客户端证书的 Key Usage 不允许数字签名。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheClientCertificateKeyUsageDoesNotPermit)
         }
         let identity = ClientTLSIdentity(id: value.id, certificateChain: chain, privateKey: key,
                                          validFrom: cert.notValidBefore, expiry: cert.notValidAfter)
@@ -179,13 +179,13 @@ final class ClientTLSIdentities: @unchecked Sendable {
     private static func read(_ url: URL, upTo limit: Int) throws -> Data {
         let attrs = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard attrs.isRegularFile == true, let size = attrs.fileSize, (1...limit).contains(size) else {
-            throw ClientTLSIdentityError("文件为空、过大或不是普通文件。")
+            throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheFileIsEmptyTooLargeOrNot)
         }
         let stream = try FileHandle(forReadingFrom: url)
         defer { try? stream.close() }
         var bytes = Data()
         while let next = try stream.read(upToCount: 64 * 1024), !next.isEmpty {
-            guard bytes.count + next.count <= limit else { throw ClientTLSIdentityError("文件超过大小上限。") }
+            guard bytes.count + next.count <= limit else { throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheFileExceedsTheSizeLimit) }
             bytes.append(next)
         }
         return bytes
@@ -202,7 +202,7 @@ final class ClientTLSIdentities: @unchecked Sendable {
             return
         }
         let data = try JSONEncoder().encode(entries.map(\.stored))
-        guard data.count <= Self.maxStoreBytes else { throw ClientTLSIdentityError("客户端身份文件过大。") }
+        guard data.count <= Self.maxStoreBytes else { throw ClientTLSIdentityError(OperationIssue.clientTlsidentitiesTheClientIdentityFileIsTooLarge) }
         try PrivateAppFile.write(data, to: target)
     }
 }
@@ -222,9 +222,11 @@ enum PrivateAppFile {
     }
 }
 
-struct ClientTLSIdentityError: LocalizedError {
-    let message: String
-
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+struct ClientTLSIdentityError: LocalizedError, OperationIssueProviding {
+    let operationIssue: OperationIssue
+    init(_ issue: OperationIssue) { operationIssue = issue }
+    init(_ message: String) { operationIssue = .technical(message) }
+    var message: String { operationIssue.diagnostic }
+    var text: String { operationIssue.diagnostic }
+    var errorDescription: String? { operationIssue.diagnostic }
 }

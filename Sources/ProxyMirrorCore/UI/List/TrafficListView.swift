@@ -9,27 +9,65 @@ enum TrafficColumn: Hashable, Identifiable {
 
     var id: String {
         if case .custom(let field) = self { return field.id.uuidString }
-        return title
+        switch self {
+        case .sequence: return "sequence"
+        case .url: return "url"
+        case .client: return "client"
+        case .method: return "method"
+        case .status: return "status"
+        case .time: return "time"
+        case .duration: return "duration"
+        case .request: return "request"
+        case .response: return "response"
+        case .ssl: return "ssl"
+        case .edited: return "edited"
+        case .comment: return "comment"
+        case .tools: return "tools"
+        case .graphql: return "graphql"
+        case .custom: preconditionFailure("Custom column ID handled above")
+        }
     }
 
     var title: String {
         switch self {
         case .sequence: return "#"
-        case .url: return "网址"
-        case .client: return "客户端"
-        case .method: return "方法"
-        case .status: return "状态"
-        case .time: return "时间"
-        case .duration: return "持续时间"
-        case .request: return "请求"
-        case .response: return "响应"
+        case .url: return Strings.Traffic.url
+        case .client: return Strings.Traffic.client
+        case .method: return Strings.Traffic.method
+        case .status: return Strings.Traffic.status
+        case .time: return Strings.Traffic.time
+        case .duration: return Strings.Traffic.duration
+        case .request: return Strings.Traffic.request
+        case .response: return Strings.Traffic.response
         case .ssl: return "SSL"
-        case .edited: return "已编辑"
-        case .comment: return "备注"
-        case .tools: return "工具"
-        case .graphql: return "GraphQL 操作"
+        case .edited: return Strings.Traffic.edited
+        case .comment: return Strings.Traffic.comment
+        case .tools: return Strings.Traffic.tools
+        case .graphql: return Strings.Traffic.graphqlOperation
         case .custom(let field): return field.title
         }
+    }
+
+    /// Column IDs remain stable across languages, and custom names belong to the user.
+    func localizedTitle(language: String? = nil) -> String {
+        guard let language else { return title }
+        let key: String
+        switch self {
+        case .sequence, .ssl, .custom: return title
+        case .url: key = "url"
+        case .client: key = "client"
+        case .method: key = "method"
+        case .status: key = "status"
+        case .time: key = "time"
+        case .duration: key = "duration"
+        case .request: key = "request"
+        case .response: key = "response"
+        case .edited: key = "edited"
+        case .comment: key = "comment"
+        case .tools: key = "tools"
+        case .graphql: key = "graphql_operation"
+        }
+        return L10n.render(table: "Traffic", key: key, arguments: [], englishFallback: title, language: language)
     }
 
     var preferredWidth: CGFloat {
@@ -39,7 +77,10 @@ enum TrafficColumn: Hashable, Identifiable {
         case .client: return 143
         case .method: return 70
         case .status: return 78
-        case .time: return AppSettings.shared.showFullDate ? (AppSettings.shared.use24HourClock ? 180 : 210) : (AppSettings.shared.use24HourClock ? 93 : 120)
+        case .time:
+            let settings = AppSettings.shared
+            let base: CGFloat = settings.showFullDate ? (settings.use24HourClock ? 245 : 275) : (settings.use24HourClock ? 100 : 128)
+            return base * CGFloat(settings.fontSize) / 12
         case .duration: return 72
         case .request, .response: return 73
         case .ssl: return 31
@@ -208,7 +249,7 @@ struct TrafficListView: View {
                     if sortColumn == column { ascending.toggle() } else { sortColumn = column; ascending = true }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(column.title).lineLimit(1)
+                        Text(column.localizedTitle()).lineLimit(1).help(column.localizedTitle())
                         if sortColumn == column {
                             Image(systemName: ascending ? "chevron.up" : "chevron.down").font(.system(size: 8))
                         }
@@ -248,7 +289,7 @@ struct TrafficListView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1) }
         .contextMenu {
             ForEach(TrafficColumn.allCases.filter { $0 != .url }) { column in
-                Toggle(column.title, isOn: Binding(get: {
+                Toggle(column.localizedTitle(), isOn: Binding(get: {
                     !hiddenColumns.split(separator: "|").contains(Substring(column.id))
                 }, set: { visible in
                     var hidden = Set(hiddenColumns.split(separator: "|").map(String.init))
@@ -256,20 +297,20 @@ struct TrafficListView: View {
                     hiddenColumns = hidden.sorted().joined(separator: "|")
                 }))
             }
-            Button("自定义流量列…") { appState.showColumnEditor = true }
-            Button("恢复默认列宽") { storedWidths = ""; hiddenColumns = "" }
+            Button(Strings.Traffic.customTrafficColumns) { appState.showColumnEditor = true }
+            Button(Strings.Traffic.resetColumnWidths) { storedWidths = ""; hiddenColumns = "" }
         }
     }
 
     private var caBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "lightbulb.max").foregroundStyle(.yellow)
-            Text("安装并信任 ProxyMirror CA 后可以查看 HTTPS 正文。").font(.caption)
+            Text(Strings.Traffic.installAndTrustTheProxymirrorCaToInspectHttpsBodies).font(.caption)
             Spacer()
-            Button("安装 CA 证书") { appState.installCACertificate() }
+            Button(Strings.Traffic.installCaCertificate) { appState.installCACertificate() }
             Button { appState.dismissCABanner() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
-                .accessibilityLabel("关闭证书提示")
+                .accessibilityLabel(Strings.Traffic.dismissCertificateNotice)
         }
         .padding(8)
         .background(Color.yellow.opacity(0.12))
@@ -281,7 +322,7 @@ struct TrafficListView: View {
                 HStack(spacing: 2) {
                     ForEach(FilterChip.allCases) { chip in
                         if chip == .json { filterDivider }
-                        filterButton(chip.rawValue, selected: store.isChipSelected(chip)) {
+                        filterButton(chip.localizedTitle, selected: store.isChipSelected(chip)) {
                             store.toggleChip(chip, additive: NSEvent.modifierFlags.contains(.command))
                         }
                     }
@@ -293,26 +334,26 @@ struct TrafficListView: View {
                 .frame(height: 27)
             }
             Menu {
-                Button("搜索当前请求…") {
+                Button(Strings.Traffic.searchCurrentRequests) {
                     NotificationCenter.default.post(name: .focusTrafficFilter, object: nil)
                 }
-                Button("高级过滤…") { showFilterEditor = true }
-                Menu("状态") {
+                Button(Strings.Traffic.advancedFilters) { showFilterEditor = true }
+                Menu(Strings.Traffic.status) {
                     ForEach([("2xx", "success"), ("3xx", "redirect"), ("4xx", "clientError"), ("5xx", "serverError"),
-                             ("传输失败", "error"), ("进行中", "pending")], id: \.1) { label, value in
+                             (Strings.Traffic.transportFailed, "error"), (Strings.Traffic.inProgress, "pending")], id: \.1) { label, value in
                         Toggle(label, isOn: Binding(get: { store.filter.statusBuckets.contains(value) }, set: { enabled in
                             if enabled { store.filter.statusBuckets.insert(value) } else { store.filter.statusBuckets.remove(value) }
                         }))
                     }
                 }
-                Menu("协议") {
+                Menu(Strings.Traffic.protocol) {
                     ForEach(["HTTP/1.0", "HTTP/1.1", "HTTP/2"], id: \.self) { version in
                         Toggle(version, isOn: Binding(get: { store.filter.versions.contains(version) }, set: { selected in
                             if selected { store.filter.versions.insert(version) } else { store.filter.versions.remove(version) }
                         }))
                     }
                 }
-                Button("清除筛选") { store.resetFilters() }
+                Button(Strings.Traffic.clearFilters) { store.resetFilters() }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 13))
@@ -322,7 +363,7 @@ struct TrafficListView: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .padding(.trailing, 14)
-            .accessibilityLabel("筛选选项")
+            .accessibilityLabel(Strings.Traffic.filterOptions)
         }
         .frame(height: 28)
         .background(ProxymanTheme.toolbarBackground)
@@ -364,10 +405,11 @@ struct TrafficListView: View {
         VStack(spacing: 8) {
             Image(systemName: "tray").font(.system(size: 26))
             if store.hasLiveTransactions {
-                Text("没有符合当前筛选条件的请求")
-                Button("清除筛选") { store.resetFilters() }
+                Text(Strings.Traffic.noRequestsMatchTheCurrentFilters)
+                Button(Strings.Traffic.clearFilters) { store.resetFilters() }
             } else {
-                Text(appState.proxyRunning ? "等待流量 · \(ProxyEngine.shared.listenAddress)" : "启动监听后可抓取请求")
+                Text(appState.proxyRunning ? Strings.Traffic.waitingForTraffic(ProxyEngine.shared.listenAddress)
+                     : Strings.Traffic.startListeningToCaptureRequests)
             }
         }
         .font(.callout)
@@ -382,49 +424,49 @@ struct TrafficListView: View {
     private func rowContextMenu(_ tx: Transaction, _ targets: [Transaction]) -> NSMenu {
         let menu = NSMenu()
         let canReplay = targets.contains(where: \.canReplay)
-        menu.addAction("重发", enabled: canReplay) { targets.forEach { appState.repeatRequest($0) } }
-        menu.addAction("直连重发", enabled: canReplay) { targets.forEach { appState.repeatRequest($0, direct: true) } }
-        menu.addAction("编辑并重发…", enabled: tx.canReplay) { appState.openTool(.compose, transaction: tx) }
-        menu.addAction("打开详情窗口") { openDetails(tx.id) }
-        menu.addSubmenu("从请求创建规则") { submenu in
-            submenu.addAction("脚本规则…") {
+        menu.addAction(Strings.Traffic.messageRepeat, enabled: canReplay) { targets.forEach { appState.repeatRequest($0) } }
+        menu.addAction(Strings.Traffic.repeatDirectly, enabled: canReplay) { targets.forEach { appState.repeatRequest($0, direct: true) } }
+        menu.addAction(Strings.Traffic.editRepeat, enabled: tx.canReplay) { appState.openTool(.compose, transaction: tx) }
+        menu.addAction(Strings.Traffic.openDetailWindow) { openDetails(tx.id) }
+        menu.addSubmenu(Strings.Traffic.createRuleFromRequest) { submenu in
+            submenu.addAction(Strings.Traffic.scriptRule) {
                 ScriptingActivity.shared.prefill(tx)
                 openWindow(id: "scripting")
             }
             for tool in [ToolKind.mapLocal, .mapRemote, .blockList, .allowList, .sslProxyingList] {
-                submenu.addAction(tool.rawValue) { appState.openTool(tool, transaction: tx) }
+                submenu.addAction(tool.localizedTitle) { appState.openTool(tool, transaction: tx) }
             }
         }
-        menu.addAction("为此域启用 SSL 代理") { appState.enableSSLProxying(for: tx) }
+        menu.addAction(Strings.Traffic.enableSslProxyingForThisDomain) { appState.enableSSLProxying(for: tx) }
         if tx.clientBundle != nil, tx.isTunnel || tx.scheme.lowercased() == "https" {
-            menu.addAction("为来源应用配置 SSL…") { appState.openTool(.sslApplications, transaction: tx) }
+            menu.addAction(Strings.Traffic.configureSslForSourceApplication) { appState.openTool(.sslApplications, transaction: tx) }
         }
         menu.addItem(.separator())
-        menu.addSubmenu("导出") { submenu in
+        menu.addSubmenu(Strings.Traffic.export) { submenu in
             submenu.addAction("HAR") { ExportService.exportHAR(targets) }
             submenu.addAction("CSV") { ExportService.exportCSV(targets) }
         }
         SavedRequestMenu.add(to: menu, store: store, transactions: targets, reportError: { appState.systemProxyMessage = $0 })
-        menu.addAction("添加备注…") { appState.openComment(targets) }
-        menu.addAction(appState.diffPool.contains(where: { $0 === tx }) ? "从对比池移除" : "加入对比池") {
+        menu.addAction(Strings.Traffic.addComment) { appState.openComment(targets) }
+        menu.addAction(appState.diffPool.contains(where: { $0 === tx }) ? Strings.Traffic.removeFromComparisonPool : Strings.Traffic.addToComparisonPool) {
             appState.toggleDiffCandidate(tx)
         }
-        menu.addSubmenu("高亮") { submenu in
+        menu.addSubmenu(Strings.Traffic.highlight) { submenu in
             for name in ProxymanTheme.highlightNames {
-                submenu.addAction(name) {
+                submenu.addAction(ProxymanTheme.localizedHighlightName(name)) {
                     for tx in targets { tx.highlightName = name }
                     store.update(targets)
                 }
             }
-            submenu.addAction("重置") {
+            submenu.addAction(Strings.Traffic.reset) {
                 for tx in targets { tx.highlightName = nil }
                 store.update(targets)
             }
         }
-        menu.addAction("复制 URL") { appState.copyText(targets.map(\.fullURL).joined(separator: "\n")) }
-        menu.addAction("复制（\(presentationSettings.defaultCopyFormat.title)）") { appState.copyRequestsUsingDefaultFormat(targets) }
-        menu.addAction("复制为 cURL") { appState.copyRequestsAsCurl(targets) }
-        menu.addSubmenu(targets.count > 1 ? "复制此请求为代码" : "复制为代码", enabled: tx.canReplay) { submenu in
+        menu.addAction(Strings.Traffic.copyUrl) { appState.copyText(targets.map(\.fullURL).joined(separator: "\n")) }
+        menu.addAction(Strings.Traffic.copy(presentationSettings.defaultCopyFormat.title)) { appState.copyRequestsUsingDefaultFormat(targets) }
+        menu.addAction(Strings.Traffic.copyAsCurl) { appState.copyRequestsAsCurl(targets) }
+        menu.addSubmenu(targets.count > 1 ? Strings.Traffic.copyThisRequestAsCode : Strings.Traffic.copyAsCode, enabled: tx.canReplay) { submenu in
             for format in RequestCode.Format.allCases {
                 submenu.addAction(format.title, enabled: RequestCode.supported(format, for: tx)) {
                     appState.copyText(RequestCode.generate(tx, format: format))
@@ -432,7 +474,7 @@ struct TrafficListView: View {
             }
         }
         menu.addItem(.separator())
-        menu.addAction("删除") { store.remove(Set(targets.map(\.id))) }
+        menu.addAction(Strings.Traffic.delete) { store.remove(Set(targets.map(\.id))) }
         return menu
     }
 }
@@ -471,7 +513,7 @@ struct TrafficRow: View {
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity)
         .frame(height: ProxymanTheme.rowHeight)
-        .font(PresentationFonts.swiftUIFont(size: 11, weight: .medium))
+        .font(PresentationFonts.swiftUIFont(weight: .medium))
         .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.87))
         .contentShape(Rectangle())
         .background(rowBackground)
@@ -496,8 +538,8 @@ struct TrafficRow: View {
                 if tx.suspectedPinning {
                     Image(systemName: "lock.shield")
                         .foregroundStyle(isSelected ? Color.white : Color.orange)
-                        .accessibilityLabel("疑似 SSL 证书锁定")
-                        .help("客户端拒绝了代理证书")
+                        .accessibilityLabel(Strings.Traffic.possibleSslCertificatePinning)
+                        .help(Strings.Traffic.theClientRejectedTheProxyCertificate)
                 }
                 if tx.isGRPCWeb {
                     badge("gRPC-Web", color: .accentColor).fixedSize()
@@ -506,26 +548,26 @@ struct TrafficRow: View {
         case .client:
             HStack(spacing: 6) {
                 ClientIconView(image: tx.clientIcon)
-                Text(tx.clientName ?? "未知").foregroundStyle(isSelected ? Color.white : Color.secondary)
+                Text(tx.clientName ?? Strings.Traffic.unknown).foregroundStyle(isSelected ? Color.white : Color.secondary)
             }
         case .method:
             badge(tx.method, color: tx.method == "CONNECT" ? .secondary : Color(nsColor: tx.methodColor))
         case .status:
-            badge(tx.state == .failed ? (tx.statusCode > 0 ? "\(tx.statusCode) · 失败" : "失败")
-                  : tx.statusCode == 0 ? "进行中" : String(tx.statusCode),
+            badge(tx.state == .failed ? (tx.statusCode > 0 ? Strings.Traffic.failed(tx.statusCode) : Strings.Traffic.failed2)
+                  : tx.statusCode == 0 ? Strings.Traffic.inProgress : String(tx.statusCode),
                   color: Color(nsColor: tx.statusColor))
                 .help(tx.errorText ?? tx.statusText)
-        case .time: Text(tx.timeText).font(PresentationFonts.swiftUIFont(size: 10.5)).help(tx.timeText)
+        case .time: Text(tx.timeText).font(PresentationFonts.swiftUIFont()).help(tx.timeText)
         case .duration: Text(tx.state == .pending || tx.state == .awaiting ? "–" : tx.durationText)
         case .request: Text(size(max(tx.requestBytes, tx.requestBody.count)))
         case .response: Text(size(max(tx.responseBytes, tx.responseBody.count)))
         case .ssl:
             if tx.isTLSIntercepted {
-                Image(systemName: "lock.open").accessibilityLabel("已解密")
+                Image(systemName: "lock.open").accessibilityLabel(Strings.Traffic.decrypted)
             }
         case .edited:
             if tx.originalURL != nil {
-                Image(systemName: "pencil").accessibilityLabel("已编辑")
+                Image(systemName: "pencil").accessibilityLabel(Strings.Traffic.edited)
             }
         case .comment: Text(tx.comment).help(tx.comment)
         case .tools: Text(tx.ruleMatches.joined(separator: ", ")).help(tx.ruleMatches.joined(separator: ", "))
@@ -538,10 +580,10 @@ struct TrafficRow: View {
 
     private func badge(_ title: String, color: Color) -> some View {
         Text(title)
-            .font(PresentationFonts.swiftUIFont(size: 10.5, weight: .semibold))
+            .font(PresentationFonts.swiftUIFont(size: 11, weight: .semibold))
             .foregroundStyle(isSelected ? Color.white : color)
             .padding(.horizontal, 5)
-            .frame(height: 17)
+            .frame(height: max(17, CGFloat(presentationSettings.fontSize) + 5))
             .background(isSelected ? Color.black.opacity(0.26) : color.opacity(0.19),
                         in: RoundedRectangle(cornerRadius: 4))
     }

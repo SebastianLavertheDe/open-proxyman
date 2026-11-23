@@ -50,7 +50,7 @@ enum MCPProtocol {
             do {
                 try validate(arguments, schema: tool["inputSchema"] as? [String: Any] ?? [:])
                 arguments["operation"] = name
-                let payload = try LocalControlSocket.request(LocalControl.automationRequest(arguments))
+                let payload = try LocalControlSocket.request(LocalControl.automationRequest(arguments, isMCP: true))
                 guard let status = payload.first else { throw LocalControlError.failed("Empty application reply") }
                 let text = String(decoding: payload.dropFirst(), as: UTF8.self)
                 var response: [String: Any] = ["content": [["type": "text", "text": text]], "isError": status != 0]

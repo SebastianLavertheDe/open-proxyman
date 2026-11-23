@@ -106,32 +106,32 @@ enum GRPCFrames {
                 Scan(messages: messages, trailers: trailers ?? HTTPHeaders(), issue: issue)
             }
             func partial(_ description: String) -> Scan {
-                let detail = truncated ? "捕获已截断" : (complete ? "报文不完整" : "仍在接收")
+                let detail = truncated ? Strings.Detail.captureTruncated : (complete ? Strings.Detail.incompleteMessage : Strings.Detail.stillReceiving)
                 return result("\(description) · \(detail)")
             }
             while cursor < data.endIndex {
                 guard trailers == nil else {
-                    return result("gRPC-Web Trailers 帧之后仍有数据 · 偏移 \(offset)")
+                    return result(Strings.Detail.dataFollowsTheGrpcWebTrailersFrameOffset(offset))
                 }
-                guard data.endIndex - cursor >= 5 else { return partial("消息头不完整 · 偏移 \(offset)") }
+                guard data.endIndex - cursor >= 5 else { return partial(Strings.Detail.incompleteMessageHeaderOffset(offset)) }
                 let flag = data[cursor]
                 let isTrailer = web && (flag == 0x80 || flag == 0x81)
                 guard flag == 0 || flag == 1 || isTrailer else {
-                    return result("无效的帧标记 \(flag) · 偏移 \(offset)")
+                    return result(Strings.Detail.invalidFrameFlagOffset(Int(flag), offset))
                 }
                 guard isTrailer || messages.count < maxFrames else {
-                    return result("仅列出前 \(maxFrames) 条 gRPC 消息。")
+                    return result(Strings.Detail.onlyTheFirstGrpcMessagesAreListed(maxFrames))
                 }
                 let size = (Int(data[cursor + 1]) << 24) | (Int(data[cursor + 2]) << 16)
                     | (Int(data[cursor + 3]) << 8) | Int(data[cursor + 4])
                 let start = cursor + 5
                 if isTrailer && size > maxTrailers {
-                    return result("gRPC-Web Trailers 帧超过 64 KiB 解码上限。")
+                    return result(Strings.Detail.theGrpcWebTrailersFrameExceedsThe64KibDecodingLimit)
                 }
                 let available = data.endIndex - start
                 guard size <= available else {
-                    let kind = isTrailer ? "gRPC-Web Trailers 帧" : "第 \(messages.count + 1) 条消息"
-                    return partial("\(kind)声明 \(size) 字节，已捕获 \(available) 字节")
+                    let kind = isTrailer ? Strings.Detail.grpcWebTrailersFrame : Strings.Detail.message(messages.count + 1)
+                    return partial(Strings.Detail.declaresBytesBytesCaptured(kind, size, available))
                 }
                 let message = Message(id: offset, payloadRange: start..<(start + size), compressed: flag & 1 != 0)
                 if isTrailer {
@@ -139,7 +139,7 @@ enum GRPCFrames {
                         let bytes = try payload(of: message, in: data, encoding: encoding, limit: maxTrailers)
                         trailers = try parseTrailers(bytes)
                     } catch {
-                        return result("无法解析 gRPC-Web Trailers · \(error.localizedDescription)")
+                        return result(Strings.Detail.unableToParseGrpcWebTrailers(String(describing: error.localizedDescription)))
                     }
                 } else {
                     messages.append(message)
@@ -147,7 +147,7 @@ enum GRPCFrames {
                 cursor = start + size
                 offset = cursor - data.startIndex
             }
-            return result(truncated ? "捕获已截断。可能还有后续 gRPC 消息。" : nil)
+            return result(truncated ? Strings.Detail.theCaptureWasTruncatedMoreGrpcMessagesMayFollow : nil)
         }
     }
 
@@ -203,15 +203,15 @@ enum GRPCFrames {
         }
 
         func issue(complete: Bool, truncated: Bool) -> String? {
-            if let invalidOffset { return "gRPC-Web Base64 无效 · 偏移 \(invalidOffset)" }
+            if let invalidOffset { return Strings.Detail.invalidGrpcWebBase64Offset(invalidOffset) }
             guard quartetCount > 0 else { return nil }
-            let detail = truncated ? "捕获已截断" : (complete ? "报文不完整" : "仍在接收")
-            return "gRPC-Web Base64 组不完整 · \(detail)"
+            let detail = truncated ? Strings.Detail.captureTruncated : (complete ? Strings.Detail.incompleteMessage : Strings.Detail.stillReceiving)
+            return Strings.Detail.incompleteGrpcWebBase64Group(String(describing: detail))
         }
     }
 
     private static func parseTrailers(_ data: Data) throws -> HTTPHeaders {
-        let malformed = GRPCInspectionError("Trailers 头部格式无效。")
+        let malformed = GRPCInspectionError(Strings.Detail.invalidTrailersHeaderFormat)
         guard let text = String(data: data, encoding: .utf8) else { throw malformed }
         var lines = text.components(separatedBy: "\r\n")
         if lines.last == "" { lines.removeLast() }
@@ -240,7 +240,7 @@ enum GRPCFrames {
 
     static func payload(of message: Message, in data: Data, encoding: String?, limit: Int = maxPayload) throws -> Data {
         guard message.byteCount <= limit else {
-            throw GRPCInspectionError(limit == maxTrailers ? "消息超过 64 KiB 解码上限。" : "消息超过 1 MiB 解码上限。")
+            throw GRPCInspectionError(limit == maxTrailers ? Strings.Detail.theMessageExceedsThe64KibDecodingLimit : Strings.Detail.theMessageExceedsThe1MibDecodingLimit)
         }
         return try decodePayload(data.subdata(in: message.payloadRange), compressed: message.compressed,
                                  encoding: encoding, limit: limit)
@@ -252,15 +252,15 @@ enum GRPCFrames {
         switch encoding?.trimmingCharacters(in: .whitespaces).lowercased() {
         case "gzip": return try decompress(payload, window: MAX_WBITS + 16, limit: limit, limitLabel: limitLabel)
         case "deflate": return try decompress(payload, window: MAX_WBITS, limit: limit, limitLabel: limitLabel)
-        case nil, "", "identity": throw GRPCInspectionError("压缩标记已设置，缺少可用的 grpc-encoding。")
-        default: throw GRPCInspectionError("暂不支持 \(encoding ?? "") 编码。")
+        case nil, "", "identity": throw GRPCInspectionError(Strings.Detail.theCompressionFlagIsSetButNoSupportedGrpcEncodingIs)
+        default: throw GRPCInspectionError(Strings.Detail.unsupportedEncoding(String(describing: encoding ?? "")))
         }
     }
 
     private static func decompress(_ data: Data, window: Int32, limit: Int, limitLabel: String) throws -> Data {
         var stream = z_stream()
         guard inflateInit2_(&stream, window, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
-            throw GRPCInspectionError("无法初始化解压。")
+            throw GRPCInspectionError(Strings.Detail.unableToInitializeDecompression)
         }
         defer { inflateEnd(&stream) }
         return try data.withUnsafeBytes { input in
@@ -277,19 +277,20 @@ enum GRPCFrames {
                 }
                 let written = chunk.count - Int(stream.avail_out)
                 guard output.count + written <= limit else {
-                    throw GRPCInspectionError("解压后正文超过 \(limitLabel)。")
+                    throw GRPCInspectionError(Strings.Detail.theDecompressedBodyExceeds(String(describing: limitLabel)))
                 }
                 output.append(contentsOf: chunk.prefix(written))
                 if result == Z_STREAM_END, stream.avail_in == 0 { return output }
-                guard result == Z_OK else { throw GRPCInspectionError("压缩消息损坏或含多余字节。") }
+                guard result == Z_OK else { throw GRPCInspectionError(Strings.Detail.theCompressedMessageIsCorruptOrContainsExtraBytes) }
             }
         }
     }
 }
 
-struct GRPCInspectionError: LocalizedError {
-    let message: String
-
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+struct GRPCInspectionError: LocalizedError, OperationIssueProviding {
+    let operationIssue: OperationIssue
+    init(_ issue: OperationIssue) { operationIssue = issue }
+    init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+    var message: String { operationIssue.diagnostic }
+    var errorDescription: String? { operationIssue.diagnostic }
 }

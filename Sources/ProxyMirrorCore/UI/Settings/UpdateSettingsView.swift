@@ -6,28 +6,28 @@ struct UpdateSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("更新与变更日志").font(.title2)
-            Text("ProxyMirror \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发构建")")
+            Text(Strings.Settings.updatesReleaseNotes).font(.title2)
+            Text("ProxyMirror \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? Strings.Settings.developmentBuild)")
                 .foregroundStyle(.secondary)
             Text(updates.status).fixedSize(horizontal: false, vertical: true)
-            Toggle("自动检查更新", isOn: Binding(
+            Toggle(Strings.Settings.automaticallyCheckForUpdates, isOn: Binding(
                 get: { updates.automaticallyChecksForUpdates },
                 set: { updates.setAutomaticallyChecksForUpdates($0) }
-            )).disabled(!updates.automaticUpdatesAvailable)
+            )).disabled(!updates.supportsAutomaticChecks)
             if let checked = updates.lastUpdateCheck {
-                Text("上次检查：\(checked.formatted(date: .abbreviated, time: .shortened))")
+                Text(Strings.Settings.lastChecked(checked.formatted(date: .abbreviated, time: .shortened)))
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let feed = updates.configuredFeed {
-                Text("更新源：\(feed.absoluteString)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(Strings.Settings.updateFeed(feed.absoluteString)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
             HStack {
                 Button(updates.checkMenuTitle) { updates.checkForUpdates() }
                     .disabled(!updates.canCheckForUpdates)
-                Button("变更日志…") { updates.openReleaseNotes() }
+                Button(Strings.Settings.releaseNotes) { updates.openReleaseNotes() }
             }
             if !updates.automaticUpdatesAvailable {
-                Link("项目 Releases", destination: AppUpdateController.releasesURL)
+                Link(Strings.Settings.projectReleases, destination: AppUpdateController.releasesURL)
             }
             Spacer(minLength: 0)
         }
@@ -43,6 +43,6 @@ struct AppUpdateMenuItems: View {
     var body: some View {
         Button(updates.checkMenuTitle) { updates.checkForUpdates() }
             .disabled(!updates.canCheckForUpdates)
-        Button("变更日志…") { updates.openReleaseNotes() }
+        Button(Strings.Settings.releaseNotes) { updates.openReleaseNotes() }
     }
 }

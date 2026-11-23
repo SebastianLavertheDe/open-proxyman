@@ -19,9 +19,9 @@ struct CustomCertificateView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("按域名自定义服务端证书").font(.system(size: 13, weight: .semibold))
+                Text(Strings.Tools.customServerCertificatesByDomain2).font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Button("删除") { removeSelected() }.disabled(selection.isEmpty)
+                Button(Strings.Tools.delete) { removeSelected() }.disabled(selection.isEmpty)
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
@@ -29,17 +29,17 @@ struct CustomCertificateView: View {
             List(selection: $selection) {
                 ForEach(store.customCertificates) { rule in
                     HStack(spacing: 8) {
-                        Toggle("", isOn: bindingEnabled(rule)).toggleStyle(.checkbox).labelsHidden()
-                        Text(rule.hostPattern.isEmpty ? "(未填域名)" : rule.hostPattern)
+                        Toggle(Strings.Tools.enableRule, isOn: bindingEnabled(rule)).toggleStyle(.checkbox).labelsHidden()
+                        Text(rule.hostPattern.isEmpty ? Strings.Tools.noDomain : rule.hostPattern)
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
                             .frame(width: 180, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("证书: \(rule.certificatePath)").lineLimit(1).truncationMode(.middle)
-                            Text("私钥: \(rule.privateKeyPath)").lineLimit(1).truncationMode(.middle)
+                            Text(Strings.Tools.certificate1(String(describing: rule.certificatePath))).lineLimit(1).truncationMode(.middle)
+                            Text(Strings.Tools.privateKey1(String(describing: rule.privateKeyPath))).lineLimit(1).truncationMode(.middle)
                         }
                         .font(.system(size: 10.5)).foregroundStyle(.secondary)
                         Spacer()
-                        Button("编辑") { startEdit(rule) }.controlSize(.small)
+                        Button(Strings.Tools.edit) { startEdit(rule) }.controlSize(.small)
                             .opacity(editingID == rule.id ? 0.4 : 1)
                     }
                     .tag(rule.id)
@@ -54,7 +54,7 @@ struct CustomCertificateView: View {
             Divider()
             HStack {
                 Spacer()
-                Button("完成") { dismiss() }.keyboardShortcut(.return, modifiers: .command)
+                Button(Strings.Tools.done) { dismiss() }.keyboardShortcut(.return, modifiers: .command)
             }
             .padding(10)
         }
@@ -63,33 +63,33 @@ struct CustomCertificateView: View {
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(editingID == nil ? "添加规则" : "更新规则").font(.caption.weight(.semibold))
+            Text(editingID == nil ? Strings.Tools.addRule : Strings.Tools.updateRule).font(.caption.weight(.semibold))
             HStack(spacing: 8) {
-                Text("域名通配").font(.caption).frame(width: 64, alignment: .leading)
-                TextField("*.example.com 或 example.com", text: $draftHost)
+                Text(Strings.Tools.domainPattern).font(.caption).frame(minWidth: 100, alignment: .leading)
+                TextField(Strings.Tools.exampleComOrExampleCom, text: $draftHost)
                     .textFieldStyle(.roundedBorder)
             }
             HStack(spacing: 8) {
-                Text("证书链").font(.caption).frame(width: 64, alignment: .leading)
-                Text(draftCertPath.isEmpty ? "未选择" : draftCertPath)
+                Text(Strings.Tools.certificateChain).font(.caption).frame(minWidth: 100, alignment: .leading)
+                Text(draftCertPath.isEmpty ? Strings.Tools.notSelected : draftCertPath)
                     .font(.system(size: 10.5)).lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("选择 PEM…") { pickFile { draftCertPath = $0 } }.controlSize(.small)
+                Button(Strings.Tools.choosePem) { pickFile { draftCertPath = $0 } }.controlSize(.small)
             }
             HStack(spacing: 8) {
-                Text("私钥").font(.caption).frame(width: 64, alignment: .leading)
-                Text(draftKeyPath.isEmpty ? "未选择" : draftKeyPath)
+                Text(Strings.Tools.privateKey).font(.caption).frame(minWidth: 100, alignment: .leading)
+                Text(draftKeyPath.isEmpty ? Strings.Tools.notSelected : draftKeyPath)
                     .font(.system(size: 10.5)).lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("选择 PEM…") { pickFile { draftKeyPath = $0 } }.controlSize(.small)
+                Button(Strings.Tools.choosePem) { pickFile { draftKeyPath = $0 } }.controlSize(.small)
             }
             HStack {
-                Button(editingID == nil ? "添加" : "更新规则") { commitDraft() }
+                Button(editingID == nil ? Strings.Tools.add : Strings.Tools.updateRule) { commitDraft() }
                     .disabled(draftHost.trimmingCharacters(in: .whitespaces).isEmpty
                               || draftCertPath.isEmpty || draftKeyPath.isEmpty)
-                if editingID != nil { Button("结束编辑") { clearDraft() }.controlSize(.small) }
+                if editingID != nil { Button(Strings.Tools.finishEditing) { clearDraft() }.controlSize(.small) }
                 Spacer()
-                Text("叶子证书需在前，后跟中间证书。").font(.caption2).foregroundStyle(.tertiary)
+                Text(Strings.Tools.placeTheLeafCertificateFirstFollowedByIntermediateCertificates).font(.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 12)

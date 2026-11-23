@@ -5,9 +5,13 @@ enum CharlesImport {
     static let sessionExtensions = ["xml", "chlsx", "chlsj", "chls", "chlz"]
     private static let sessionLimit = 128 * 1024 * 1024
 
-    struct ImportError: LocalizedError {
-        let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+    struct ImportError: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ message: String) { operationIssue = .technical(message) }
+        var message: String { operationIssue.diagnostic }
+        var text: String { operationIssue.diagnostic }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 
     struct Session {
@@ -25,7 +29,7 @@ enum CharlesImport {
     }
 
     static func readSession(_ data: Data) throws -> Session {
-        guard data.count <= sessionLimit else { throw ImportError("Charles 会话超过 128 MiB。请拆分后再导入。") }
+        guard data.count <= sessionLimit else { throw ImportError(OperationIssue.charlesImportTheCharlesSessionExceeds128MibSplitIt) }
         let bytes = data.starts(with: [0xef, 0xbb, 0xbf]) ? data.dropFirst(3) : data[...]
         if bytes.first(where: { ![0x20, 0x09, 0x0a, 0x0d].contains($0) }) == 0x5b {
             return try readJSONSession(Data(bytes))
@@ -37,11 +41,11 @@ enum CharlesImport {
             // Charles's native binary formats can be converted by its File > Export command.
             if data.prefix(2) == Data([0xac, 0xed]) || data.prefix(2) == Data([0x1f, 0x8b])
                 || data.prefix(2) == Data([0x50, 0x4b]) {
-                throw ImportError("请先在 Charles 中将原生会话导出为 XML 或 JSON Session。")
+                throw ImportError(OperationIssue.charlesImportExportTheNativeSessionAsXmlOrJson)
             }
             throw error
         }
-        guard root.name == "charles-session" else { throw ImportError("请选择 Charles XML 会话导出文件。") }
+        guard root.name == "charles-session" else { throw ImportError(OperationIssue.charlesImportSelectACharlesXmlSessionExport) }
         return collect(root.children("transaction")) { node, index in
             let a = node.attributes
             let request = node.child("request")
@@ -96,7 +100,7 @@ enum CharlesImport {
             var bytes = Data()
             if let base64 = body?.encoded {
                 guard body?.encoding == nil || body?.encoding?.lowercased() == "base64" else {
-                    throw ImportError("Charles JSON 正文使用无法读取的编码。")
+                    throw ImportError(OperationIssue.charlesImportTheCharlesJsonBodyUsesAnUnreadableEncoding)
                 }
                 bytes = try binaryBody(base64)
             }
@@ -214,7 +218,7 @@ enum CharlesImport {
             switch body.attributes["encoding"]?.lowercased() {
             case "base64": bytes = try binaryBody(body.text)
             case nil, "", "text": bytes = try textBody(body.text, charset: node.attributes["charset"])
-            default: throw ImportError("Charles XML 正文使用无法读取的编码。")
+            default: throw ImportError(OperationIssue.charlesImportTheCharlesXmlBodyUsesAnUnreadableEncoding)
             }
         }
         var headers = HTTPHeaders(fields)
@@ -227,7 +231,7 @@ enum CharlesImport {
 
     private static func binaryBody(_ string: String) throws -> Data {
         let unwrapped = string.utf8.filter { ![0x20, 0x09, 0x0a, 0x0d].contains($0) }
-        guard let data = Data(base64Encoded: Data(unwrapped)) else { throw ImportError("Charles 正文的 Base64 无效。") }
+        guard let data = Data(base64Encoded: Data(unwrapped)) else { throw ImportError(OperationIssue.charlesImportTheCharlesBodyContainsInvalidBase64) }
         return data
     }
 
@@ -236,7 +240,7 @@ enum CharlesImport {
         let cfEncoding = CFStringConvertIANACharSetNameToEncoding(charset as CFString)
         let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cfEncoding))
         guard cfEncoding != kCFStringEncodingInvalidId, let bytes = text.data(using: encoding) else {
-            throw ImportError("Charles 正文使用无法读取的字符编码。")
+            throw ImportError(OperationIssue.charlesImportTheCharlesBodyUsesAnUnreadableCharacterEncoding)
         }
         return bytes
     }
@@ -265,12 +269,12 @@ enum CharlesImport {
 
     private static func contents(of url: URL, limit: Int) throws -> Data {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true else { throw ImportError("请选择普通文件。") }
-        guard values.fileSize.map({ $0 <= limit }) == true else { throw ImportError("Charles 导出文件超出大小限制。") }
+        guard values.isRegularFile == true else { throw ImportError(OperationIssue.charlesImportSelectARegularFile) }
+        guard values.fileSize.map({ $0 <= limit }) == true else { throw ImportError(OperationIssue.charlesImportTheCharlesExportExceedsTheSizeLimit) }
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         let data = try file.read(upToCount: limit + 1) ?? Data()
-        guard data.count <= limit else { throw ImportError("Charles 导出文件超出大小限制。") }
+        guard data.count <= limit else { throw ImportError(OperationIssue.charlesImportTheCharlesExportExceedsTheSizeLimit) }
         return data
     }
 
@@ -281,7 +285,7 @@ enum CharlesImport {
         parser.externalEntityResolvingPolicy = .never
         parser.shouldResolveExternalEntities = false
         guard parser.parse(), let root = delegate.root else {
-            throw ImportError("无法读取 Charles XML。请选择 Charles 导出的会话或规则文件。")
+            throw ImportError(OperationIssue.charlesImportUnableToReadCharlesXmlSelectASession)
         }
         return root
     }
@@ -353,7 +357,7 @@ enum CharlesImport {
 
 extension CharlesImport {
     struct Rules {
-        var backup = RuleBackup(version: 1)
+        var backup = RuleBackup(version: RuleBackup.currentVersion)
         var skipped: [String] = []
         var notes: [String] = []
 
@@ -370,7 +374,7 @@ extension CharlesImport {
     }
 
     static func readRules(_ data: Data) throws -> Rules {
-        guard data.count <= RuleBackup.fileLimit else { throw ImportError("Charles 规则超过 2 MiB。请按工具拆分。") }
+        guard data.count <= RuleBackup.fileLimit else { throw ImportError(OperationIssue.charlesImportCharlesRulesExceed2MibSplitTheExport) }
         let root = try parseXML(data)
         var result = Rules()
         let tools: [Element]
@@ -396,11 +400,11 @@ extension CharlesImport {
                 readBlockList(tool, into: &result)
             default:
                 if root.name == "charles-export" {
-                    result.skipped.append("工具 \(tool.name)")
+                    result.skipped.append(Strings.Errors.charlesImportTool(String(tool.name)))
                 }
             }
         }
-        guard recognized else { throw ImportError("请选择 Charles 的 Rewrite、Map Local、Block List 或设置 XML 导出。") }
+        guard recognized else { throw ImportError(OperationIssue.charlesImportSelectACharlesRewriteMapLocalBlockList) }
         return result
     }
 
@@ -421,18 +425,18 @@ extension CharlesImport {
                 if let location = parseLocation(match.child("location")) {
                     locations.append(location)
                 } else {
-                    result.skipped.append("\(title) 的位置 \(index + 1)：匹配条件无法转换")
+                    result.skipped.append(Strings.Errors.charlesImportLocationTheMatchConditionCannotBeConverted(String(title), String(index + 1)))
                 }
             }
             let nodes = group.child("rules")?.children("rewriteRule") ?? []
             guard !locations.isEmpty || paths.isEmpty else {
-                if !nodes.isEmpty { result.skipped.append("\(title)：没有可迁移的启用位置，共 \(nodes.count) 条规则") }
+                if !nodes.isEmpty { result.skipped.append(Strings.Errors.charlesImportNoEnabledLocationsCanBeImportedRules(String(title), Int(nodes.count))) }
                 continue
             }
             let alternatives = locations.map(\.regex)
             let regex = "\\A(?:\(alternatives.isEmpty ? "https?://[^#]+" : alternatives.joined(separator: "|")))\\z"
             guard regex.utf8.count <= 8192, URLRule.regexCache(regex) != nil else {
-                result.skipped.append("\(title)：位置匹配表达式过长或无效")
+                result.skipped.append(Strings.Errors.charlesImportTheLocationMatchExpressionIsTooLongOr(String(title)))
                 continue
             }
 
@@ -440,7 +444,7 @@ extension CharlesImport {
             for (index, node) in nodes.enumerated() {
                 let actions = rewriteActions(node)
                 guard !actions.isEmpty else {
-                    result.skipped.append("\(title) 的规则 \(index + 1)：不支持的 Rewrite 操作或匹配条件")
+                    result.skipped.append(Strings.Errors.charlesImportRuleUnsupportedRewriteActionOrMatchCondition(String(title), String(index + 1)))
                     continue
                 }
                 let label = actions.map(\.summary).joined(separator: " / ")
@@ -501,13 +505,13 @@ extension CharlesImport {
                                                ignoreQuery: true),
                   let target = node.value("dest"), target.hasPrefix("/"),
                   !target.hasSuffix("/"), !target.contains("\u{0}") else {
-                result.skipped.append("\(title)：匹配条件或本地文件路径无法转换")
+                result.skipped.append(Strings.Errors.charlesImportTheMatchConditionOrLocalFilePathCannot(String(title)))
                 continue
             }
             var isDirectory: ObjCBool = false
             let exists = FileManager.default.fileExists(atPath: target, isDirectory: &isDirectory)
             guard !isDirectory.boolValue else {
-                result.skipped.append("\(title)：目录映射无法等价转换")
+                result.skipped.append(Strings.Errors.charlesImportDirectoryMappingCannotBeConvertedEquivalently(String(title)))
                 continue
             }
             let enabled = tool.flag("toolEnabled") && node.flag("enabled")
@@ -515,7 +519,7 @@ extension CharlesImport {
             migrated.append(ProxyRule(enabled: enabled && readable, pattern: location.label, target: target,
                                       comment: "Charles Map Local", urlRegex: "\\A\(location.regex)\\z"))
             if enabled && !readable {
-                result.notes.append("\(title)：目标文件在此 Mac 上不可读取，已关闭。\n\(target)")
+                result.notes.append(Strings.Errors.charlesImportTheTargetFileIsUnreadableOnThisMac(String(title), String(target)))
             }
         }
         if !migrated.isEmpty {
@@ -529,11 +533,11 @@ extension CharlesImport {
         for (index, node) in nodes.enumerated() {
             let title = "Block List \(index + 1)"
             guard tool.value("action").map({ $0 == "0" }) ?? true else {
-                result.skipped.append("\(title)：连接终止动作无法转换为 HTTP 403")
+                result.skipped.append(Strings.Errors.charlesImportAConnectionTerminationActionCannotBeConvertedTo(String(title)))
                 continue
             }
             guard let location = parseLocation(node.child("location")) else {
-                result.skipped.append("\(title)：匹配条件无法转换")
+                result.skipped.append(Strings.Errors.charlesImportTheMatchConditionCannotBeConverted(String(title)))
                 continue
             }
             migrated.append(ProxyRule(enabled: tool.flag("toolEnabled") && node.flag("enabled"), pattern: location.label,

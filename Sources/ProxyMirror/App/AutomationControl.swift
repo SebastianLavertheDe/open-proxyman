@@ -12,22 +12,58 @@ enum AutomationControl {
     ]
 
     @MainActor
-    static func execute(_ arguments: [String: Any], app: AppState) throws -> Data {
+    static func execute(_ arguments: [String: Any], app: AppState, isMCP: Bool = false) throws -> Data {
+        if isMCP, !app.settings.mcpEnabled { throw LocalControlError.failed("MCP 服务已停用。请在设置中启用。") }
+        let redact = isMCP && app.settings.mcpRedactSensitiveData
+        let data = try executeRequest(arguments, app: app, redactForMCP: redact)
+        guard redact else { return data }
+        // Code is already generated from the sanitized copy below. Running a
+        // free-form text redactor over source would damage literal quoting.
+        if arguments["operation"] as? String == "copy_as_code" { return data }
+        if (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil {
+            return try MCPDataRedaction.jsonData(data)
+        }
+        return Data(MCPDataRedaction.text(String(decoding: data, as: UTF8.self)).utf8)
+    }
+
+    @MainActor
+    private static func executeRequest(_ arguments: [String: Any], app: AppState, redactForMCP: Bool) throws -> Data {
         let operation = try string(arguments, "operation")
         let result: Any
         switch operation {
         case "proxy_address":
-            result = ["host": "127.0.0.1", "port": Int(app.settings.port), "listening": app.proxyRunning,
-                      "url": "http://127.0.0.1:\(app.settings.port)"]
+            let port = app.proxyRunning ? ProxyEngine.shared.port : app.settings.port
+            result = ["host": "127.0.0.1", "port": Int(port), "listening": app.proxyRunning,
+                      "url": "http://127.0.0.1:\(port)"]
         case "mcp_config":
             guard let config = MCPServer.configuration else { throw LocalControlError.failed("MCP 服务未启用。") }
             result = config
+        case "mcp_control":
+            let action = try string(arguments, "action")
+            let controller = MCPPreferencesController.shared
+            switch action {
+            case "enable": controller.setEnabled(true)
+            case "disable": controller.setEnabled(false)
+            case "status": break
+            default: throw LocalControlError.usage("MCP 动作支持 enable、disable、status。")
+            }
+            var state: [String: Any] = ["enabled": app.settings.mcpEnabled, "running": controller.isRunning]
+            if let endpoint = controller.endpoint { state["endpoint"] = endpoint }
+            if let message = controller.errorMessage { state["error"] = message }
+            result = state
         case "status":
             result = ["listening": app.proxyRunning, "recording": app.recordingEnabled,
                       "systemProxyActive": app.systemProxyActive, "count": app.store.transactions.count,
-                      "port": Int(app.settings.port), "http2": app.settings.http2Enabled]
+                      "port": Int(app.proxyRunning ? ProxyEngine.shared.port : app.settings.port), "http2": app.settings.http2Enabled]
         case "query_flows", "get_flow", "export_flows", "copy_as_code":
-            let flows = try matching(arguments, app: app)
+            let matched = try matching(arguments, app: app)
+            // Clone before code generation as secrets may otherwise be embedded
+            // in generated source or its Base64 body literals.
+            let flows: [Transaction]
+            if redactForMCP && operation != "query_flows" {
+                try checkBodyBudget(matched)
+                flows = try matched.map(redactedCopy)
+            } else { flows = matched }
             switch operation {
             case "query_flows":
                 result = flows.map { tx -> [String: Any] in
@@ -44,10 +80,20 @@ enum AutomationControl {
             case "get_flow":
                 guard arguments["id"] != nil, let tx = flows.first else { throw LocalControlError.noMatches("找不到指定流量。") }
                 try checkBodyBudget([tx])
+                if redactForMCP {
+                    var record = try object(SessionRecord(tx))
+                    record["_mcpRedacted"] = true
+                    return try json(record)
+                }
                 return try encode(SessionRecord(tx))
             case "copy_as_code":
                 guard arguments["id"] != nil, let tx = flows.first else { throw LocalControlError.noMatches("找不到指定流量。") }
                 let language = (arguments["language"] as? String ?? "curl").lowercased()
+                if redactForMCP {
+                    tx.requestHeaders = HTTPHeaders(MCPDataRedaction.replayHeaders(
+                        tx.requestHeaders.pairs.map { ($0.name, $0.value) }, body: tx.requestBody))
+                    tx.requestTrailers = HTTPHeaders()
+                }
                 let code: String
                 if language == "curl", tx.isTunnel { code = ExportService.curlCommand(tx) }
                 else { code = try generatedCode(tx, language: language) }
@@ -112,7 +158,7 @@ enum AutomationControl {
                 }
                 application = URL(fileURLWithPath: path)
             } else { application = nil }
-            result = ["message": try ProxyAutomation.launch(target, port: app.settings.port,
+            result = ["message": try ProxyAutomation.launch(target, port: ProxyEngine.shared.port,
                 certificate: CertificateAuthority.shared.caCertPath, application: application)]
         case "factory_reset": result = try factoryReset(arguments, app: app)
         case "script_help":
@@ -123,6 +169,13 @@ enum AutomationControl {
         default: throw LocalControlError.usage("未知自动化操作 \(operation)。")
         }
         return try json(result)
+    }
+
+    private static func redactedCopy(_ transaction: Transaction) throws -> Transaction {
+        let data = try MCPDataRedaction.jsonData(encode(SessionRecord(transaction)))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(SessionRecord.self, from: data).transaction()
     }
 
     // Kept separate so code-generator expansion remains a core concern. This
@@ -376,7 +429,8 @@ enum AutomationControl {
             merged.merge(raw) { _, new in new }
             config = try JSONDecoder().decode(ExternalProxyConfig.self, from: json(merged))
             if let error = config.validationError { throw LocalControlError.usage(error) }
-            guard !config.targetsLoopback(port: Int(app.settings.port)) else { throw LocalControlError.usage("外部代理不能指向 ProxyMirror。") }
+            let ownPort = app.proxyRunning ? ProxyEngine.shared.port : app.settings.port
+            guard !config.targetsLoopback(port: Int(ownPort)) else { throw LocalControlError.usage("外部代理不能指向 ProxyMirror。") }
         } else if action == "disable" { config.enabled = false }
         else if action != "get" { throw LocalControlError.usage("external-proxy 支持 get/set/disable。") }
         if action != "get" {
@@ -421,8 +475,11 @@ enum AutomationControl {
         case "proxy-address": operation = "proxy_address"
         case "factory-reset": operation = "factory_reset"
         case "mcp":
-            guard arguments == ["mcp", "config"] else { throw LocalControlError.usage("mcp 支持 config 和 stdio。") }
-            return (["operation": "mcp_config"], nil)
+            if arguments == ["mcp", "config"] { return (["operation": "mcp_config"], nil) }
+            if arguments.count == 2, ["enable", "disable", "status"].contains(arguments[1]) {
+                return (["operation": "mcp_control", "action": arguments[1]], nil)
+            }
+            throw LocalControlError.usage("mcp 支持 config、stdio、enable、disable 和 status。")
         case "tools", "external-proxy":
             operation = command == "tools" ? "tools" : "external_proxy"
             guard arguments.count > 1 else { throw LocalControlError.usage("\(command) 缺少动作。") }

@@ -12,16 +12,19 @@ func checkSavedRequestFolders(_ test: CoreAssertions) throws {
     let second = Transaction(); second.host = "two.saved.test"
     try SessionFile(transactions: [first, second], pinnedDomains: [], selected: []).write(to: legacy)
     let original = try Data(contentsOf: legacy)
+    var seed = SavedRequestFolderArchive()
+    seed.unfiled = [SessionRecord(first), SessionRecord(second)]
+    try seed.write(to: SavedRequestFolderArchive.fileURL(for: legacy))
     let store = TrafficStore(sourceFolderFile: sourceFile, savedFile: legacy)
     let deadline = Date().addingTimeInterval(3)
     while store.saved.count != 2, store.savedError == nil, Date() < deadline {
         RunLoop.current.run(until: Date().addingTimeInterval(0.01))
     }
-    test.equal(store.saved.map(\.host), [first.host, second.host], "Legacy Saved migration retains every original request")
+    test.equal(store.saved.map(\.host), [first.host, second.host], "Current Saved archive retains every original request")
     try finishSavedFolderWrite(store)
-    test.equal(try Data(contentsOf: legacy), original, "Migration retains the original Saved file verbatim")
+    test.equal(try Data(contentsOf: legacy), original, "Canonical load does not modify a separate session file")
     let canonical = SavedRequestFolderArchive.fileURL(for: legacy)
-    test.expect(FileManager.default.fileExists(atPath: canonical.path), "Migration writes a separate versioned request-folder archive")
+    test.expect(FileManager.default.fileExists(atPath: canonical.path), "Current Saved archive has an explicit versioned file")
     let sourceID = try store.saveSourceFolder(name: "接口", members: [.domain("keep.source.test")])
     let live = Transaction(); live.host = "keep.source.test"; store.add(live)
     let parent = try store.createSavedRequestFolder(name: "工作")
@@ -73,7 +76,7 @@ func checkSavedRequestFolders(_ test: CoreAssertions) throws {
     try finishSavedFolderWrite(store)
     test.equal(try Data(contentsOf: legacy), original, "Folder rename/move/delete never rewrites the legacy recovery file")
     let state = try SavedRequestFolderArchive.load(legacy: legacy).archive
-    test.equal(state.unfiled.count, 4, "The complete migrated library is persisted after subtree deletion")
+    test.equal(state.unfiled.count, 4, "The complete library is persisted after subtree deletion")
     let mode = try FileManager.default.attributesOfItem(atPath: canonical.path)[.posixPermissions] as? NSNumber
     test.equal(mode?.intValue, 0o600, "Saved request libraries containing captured credentials are written privately")
 

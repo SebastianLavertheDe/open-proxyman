@@ -38,8 +38,8 @@ enum ExportService {
     }
 
     private static func reportExportFailure(_ error: Error, format: String) {
-        let message = "\(format) 导出失败：\(error.localizedDescription)"
-        NSLog("[ProxyMirror] %@", message)
+        let message = Strings.Errors.exportServiceExportFailed(String(format), LocalizedErrorPresentation.message(for: error))
+        NSLog("[ProxyMirror] %@ export failed: %@", format, error.localizedDescription)
         DispatchQueue.main.async { AppState.shared.systemProxyMessage = message }
     }
 
@@ -151,20 +151,23 @@ enum ExportService {
 
     /// 生成可复用的 cURL 命令
     static func curlCommand(_ tx: Transaction) -> String {
+        let proxyPort = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
         if tx.isTunnel {
             let authority = URLParser.authority(host: tx.host, port: tx.port, scheme: "https")
-            return "curl --proxy 'http://127.0.0.1:\(AppSettings.shared.port)' 'https://\(_escape(authority))'"
+            let proxy = AppSettings.shared.appendProxyToCommands ? " --proxy 'http://127.0.0.1:\(proxyPort)'" : ""
+            return "curl\(proxy) 'https://\(_escape(authority))'"
         }
         var parts = ["curl '\(_escape(tx.fullURL))'"]
-        if AppSettings.shared.appendProxyToCommands { parts.append("--proxy 'http://127.0.0.1:\(AppSettings.shared.port)'") }
+        if AppSettings.shared.appendProxyToCommands { parts.append("--proxy 'http://127.0.0.1:\(proxyPort)'") }
         let body = tx.requestBody
         if tx.method != "GET" || !body.isEmpty {
             let method = tx.method.utf8.allSatisfy { (65...90).contains($0) } ? tx.method : "'\(_escape(tx.method))'"
             parts.append("-X \(method)")
         }
-        let skipped = ["host", "content-length", "connection", "accept-encoding", "transfer-encoding", "trailer", "proxy-authorization", "proxy-connection"]
-        let headers = ExportRedaction.headers(tx.requestHeaders.pairs.map { ($0.name, $0.value) }, redact: AppSettings.shared.redactSensitiveHeaders)
-        for (name, value) in headers where !skipped.contains(name.lowercased()) {
+        let headers = ExportRedaction.commandHeaders(
+            ExportRedaction.headers(tx.requestHeaders.pairs.map { ($0.name, $0.value) }, redact: AppSettings.shared.redactSensitiveHeaders),
+            preserveOriginal: AppSettings.shared.preserveOriginalHeaders, omitAcceptEncodingByDefault: true)
+        for (name, value) in headers {
             let header = value.isEmpty ? name + ";" : name + ": " + value
             parts.append("-H '\(_escape(header))'")
         }
@@ -185,14 +188,15 @@ enum ExportService {
 
     static func httpieCommand(_ tx: Transaction) -> String {
         let request = ComposeService.request(from: tx)
-        let omitted = ["host", "content-length", "connection", "transfer-encoding", "trailer", "proxy-authorization"]
         var args = ["http"]
         if AppSettings.shared.appendProxyToCommands {
-            let proxy = "http://127.0.0.1:\(AppSettings.shared.port)"
+            let port = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
+            let proxy = "http://127.0.0.1:\(port)"
             args += ["--proxy=http:'\(_escape(proxy))'", "--proxy=https:'\(_escape(proxy))'"]
         }
         args += ["'\(_escape(request.method))'", "'\(_escape(request.url))'"]
-        args += ExportRedaction.headers(request.headers, redact: AppSettings.shared.redactSensitiveHeaders).filter { !omitted.contains($0.0.lowercased()) }
+        args += ExportRedaction.commandHeaders(ExportRedaction.headers(request.headers, redact: AppSettings.shared.redactSensitiveHeaders),
+                                                preserveOriginal: AppSettings.shared.preserveOriginalHeaders)
             .map { "'\(_escape($0.0 + ": " + $0.1))'" }
         let command = args.joined(separator: " ")
         if let body = request.body, !body.isEmpty {

@@ -1,49 +1,147 @@
 import SwiftUI
 
+@MainActor
 struct ExperienceSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @AppStorage(ProxyMirrorAppearance.key) private var appearance = ProxyMirrorAppearance.system
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Group {
-            Text("显示与复制").font(.headline)
-            Toggle("在菜单栏显示图标", isOn: binding(\.showMenuBarIcon))
-            Toggle("底部栏显示内存和实时传输速率", isOn: binding(\.showResourceUsage))
-            Toggle("隐藏 Apple 后台流量", isOn: binding(\.hideAppleTraffic))
-            Picker("列表与 URL 截断位置", selection: Binding(get: { settings.truncationStyle }, set: { settings.truncationStyle = $0 })) {
-                Text("开头").tag("head"); Text("中间").tag("middle"); Text("末尾").tag("tail")
-            }
-            Toggle("正文自动换行", isOn: binding(\.wordWrap))
-            Toggle("正文显示空白字符", isOn: binding(\.showInvisibles))
-            Toggle("正文显示缩略导航", isOn: binding(\.showMinimap))
-            }
-            Group {
-                Divider()
-                Picker("等宽字体", selection: Binding(get: { settings.monospacedFontFamily }, set: { settings.monospacedFontFamily = $0 })) {
-                    Text("系统等宽字体").tag("")
-                    ForEach(PresentationFonts.availableFamilies, id: \.self) { Text($0).tag($0) }
-                    if !settings.monospacedFontFamily.isEmpty && !PresentationFonts.availableFamilies.contains(settings.monospacedFontFamily) {
-                        Text("\(settings.monospacedFontFamily)（不可用，使用系统字体）").tag(settings.monospacedFontFamily)
+        VStack(alignment: .leading, spacing: 16) {
+            PreferencesSetting(target: .displayBehavior) {
+                PreferencesSection(title: Strings.Settings.userInterface) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        typography
+                        PreferencesRow(label: Strings.Settings.bodyTab, labelWidth: 165) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                PreferencesToggle(title: Strings.Settings.wordWrap, keyPath: \.wordWrap)
+                                PreferencesToggle(title: Strings.Settings.showInvisibleCharacters, keyPath: \.showInvisibles)
+                                PreferencesToggle(title: Strings.Settings.showMinimap, keyPath: \.showMinimap)
+                                PreferencesToggle(title: Strings.Settings.scrollBeyondLastLine, keyPath: \.scrollBeyondLastLine)
+                            }
+                        }
+                        PreferencesRow(label: Strings.Settings.other, labelWidth: 165) {
+                            VStack(alignment: .leading, spacing: 9) {
+                                PreferencesToggle(title: Strings.Settings.alternatingRowColors, keyPath: \.showAlternatingRows)
+                                PreferencesToggle(title: Strings.Settings.showResourceUsageInTheBottomToolbar, keyPath: \.showResourceUsage)
+                                PreferencesHelp(Strings.Settings.includesMemoryUsageUploadAndDownloadSpeeds)
+                            }
+                        }
                     }
                 }
-                Stepper("Tab 宽度：\(settings.codeTabWidth) 个空格", value: Binding(get: { settings.codeTabWidth }, set: { settings.codeTabWidth = $0 }), in: 1...16)
-                Text("字体应用于正文、原文、脚本和请求列表。Tab 宽度应用于文本预览及脚本编辑器，并保留实际制表符。").font(.caption).foregroundStyle(.secondary)
-                Toggle("使用 24 小时制", isOn: binding(\.use24HourClock))
-                Toggle("时间显示完整日期", isOn: binding(\.showFullDate))
-                Toggle("请求列表显示斑马纹", isOn: binding(\.showAlternatingRows))
-                Picker("默认复制格式（⌘C）", selection: Binding(get: { settings.defaultCopyFormat }, set: { settings.defaultCopyFormat = $0 })) {
-                    ForEach(RequestCode.Format.allCases) { Text($0.title).tag($0) }
+            }
+            PreferencesSection(title: Strings.Settings.timeFormat) {
+                PreferencesRow(label: "", labelWidth: 165) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        PreferencesToggle(title: Strings.Settings.use24HourClock, keyPath: \.use24HourClock)
+                        PreferencesHelp(Strings.Settings.switchBetweenThe12HourAnd24Hour)
+                        PreferencesToggle(title: Strings.Settings.showFullDateAndTime, keyPath: \.showFullDate)
+                        PreferencesHelp(Strings.Settings.timestampsIncludeTheDateTimeAndTimeZone)
+                    }
                 }
             }
-            Group {
-            Divider()
-            Toggle("复制和导出时脱敏敏感头", isOn: binding(\.redactSensitiveHeaders))
-            Toggle("复制命令时追加本机 --proxy", isOn: binding(\.appendProxyToCommands))
-            Toggle("重复请求禁用缓存", isOn: binding(\.noCacheOnRepeat))
-            Toggle("给上游请求附加 ProxyMirror 诊断头", isOn: binding(\.appendDiagnosticHeaders))
+            PreferencesSetting(target: .appearance) { themeSettings }
+            iconSettings
+            Button(Strings.Settings.restoreDefaults) {
+                settings.resetAppearanceDefaults()
+                appearance = .system
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private var typography: some View {
+        PreferencesRow(label: Strings.Settings.fontSize, labelWidth: 165) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 18) {
+                    Stepper(value: Binding(get: { Int(settings.fontSize) }, set: { settings.fontSize = Double($0) }), in: 8...32) {
+                        Text(String(Int(settings.fontSize))).monospacedDigit().frame(width: 23)
+                    }.fixedSize()
+                    Text(Strings.Settings.tabWidth)
+                    Stepper(value: Binding(get: { settings.codeTabWidth }, set: { settings.codeTabWidth = $0 }), in: 1...16) {
+                        Text(Strings.Settings.spaces(settings.codeTabWidth)).monospacedDigit()
+                    }.fixedSize()
+                }
+                HStack(spacing: 10) {
+                    PreferencesToggle(title: Strings.Settings.useMonospacedFont, keyPath: \.useMonospacedFont)
+                    Menu {
+                        Button(Strings.Settings.systemMonospacedFont) { settings.monospacedFontFamily = "" }
+                        ForEach(PresentationFonts.availableFamilies, id: \.self) { family in
+                            Button(family) { settings.monospacedFontFamily = family }
+                        }
+                    } label: { Image(systemName: "gearshape").font(.system(size: 11)) }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .disabled(!settings.useMonospacedFont)
+                    .accessibilityLabel(Strings.Settings.monospacedFont)
+                    .help(settings.monospacedFontFamily.isEmpty ? Strings.Settings.systemMonospacedFont : settings.monospacedFontFamily)
+                }
+                PreferencesHelp(Strings.Settings.applyToAllTabsInTheRequestResponse)
             }
         }
     }
-    private func binding(_ key: ReferenceWritableKeyPath<AppSettings, Bool>) -> Binding<Bool> {
-        Binding(get: { settings[keyPath: key] }, set: { settings[keyPath: key] = $0 })
+
+    private var themeSettings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Strings.Settings.applicationTheme).fontWeight(.medium)
+            HStack(spacing: 10) {
+                themeOption(.system, title: Strings.Settings.system, dark: false)
+                themeOption(.light, title: Strings.Settings.light, dark: false)
+                themeOption(.dark, title: Strings.Settings.dark, dark: true)
+            }
+            .padding(7)
+            .background(PreferencesPalette.strip)
+        }
+    }
+
+    private func themeOption(_ value: ProxyMirrorAppearance, title: String, dark: Bool) -> some View {
+        Button { appearance = value } label: {
+            HStack(spacing: 9) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 2) { Circle().fill(.red); Circle().fill(.yellow); Circle().fill(.green) }.frame(width: 16, height: 4)
+                    RoundedRectangle(cornerRadius: 1).fill(.blue.opacity(0.55)).frame(height: 2)
+                    RoundedRectangle(cornerRadius: 1).fill(.green.opacity(0.6)).frame(width: 24, height: 2)
+                    RoundedRectangle(cornerRadius: 1).fill(.orange.opacity(0.5)).frame(height: 2)
+                }
+                .padding(5).frame(width: 47, height: 34)
+                .background(value == .system ? Color.gray : dark ? Color.black.opacity(0.7) : Color.white, in: RoundedRectangle(cornerRadius: 4))
+                Text(title).foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                if appearance == value { Image(systemName: "checkmark").foregroundStyle(PreferencesPalette.selection) }
+            }
+            .padding(.horizontal, 7).frame(height: 42)
+            .background(appearance == value ? PreferencesPalette.selection.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(appearance == value ? PreferencesPalette.selection : .clear) }
+        }
+        .buttonStyle(.plain).accessibilityLabel(title)
+        .accessibilityAddTraits(appearance == value ? .isSelected : [])
+    }
+
+    private var iconSettings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Strings.Settings.proxymirrorAppIcon).fontWeight(.medium)
+            HStack(spacing: 6) {
+                iconOption("earth", title: Strings.Settings.onEarth)
+                iconOption("mars", title: Strings.Settings.onMars)
+                iconOption("candy", title: Strings.Settings.spaceCandy)
+                iconOption("classic", title: Strings.Settings.classic)
+            }
+            .padding(7).background(PreferencesPalette.strip)
+        }
+    }
+
+    private func iconOption(_ value: String, title: String) -> some View {
+        Button { settings.appIconStyle = value } label: {
+            HStack(spacing: 7) {
+                Image(nsImage: AppIconController.image(style: value, size: 64))
+                    .resizable().frame(width: 28, height: 28)
+                Text(title).font(.system(size: 12)).lineLimit(1)
+                Spacer(minLength: 0)
+                if settings.appIconStyle == value { Image(systemName: "checkmark").foregroundStyle(PreferencesPalette.selection) }
+            }
+            .padding(.horizontal, 5).frame(height: 40)
+            .background(settings.appIconStyle == value ? PreferencesPalette.selection.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(settings.appIconStyle == value ? PreferencesPalette.selection : .clear) }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(settings.appIconStyle == value ? .isSelected : [])
     }
 }

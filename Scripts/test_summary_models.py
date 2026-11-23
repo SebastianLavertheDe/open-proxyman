@@ -6,6 +6,7 @@ Keychain or real rules storage is touched. This does not validate the macOS UI.
 
 import argparse
 from pathlib import Path
+from localization_model_test_support import localization_sources
 import subprocess
 import tempfile
 
@@ -78,7 +79,7 @@ def main():
             str(ROOT / "Sources/ProxyMirrorCore/Model/FlowSummaryStatistics.swift"),
             str(ROOT / "Sources/ProxyMirrorCore/Model/RuleFolderEditingDraft.swift"),
             str(ROOT / "Sources/ProxyMirrorCore/Interception/RuleOrganization.swift"),
-            str(stubs), str(assertions), str(checks), str(main_file), "-o", str(executable),
+            str(stubs), str(assertions), str(checks), str(main_file), *localization_sources(directory), "-o", str(executable),
         ], check=True, timeout=120)
         subprocess.run([str(executable)], check=True, timeout=30)
 

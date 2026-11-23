@@ -20,9 +20,13 @@ enum SystemProxyBypass {
 
     static func save(_ hosts: [String]?) throws {
         if let hosts {
-            if let issue = SystemProxyBypassList.validationError(hosts) { throw SystemProxyError(issue) }
+            if let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
             UserDefaults.standard.set(try JSONEncoder().encode(hosts), forKey: defaultsKey)
         } else { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+    }
+
+    static func localizedValidationError(_ hosts: [String]) -> String? {
+        SystemProxyBypassList.validationFailure(hosts).map { LocalizedErrorPresentation.message(for: $0) }
     }
 
     static func services() -> [Service] {

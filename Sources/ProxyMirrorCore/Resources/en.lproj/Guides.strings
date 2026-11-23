@@ -1,0 +1,133 @@
+/* ProxyMirror Guides — maintained native localization resources. */
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_add_the_exported_proxymirror_ca_in_the_client" = "Add the exported ProxyMirror CA in the client CA manager. Clients using macOS trust can install it from the Certificate menu. Proxy server CA trust and mTLS client identities are separate settings.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_after_app_ready_and_before_creating_a_browserwindow" = "After app ready and before creating a BrowserWindow, call setProxy on the session it uses. The renderer uses Chromium trust; install and trust the CA on the Mac.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_android_emulator_uses_10_0_2_2_physical" = "Android Emulator uses 10.0.2.2; physical devices use the Mac LAN IP. Both must reach port %ld. Reference the network security configuration from android:networkSecurityConfig in the debug Manifest.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_apple_install_a_certificate_manually_and_enable_trust" = "Apple: Install a certificate manually and enable trust";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_at_runtime_configure_the_http_https_proxy_and" = "At runtime, configure the HTTP/HTTPS proxy and the copied truststore. keytool prompts for its original password; do not put the password in shell history.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_check_that_java_home_points_to_the_jdk" = "Check that JAVA_HOME points to the JDK actually used by the app. Copy its truststore, then import the test CA interactively. Keep the original JDK truststore unchanged.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_choose_a_platform_in_the_certificate_menu_to" = "Choose a platform in the Certificate menu to see proxy and CA configuration for that network stack.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_configure_the_node_proxy_and_ca_separately_for" = "Configure the Node proxy and CA separately for HTTP requests in the main process. Do not replace certificate trust with a switch that ignores all certificate errors.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_configuring_a_ca_does_not_automatically_resolve_certificate" = "Configuring a CA does not automatically resolve certificate pinning, VPN tunnels or QUIC. Use a supported HTTPS proxy path in your own test app and verify actual captured traffic.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_containers_have_their_own_truststores_and_network_namespaces" = "Containers have their own truststores and network namespaces. Copy the CA into a test image and install it only in your own debug images. The Dockerfile below targets Debian/Ubuntu images that already contain ca-certificates.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_dart_httpclient_can_set_findproxy_explicitly_and_add" = "Dart HttpClient can set findProxy explicitly and add the exported test CA to a SecurityContext. Declare the PEM as an asset in the debug project.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_docker_container_ca_certificates" = "Docker: Container CA certificates";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_docker_desktop_normally_reaches_the_mac_through_host" = "Docker Desktop normally reaches the Mac through host.docker.internal. Check the ProxyMirror listen address, LAN authorization and container source IP. Linux Docker requires a separate host-gateway configuration.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_export_the_ca_certificate_and_send_it_to" = "Export the CA certificate and send it to the device. After installing its profile, enable full trust for this CA in Settings > General > About > Certificate Trust Settings.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_firefox_settings_network_settings_manually_configure_proxy_127" = "Firefox > Settings > Network Settings: manually configure proxy 127.0.0.1:%ld for both HTTP and HTTPS. Check the proxy bypass list.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_for_ios_debug_builds_install_and_trust_the" = "For iOS debug builds, install and trust the CA on the device or simulator, then set the system proxy. Android debug builds can trust user CAs through Network Security Config debug-overrides.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_for_ios_visionos_preview_trust_the_ca_in" = "For iOS/visionOS Preview, trust the CA in the simulator runtime hosting the Preview, then stop and rebuild the Canvas. macOS Preview uses Mac trust. If the hidden Preview device is absent from simctl, first verify the same app in a visible Simulator. Automatic discovery of hidden Preview devices is not guaranteed across Xcode versions.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_for_ruby_http_libraries_supporting_proxy_environment_variables" = "For Ruby HTTP libraries supporting proxy environment variables, set http_proxy/https_proxy for one process. The certificate path should point to the project test CA bundle.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_if_an_app_ignores_the_system_proxy_use" = "If an app ignores the system proxy, use its supported explicit proxy configuration, or test the transparent extension and VPN together in a signed ProxyMirror build.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_in_postman_insomnia_paw_proxy_settings_use_http" = "In Postman / Insomnia / Paw proxy settings, use HTTP proxy 127.0.0.1:%ld and check the client’s bypass list.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_in_the_device_wi_fi_settings_set_the" = "In the device Wi-Fi settings, set the HTTP proxy to this Mac’s LAN IP address and current listener port. First enable LAN access in ProxyMirror and authorize the device IP.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_install_the_corresponding_simulator_runtime_in_xcode_start" = "Install the corresponding Simulator runtime in Xcode, start the target simulator, and copy its UDID from the simctl list. Trusting the certificate on the host Mac does not install it in the simulator.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_install_the_exported_ca_from_security_encryption_credentials" = "Install the exported CA from Security / Encryption & credentials > Install a certificate > CA certificate. Apps on recent Android versions generally do not trust user CAs by default.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_mozilla_firefox_certificates" = "Mozilla: Firefox certificates";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_net_http_can_explicitly_use_net_http_proxy" = "Net::HTTP can explicitly use Net::HTTP::Proxy and ca_file. Do not use VERIFY_NONE. Actual behavior depends on the app’s HTTP library.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_node_js_proxy_environment_and_extra_cas" = "Node.js: Proxy environment and extra CAs";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_point_the_device_wi_fi_proxy_to_the" = "Point the device Wi-Fi proxy to the Mac LAN IP. Android Emulator normally uses 10.0.2.2. Enable LAN listening and authorize the actual source IP.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_postman_proxy_configuration" = "Postman: Proxy configuration";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_privacy_security_certificates_view_certificates_authorities_import_the" = "Privacy & Security > Certificates > View Certificates > Authorities: import the CA and allow it to identify websites. Firefox certificate management may be independent of the Mac truststore.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_proxymirror_does_not_provide_an_android_vpn_companion" = "ProxyMirror does not provide an Android VPN companion app. A VPN changes routing and cannot generally bypass system CA write permissions or certificate pinning. Installing a user CA is different from installing a system CA.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_react_native_fetch_uses_the_platform_native_network" = "React Native fetch uses the platform native network stack. Libraries with certificate pinning need a testable configuration in the debug build. Never include relaxed trust settings in release builds.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_requests_ssl_and_proxies" = "Requests: SSL and proxies";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_requests_uses_http_proxy_https_proxy_and_requests" = "Requests uses HTTP_PROXY/HTTPS_PROXY and REQUESTS_CA_BUNDLE. If needed, append the test CA to a copy of the project CA bundle and point to that file.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_run_add_root_cert_below_then_route_requests" = "Run add-root-cert below, then route requests to ProxyMirror using the system proxy or the app proxy configuration. simctl keychain availability depends on Xcode and the runtime; check local help and command results.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_send_a_request_from_your_own_test_app" = "Send a request from your own test app and enable SSL inspection for the target domain. Restore the original device proxy configuration when finished.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_send_a_test_request_and_verify_decrypted_traffic" = "Send a test request and verify decrypted traffic and status in ProxyMirror. Keep the client SSL verification enabled.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_set_node_extra_ca_certs_before_starting_node" = "Set NODE_EXTRA_CA_CERTS before starting Node.js. NODE_USE_ENV_PROXY requires a supporting Node.js version (22.21+/24+). Check the proxy API of each networking library.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_standard_libraries_such_as_urllib_ssl_use_their" = "Standard libraries such as urllib/ssl use their own SSLContext or SSL_CERT_FILE. Other libraries may require explicit proxy configuration. The example below targets Requests with certificate verification enabled.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_the_10_0_2_2_address_below_targets" = "The 10.0.2.2 address below targets Android Emulator. iOS Simulator may use 127.0.0.1 if reachable; physical devices use the Mac LAN IP. Native plugin requests require separate configuration.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_the_command_below_targets_the_next_js_node" = "The command below targets the Next.js Node runtime. Edge runtime, browser requests and native modules use different network stacks. Browsers need the system proxy; on older Node versions, configure ProxyAgent through the project’s Undici or HTTP client.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_verify_http_and_https_against_a_test_domain" = "Verify HTTP and HTTPS against a test domain first. Do not replace CA trust with NODE_TLS_REJECT_UNAUTHORIZED=0.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_vpn_routes_the_system_http_proxy_and_proxymirror" = "VPN routes, the system HTTP proxy and ProxyMirror transparent proxy are independent. Verify that the VPN allows access to the local proxy port. Test the route with an explicit curl proxy first.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_watchos_also_involves_the_paired_iphone_and_its" = "watchOS also involves the paired iPhone and its network path. simctl cannot configure physical devices. For physical tvOS/visionOS devices, install the CA through the supported profile management workflow and verify proxy connectivity.";
+
+/* Sources/ProxyMirrorCore/System/CertificatePlatformGuides.swift */
+"certificate_platform_guides_your_own_debug_app_can_trust_user_certificates" = "Your own debug app can trust user certificates through Network Security Config debug-overrides. For writable emulators, use the adb root installation command in the menu or the repository Magisk module script.";

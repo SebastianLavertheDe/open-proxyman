@@ -15,13 +15,13 @@ struct RuleBackupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(charlesOnly ? "从 Charles 导入规则" : "规则与设置备份").font(.headline)
+            Text(charlesOnly ? Strings.Tools.importRulesFromCharles : Strings.Tools.ruleAndSettingsBackup).font(.headline)
             HStack {
-                Button(charlesOnly ? "选择 Charles XML…" : "读取备份…", action: choose)
+                Button(charlesOnly ? Strings.Tools.chooseCharlesXml : Strings.Tools.openBackup, action: choose)
                 Spacer()
                 if !charlesOnly {
-                    Menu("导出…") {
-                        Button("规则与设置") { export(nil) }
+                    Menu(Strings.Tools.export2) {
+                        Button(Strings.Tools.rulesSettings) { export(nil) }
                         ForEach(RuleBackup.Section.allCases) { section in
                             Button(section.title) { export(section) }
                         }
@@ -30,27 +30,27 @@ struct RuleBackupView: View {
             }
             if let backup, let previewBase {
                 if !charlesOnly {
-                    Picker("导入方式", selection: $mode) {
-                        Text("按规则 ID 合并").tag(RuleBackup.ImportMode.merge)
-                        Text("替换文件中包含的工具").tag(RuleBackup.ImportMode.replace)
+                    Picker(Strings.Tools.importMode, selection: $mode) {
+                        Text(Strings.Tools.mergeByRuleId).tag(RuleBackup.ImportMode.merge)
+                        Text(Strings.Tools.replaceToolsIncludedInTheFile).tag(RuleBackup.ImportMode.replace)
                     }
                 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 7) {
                         if let counts = charlesRules?.counts {
-                            Text("Rewrite \(counts.rewrite) · Map Local \(counts.mapLocal) · Block List \(counts.blockList)")
-                            Text("合并到当前规则。Map Local 使用此 Mac 上的文件。")
+                            Text(Strings.Tools.charlesRuleSummary(counts.rewrite, counts.mapLocal, counts.blockList))
+                            Text(Strings.Tools.mergeIntoCurrentRulesMapLocalUsesFilesOn)
                         }
                         ForEach(backup.changes(from: previewBase, mode: mode)) { change in
-                            let order = change.reordered ? " · 调整顺序" : ""
-                            let configuration = change.configurationChanged == true ? " · 全局开关变化" : ""
-                            Text("\(change.section.title) · 新增 \(change.added) · 覆盖 \(change.updated) · 移除 \(change.removed) · 相同 \(change.unchanged)\(order)\(configuration)")
+                            let order = change.reordered ? Strings.Tools.reordered : ""
+                            let configuration = change.configurationChanged == true ? Strings.Tools.globalSwitchChanged : ""
+                            Text(Strings.Tools.backupChangeSummary(String(describing: (change.section.title)), change.added, change.updated, change.removed, change.unchanged, String(describing: order), String(describing: configuration)))
                         }
                         if backup.settings != nil {
-                            Text("应用设置在下次启动时生效，也可前往设置手动应用。")
+                            Text(Strings.Tools.applicationSettingsTakeEffectAtTheNextLaunchOr)
                         }
                         if !unknown.isEmpty {
-                            Text("未映射字段 · \(unknown.joined(separator: "、"))")
+                            Text(Strings.Tools.unmappedFields1(String(describing: unknown.joined(separator: ", "))))
                         }
                         ForEach(notes.indices, id: \.self) { Text(notes[$0]) }
                     }
@@ -60,16 +60,16 @@ struct RuleBackupView: View {
                 .frame(maxHeight: 240)
             } else {
                 Text(charlesOnly
-                     ? "选择 Charles 的 Rewrite、Map Local、Block List 或完整设置 XML 导出。"
-                     : "支持 ProxyMirror 备份与旧版 rules.json。Map Local 保留文件路径。")
+                     ? Strings.Tools.chooseACharlesXmlExportContainingRewriteMapLocal
+                     : Strings.Tools.supportsBackupsFromTheCurrentVersionOfProxymirrorMap)
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
             Divider()
             HStack {
                 Spacer()
-                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("导入") { install() }.disabled(backup == nil || charlesRules?.hasRules == false)
+                Button(Strings.Tools.close) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.import) { install() }.disabled(backup == nil || charlesRules?.hasRules == false)
             }
         }
         .padding(20)
@@ -86,7 +86,7 @@ struct RuleBackupView: View {
                 charlesRules = imported
                 backup = imported.backup
                 unknown = []
-                notes = imported.skipped.map { "未迁移 · \($0)" } + imported.notes
+                notes = imported.skipped.map { Strings.Tools.notImported1(String(describing: $0)) } + imported.notes
             } else {
                 let (incoming, unmapped) = try RuleBackup.read(RuleBackup.contents(of: url))
                 backup = incoming
@@ -98,7 +98,7 @@ struct RuleBackupView: View {
         } catch {
             backup = nil
             previewBase = nil
-            message = error.localizedDescription
+            message = LocalizedErrorPresentation.message(for: error)
         }
     }
 
@@ -110,9 +110,9 @@ struct RuleBackupView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try PrivateAppFile.write(file.exportData(), to: url)
-            message = "已导出 \(url.lastPathComponent)"
+            message = Strings.Tools.exported1(String(describing: url.lastPathComponent))
         } catch {
-            message = error.localizedDescription
+            message = LocalizedErrorPresentation.message(for: error)
         }
     }
 
@@ -122,7 +122,7 @@ struct RuleBackupView: View {
             let current = RuleBackup.snapshot(settings: appState.settings)
             guard try previewBase.encoded() == current.encoded() else {
                 self.previewBase = current
-                message = "当前规则或设置已更新，请核对新的预览后再导入。"
+                message = Strings.Tools.rulesOrSettingsHaveChangedReviewTheUpdatedPreview
                 return
             }
             try RulesStore.shared.install(backup.resolve(with: current, merge: mode == .merge))
@@ -130,9 +130,9 @@ struct RuleBackupView: View {
             self.backup = nil
             self.previewBase = nil
             self.charlesRules = nil
-            message = charlesOnly ? "已导入 Charles 规则" : "已导入规则与设置"
+            message = charlesOnly ? Strings.Tools.charlesRulesImported : Strings.Tools.rulesAndSettingsImported
         } catch {
-            message = error.localizedDescription
+            message = LocalizedErrorPresentation.message(for: error)
         }
     }
 }

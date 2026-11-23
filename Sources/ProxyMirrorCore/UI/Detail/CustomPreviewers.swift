@@ -8,7 +8,7 @@ extension Notification.Name {
 
 struct CustomPreviewer: Codable, Identifiable, Equatable {
     var id = UUID()
-    var name = "JSON 摘要"
+    var name = Strings.Detail.jsonSummary
     var enabled = true
     var contentType = "*"
     var source = """
@@ -34,10 +34,10 @@ final class CustomPreviewerStore: ObservableObject {
     }
     func save(_ next: [CustomPreviewer]) throws {
         guard next.count <= 50, next.allSatisfy({ !$0.name.isEmpty && $0.source.utf8.count <= 64 * 1024 }) else {
-            throw PreviewerError("最多 50 个预览器，每个脚本最多 64 KiB，名称不能为空。")
+            throw PreviewerError(Strings.Detail.useUpTo50PreviewersWithScriptsUpTo64Kib)
         }
         let data = try JSONEncoder().encode(next)
-        guard data.count <= 2 * 1024 * 1024 else { throw PreviewerError("预览器配置超过 2 MiB。") }
+        guard data.count <= 2 * 1024 * 1024 else { throw PreviewerError(Strings.Detail.thePreviewerConfigurationExceeds2Mib) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PrivateAppFile.write(data, to: url)
         items = next
@@ -54,12 +54,12 @@ struct PreviewerError: LocalizedError {
 enum PreviewerWorker {
     private static let slots = DispatchSemaphore(value: 2)
     static func render(source: String, input: [String: Any]) throws -> String {
-        guard slots.wait(timeout: .now()) == .success else { throw PreviewerError("预览器繁忙，请重试。") }
+        guard slots.wait(timeout: .now()) == .success else { throw PreviewerError(Strings.Detail.thePreviewerIsBusyTryAgain) }
         defer { slots.signal() }
         guard let executable = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("ProxyMirrorScriptWorker"),
-              FileManager.default.isExecutableFile(atPath: executable.path) else { throw PreviewerError("未找到脚本 worker，请使用完整应用构建。") }
+              FileManager.default.isExecutableFile(atPath: executable.path) else { throw PreviewerError(Strings.Detail.theScriptWorkerWasNotFoundUseACompleteApplicationBuild) }
         let request = try JSONSerialization.data(withJSONObject: ["operation": "preview", "source": source, "input": input])
-        guard request.count <= 2 * 1024 * 1024 else { throw PreviewerError("预览输入超过 2 MiB。") }
+        guard request.count <= 2 * 1024 * 1024 else { throw PreviewerError(Strings.Detail.thePreviewInputExceeds2Mib) }
         let process = Process(); process.executableURL = executable
         let stdin = Pipe(); let stdout = Pipe()
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = FileHandle.nullDevice
@@ -75,15 +75,15 @@ enum PreviewerWorker {
         }
         var output = Data()
         while let chunk = try stdout.fileHandleForReading.read(upToCount: 65536), !chunk.isEmpty {
-            guard output.count + chunk.count <= 2 * 1024 * 1024 else { throw PreviewerError("预览结果超过上限。") }
+            guard output.count + chunk.count <= 2 * 1024 * 1024 else { throw PreviewerError(Strings.Detail.thePreviewResultExceedsTheLimit) }
             output.append(chunk)
         }
         guard finished.wait(timeout: .now() + .seconds(1)) == .success, process.terminationStatus == 0 else {
-            throw PreviewerError("预览器执行失败或超时。")
+            throw PreviewerError(Strings.Detail.thePreviewerFailedOrTimedOut)
         }
-        guard let result = try JSONSerialization.jsonObject(with: output) as? [String: Any] else { throw PreviewerError("预览器返回格式无效。") }
+        guard let result = try JSONSerialization.jsonObject(with: output) as? [String: Any] else { throw PreviewerError(Strings.Detail.thePreviewerReturnedAnInvalidResult) }
         if let error = result["error"] as? String { throw PreviewerError(error) }
-        guard let value = result["preview"] as? String else { throw PreviewerError("preview(input) 必须返回文本或 JSON。") }
+        guard let value = result["preview"] as? String else { throw PreviewerError(Strings.Detail.previewInputMustReturnTextOrJson) }
         return value
     }
 }
@@ -101,25 +101,25 @@ struct CustomPreviewerManagerView: View {
                 }.frame(minWidth: 180, idealWidth: 220)
                 if let index = draft.firstIndex(where: { $0.id == selection }) {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("预览器名称", text: $draft[index].name)
-                        Toggle("启用", isOn: $draft[index].enabled)
-                        TextField("Content-Type 包含（* 匹配所有）", text: $draft[index].contentType)
-                        Text("preview(input) 可读取 url、method、side、headers、body、bodyBase64；返回纯文本或 JSON。")
+                        TextField(Strings.Detail.previewerName, text: $draft[index].name)
+                        Toggle(Strings.Detail.enable, isOn: $draft[index].enabled)
+                        TextField(Strings.Detail.contentTypeContainsMatchesAll, text: $draft[index].contentType)
+                        Text(Strings.Detail.previewInputCanReadUrlMethodSideHeadersBodyAndBodybase64)
                             .font(.caption).foregroundStyle(.secondary)
                         TextEditor(text: $draft[index].source).font(.system(.body, design: .monospaced)).border(.quaternary)
                     }.padding(10).frame(minWidth: 420)
                 } else {
-                    Text("添加或选择自定义预览器").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Text(Strings.Detail.addOrSelectACustomPreviewer).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             if let error { Text(error).foregroundStyle(.red).font(.caption) }
             HStack {
-                Button("添加") { let item = CustomPreviewer(); draft.append(item); selection = item.id }
-                Button("删除") { draft.removeAll { $0.id == selection }; selection = nil }.disabled(selection == nil)
+                Button(Strings.Detail.add) { let item = CustomPreviewer(); draft.append(item); selection = item.id }
+                Button(Strings.Detail.delete) { draft.removeAll { $0.id == selection }; selection = nil }.disabled(selection == nil)
                 Spacer()
-                Button("还原") { draft = store.items; error = nil }
-                Button("保存并启用") {
-                    do { try store.save(draft); error = nil } catch { self.error = error.localizedDescription }
+                Button(Strings.Detail.revert) { draft = store.items; error = nil }
+                Button(Strings.Detail.saveEnable) {
+                    do { try store.save(draft); error = nil } catch { self.error = LocalizedErrorPresentation.message(for: error) }
                 }.keyboardShortcut("s", modifiers: .command)
             }
         }.padding(16).frame(minWidth: 720, minHeight: 440)
@@ -135,13 +135,13 @@ struct CustomPreviewerResultView: View {
     private var key: String { "\(previewer.id):\(previewer.source):\(tx.id):\(request ? tx.requestBodyRevision : tx.responseBodyRevision)" }
     var body: some View {
         ScrollView {
-            Text(output.isEmpty ? "正在运行预览器…" : output)
+            Text(output.isEmpty ? Strings.Detail.runningPreviewer : output)
                 .font(.system(.body, design: .monospaced)).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(12)
         }
         .task(id: key) {
             let body = request ? tx.requestBody : tx.responseBody
-            guard body.count <= 512 * 1024 else { output = "预览器支持最大 512 KiB 的正文。"; return }
+            guard body.count <= 512 * 1024 else { output = Strings.Detail.previewersSupportBodiesUpTo512Kib; return }
             let headers = request ? tx.requestHeaders : tx.responseHeaders
             let input: [String: Any] = ["url": tx.fullURL, "method": tx.method, "side": request ? "request" : "response",
                 "headers": headers.pairs.map { ["name": $0.name, "value": $0.value] },
@@ -149,7 +149,7 @@ struct CustomPreviewerResultView: View {
             let source = previewer.source
             let worker = Task.detached(priority: .userInitiated) { () -> String in
                 do { return try PreviewerWorker.render(source: source, input: input) }
-                catch { return error.localizedDescription }
+                catch { return LocalizedErrorPresentation.message(for: error) }
             }
             let rendered = await worker.value
             if !Task.isCancelled { output = rendered }

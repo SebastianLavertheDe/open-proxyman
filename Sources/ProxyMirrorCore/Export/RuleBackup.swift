@@ -2,35 +2,15 @@ import Foundation
 import ProxyMirrorSystemProxy
 
 struct RuleBackup: Codable {
+    static let currentVersion = 2
     static let fileLimit = 16 * 1024 * 1024
 
-    enum Section: String, Codable, CaseIterable, Identifiable {
+    enum Section: String, Codable, CaseIterable, Identifiable, Sendable {
         case mapLocal, mapRemote, blockList, allowList, sslProxyingList, sslApplications, customCertificates
         case dns, breakpoints, rewrite, latency, noCaching, reverse, external, h2c, protobuf, organization, settings
 
         var id: Self { self }
-        var title: String {
-            switch self {
-            case .mapLocal: return "Map Local"
-            case .mapRemote: return "Map Remote"
-            case .blockList: return "Block List"
-            case .allowList: return "Allow List"
-            case .sslProxyingList: return "SSL Proxying List"
-            case .sslApplications: return "按应用 SSL"
-            case .customCertificates: return "自定义服务端证书"
-            case .dns: return "DNS 映射"
-            case .breakpoints: return "断点规则"
-            case .rewrite: return "Rewrite"
-            case .latency: return "延迟模拟"
-            case .noCaching: return "No Caching"
-            case .reverse: return "反向代理"
-            case .external: return "外部代理"
-            case .h2c: return "HTTP/2 明文上游"
-            case .protobuf: return "Protobuf"
-            case .organization: return "规则文件夹与工具开关"
-            case .settings: return "应用设置"
-            }
-        }
+        var title: String { localizedTitle }
 
         fileprivate var classicRules: WritableKeyPath<RuleBackup, [ProxyRule]?>? {
             switch self {
@@ -40,6 +20,28 @@ struct RuleBackup: Codable {
             case .allowList: return \.allowList
             case .sslProxyingList: return \.sslProxyingList
             default: return nil
+            }
+        }
+        var localizedTitle: String {
+            switch self {
+            case .mapLocal: return Strings.Models.backupSectionMapLocal
+            case .mapRemote: return Strings.Models.backupSectionMapRemote
+            case .blockList: return Strings.Models.backupSectionBlockList
+            case .allowList: return Strings.Models.backupSectionAllowList
+            case .sslProxyingList: return Strings.Models.backupSectionSslProxyingList
+            case .sslApplications: return Strings.Models.backupSectionSslApplications
+            case .customCertificates: return Strings.Models.backupSectionCustomCertificates
+            case .dns: return Strings.Models.backupSectionDns
+            case .breakpoints: return Strings.Models.backupSectionBreakpoints
+            case .rewrite: return Strings.Models.backupSectionRewrite
+            case .latency: return Strings.Models.backupSectionLatency
+            case .noCaching: return Strings.Models.backupSectionNoCaching
+            case .reverse: return Strings.Models.backupSectionReverse
+            case .external: return Strings.Models.backupSectionExternal
+            case .h2c: return Strings.Models.backupSectionH2c
+            case .protobuf: return Strings.Models.backupSectionProtobuf
+            case .organization: return Strings.Models.backupSectionOrganization
+            case .settings: return Strings.Models.backupSectionSettings
             }
         }
     }
@@ -82,6 +84,23 @@ struct RuleBackup: Codable {
             var showFullDate: Bool?
             var showAlternatingRows: Bool?
             var defaultCopyFormat: String?
+            var fontSize: Double?
+            var useMonospacedFont: Bool?
+            var scrollBeyondLastLine: Bool?
+            var contentLayout: String?
+            var appIconStyle: String?
+            var autoStartRecording: Bool?
+            var warnBeforeQuit: Bool?
+            var showUpdateNotifications: Bool?
+            var applicationLanguage: String?
+            var mcpEnabled: Bool?
+            var mcpRedactSensitiveData: Bool?
+            var preserveOriginalHeaders: Bool?
+            var restorePreviousSystemProxy: Bool?
+            var automaticTrafficCleanup: Bool?
+            var cleanupMemoryLimitMB: Int?
+            var cleanupIntervalMinutes: Int?
+            var appearance: String?
 
             var valid: Bool {
                 (truncationStyle.map { ["head", "middle", "tail"].contains($0) } ?? true)
@@ -90,6 +109,13 @@ struct RuleBackup: Codable {
                     && (codeTabWidth.map { (1...16).contains($0) } ?? true)
                     && (monospacedFontFamily.map { $0.utf8.count <= 256 && !$0.contains("\0") } ?? true)
                     && (defaultCopyFormat.map { RequestCode.Format(rawValue: $0) != nil } ?? true)
+                    && (fontSize.map { $0.isFinite && (8...32).contains($0) } ?? true)
+                    && (contentLayout.map { ["vertical", "horizontal"].contains($0) } ?? true)
+                    && (appIconStyle.map { ["earth", "mars", "candy", "classic"].contains($0) } ?? true)
+                    && (applicationLanguage.map { ["system", "zh-Hans", "en"].contains($0) } ?? true)
+                    && (appearance.map { ["system", "light", "dark"].contains($0) } ?? true)
+                    && (cleanupMemoryLimitMB.map { (64...65536).contains($0) } ?? true)
+                    && (cleanupIntervalMinutes.map { (1...60).contains($0) } ?? true)
             }
 
             init(_ settings: AppSettings) {
@@ -109,6 +135,23 @@ struct RuleBackup: Codable {
                 showFullDate = settings.showFullDate
                 showAlternatingRows = settings.showAlternatingRows
                 defaultCopyFormat = settings.defaultCopyFormat.rawValue
+                fontSize = settings.fontSize
+                useMonospacedFont = settings.useMonospacedFont
+                scrollBeyondLastLine = settings.scrollBeyondLastLine
+                contentLayout = settings.contentLayout
+                appIconStyle = settings.appIconStyle
+                autoStartRecording = settings.autoStartRecording
+                warnBeforeQuit = settings.warnBeforeQuit
+                showUpdateNotifications = settings.showUpdateNotifications
+                applicationLanguage = settings.applicationLanguage
+                mcpEnabled = settings.mcpEnabled
+                mcpRedactSensitiveData = settings.mcpRedactSensitiveData
+                preserveOriginalHeaders = settings.preserveOriginalHeaders
+                restorePreviousSystemProxy = settings.restorePreviousSystemProxy
+                automaticTrafficCleanup = settings.automaticTrafficCleanup
+                cleanupMemoryLimitMB = settings.cleanupMemoryLimitMB
+                cleanupIntervalMinutes = settings.cleanupIntervalMinutes
+                appearance = settings.appearance
             }
 
             func apply(to settings: AppSettings) {
@@ -137,6 +180,23 @@ struct RuleBackup: Codable {
                 if let showFullDate { settings.showFullDate = showFullDate }
                 if let showAlternatingRows { settings.showAlternatingRows = showAlternatingRows }
                 if let raw = defaultCopyFormat, let format = RequestCode.Format(rawValue: raw) { settings.defaultCopyFormat = format }
+                if let fontSize { settings.fontSize = fontSize }
+                if let useMonospacedFont { settings.useMonospacedFont = useMonospacedFont }
+                if let scrollBeyondLastLine { settings.scrollBeyondLastLine = scrollBeyondLastLine }
+                if let contentLayout { settings.contentLayout = contentLayout }
+                if let appIconStyle { settings.appIconStyle = appIconStyle }
+                if let autoStartRecording { settings.autoStartRecording = autoStartRecording }
+                if let warnBeforeQuit { settings.warnBeforeQuit = warnBeforeQuit }
+                if let showUpdateNotifications { settings.showUpdateNotifications = showUpdateNotifications }
+                if let applicationLanguage { settings.applicationLanguage = applicationLanguage }
+                if let mcpEnabled { settings.mcpEnabled = mcpEnabled }
+                if let mcpRedactSensitiveData { settings.mcpRedactSensitiveData = mcpRedactSensitiveData }
+                if let preserveOriginalHeaders { settings.preserveOriginalHeaders = preserveOriginalHeaders }
+                if let restorePreviousSystemProxy { settings.restorePreviousSystemProxy = restorePreviousSystemProxy }
+                if let automaticTrafficCleanup { settings.automaticTrafficCleanup = automaticTrafficCleanup }
+                if let cleanupMemoryLimitMB { settings.cleanupMemoryLimitMB = cleanupMemoryLimitMB }
+                if let cleanupIntervalMinutes { settings.cleanupIntervalMinutes = cleanupIntervalMinutes }
+                if let appearance { settings.appearance = appearance }
             }
         }
 
@@ -182,7 +242,7 @@ struct RuleBackup: Codable {
         var id: Section { section }
     }
 
-    var version: Int?
+    var version: Int? = Self.currentVersion
     var mapLocal: [ProxyRule]?
     var mapRemote: [ProxyRule]?
     var blockList: [ProxyRule]?
@@ -216,33 +276,34 @@ struct RuleBackup: Codable {
 
     func exportData() throws -> Data {
         let data = try encoded(pretty: true)
-        guard data.count <= Self.fileLimit else { throw BackupError("规则备份超过 16 MiB。请按工具导出。") }
+        guard data.count <= Self.fileLimit else { throw BackupError(OperationIssue.modelBackupExportLimit) }
         return data
     }
 
     static func contents(of url: URL) throws -> Data {
         guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
-            throw BackupError("请选择普通文件。")
+            throw BackupError(OperationIssue.modelBackupRegularFileRequired)
         }
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         let data = try file.read(upToCount: fileLimit + 1) ?? Data()
-        guard data.count <= fileLimit else { throw BackupError("规则备份超过 16 MiB。请按工具拆分。") }
+        guard data.count <= fileLimit else { throw BackupError(OperationIssue.modelBackupImportLimit) }
         return data
     }
 
     static func read(_ data: Data) throws -> (RuleBackup, [String]) {
-        guard data.count <= fileLimit else { throw BackupError("规则备份超过 16 MiB。请按工具拆分。") }
+        guard data.count <= fileLimit else { throw BackupError(OperationIssue.modelBackupImportLimit) }
         let sections = Set(Section.allCases.map(\.rawValue))
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               !sections.isDisjoint(with: object.keys) else {
-            throw BackupError("请选择 ProxyMirror 备份或旧版 rules.json。")
+            throw BackupError(OperationIssue.modelBackupFileRequired)
         }
+        guard object["version"] as? Int == Self.currentVersion else { throw BackupError(OperationIssue.modelBackupUnsupportedVersion) }
         let backup = try JSONDecoder().decode(Self.self, from: data)
-        guard backup.version == nil || backup.version == 1 else { throw BackupError("此规则备份版本暂不支持。") }
-        guard backup.settings?.valid != false else { throw BackupError("备份中的设置值超出支持范围。") }
+        guard backup.version == Self.currentVersion else { throw BackupError(OperationIssue.modelBackupUnsupportedVersion) }
+        guard backup.settings?.valid != false else { throw BackupError(OperationIssue.modelBackupSettingsInvalid) }
         guard !backup.changes(from: RuleBackup(), mode: .merge).isEmpty else {
-            throw BackupError("备份中没有可导入的规则或设置。")
+            throw BackupError(OperationIssue.modelBackupEmpty)
         }
 
         var unknown = Set(object.keys).subtracting(sections.union(["version", "organization"]))
@@ -250,8 +311,8 @@ struct RuleBackup: Codable {
             let names = ["port", "mitmEnabled", "mitmExcluded", "autoStart", "autoTakeOverSystemProxy", "maxBodyMB", "maxTransactions", "followLatest", "extras"]
             unknown.formUnion(Set(preferences.keys).subtracting(names).map { "settings.\($0)" })
         }
-        if let error = backup.organization?.validationError { throw BackupError(error) }
-        if let error = backup.protobuf?.validationError { throw BackupError(error) }
+        if let error = backup.organization?.validationIssue { throw BackupError(error) }
+        if let error = backup.protobuf?.validationIssue { throw BackupError(error) }
         try backup.validateRules(object)
         return (backup, unknown.sorted())
     }
@@ -259,10 +320,10 @@ struct RuleBackup: Codable {
     /// Validates typed edits too, before RulesStore commits the canonical configuration.
     /// Raw-key validation remains in read(_:), where original imported JSON is available.
     func validate() throws {
-        guard version == nil || version == 1 else { throw BackupError("此规则备份版本暂不支持。") }
-        guard settings?.valid != false else { throw BackupError("备份中的设置值超出支持范围。") }
-        if let issue = organization?.validationError { throw BackupError(issue) }
-        if let issue = protobuf?.validationError { throw BackupError(issue) }
+        guard version == Self.currentVersion else { throw BackupError(OperationIssue.modelBackupUnsupportedVersion) }
+        guard settings?.valid != false else { throw BackupError(OperationIssue.modelBackupSettingsInvalid) }
+        if let issue = organization?.validationIssue { throw BackupError(issue) }
+        if let issue = protobuf?.validationIssue { throw BackupError(issue) }
         try validateRules([:])
     }
 
@@ -275,14 +336,14 @@ struct RuleBackup: Codable {
             for rule in self[keyPath: path] ?? [] {
                 if let regex = rule.urlRegex,
                    regex.isEmpty || regex.utf8.count > 8192 || URLRule.regexCache(regex) == nil {
-                    throw BackupError("\(section.title) 包含无效的 URL 正则。")
+                    throw BackupError(OperationIssue.modelBackupSectionRegexInvalid(section))
                 }
             }
         }
         try Self.validateIDs(sslApplications, section: .sslApplications)
         try Self.validateKeys(object, section: .sslApplications, allowed: ["enabled", "bundleID", "name", "action"])
         if let sslApplications, !sslApplications.allSatisfy({ SSLApplicationRule.isValid($0.id) }) {
-            throw BackupError("按应用 SSL 规则需要有效的 Bundle ID。")
+            throw BackupError(OperationIssue.modelBackupSslBundleInvalid)
         }
         try Self.validateIDs(customCertificates, section: .customCertificates)
         try Self.validateKeys(object, section: .customCertificates,
@@ -296,7 +357,7 @@ struct RuleBackup: Codable {
                   !host.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
                   !rule.certificatePath.isEmpty, !rule.privateKeyPath.isEmpty,
                   !rule.certificatePath.contains("\0"), !rule.privateKeyPath.contains("\0") else {
-                throw BackupError("自定义服务端证书需要有效域名、证书链和私钥路径。")
+                throw BackupError(OperationIssue.modelBackupCertificateInvalid)
             }
         }
         try Self.validateIDs(dns, section: .dns)
@@ -320,18 +381,18 @@ struct RuleBackup: Codable {
                 if rule.rule.matchMode == .regex,
                    rule.rule.regexPattern.isEmpty || rule.rule.regexPattern.utf8.count > 8192
                     || URLRule.regexCache(rule.rule.regexPattern) == nil {
-                    throw BackupError("Rewrite 包含无效的 URL 正则。")
+                    throw BackupError(OperationIssue.modelBackupRewriteRegexInvalid)
                 }
                 for action in rule.actions {
                     switch action {
                     case .requestHeader(_, let name, let value), .responseHeader(_, let name, let value):
                         if name.isEmpty || !name.utf8.allSatisfy(Self.isTokenByte)
                             || value.utf8.contains(where: { $0 < 32 && $0 != 9 || $0 == 127 }) {
-                            throw BackupError("Rewrite 包含无效的 HTTP 头。")
+                            throw BackupError(OperationIssue.modelBackupRewriteHeaderInvalid)
                         }
                     case .script(_, let source):
                         guard source.utf8.count <= ScriptingService.sourceLimit else {
-                            throw BackupError("Rewrite 单个脚本超过 \(ScriptingService.sourceLimit / 1024) KiB。")
+                            throw BackupError(OperationIssue.modelBackupScriptSize(ScriptingService.sourceLimit / 1024))
                         }
                     default: break
                     }
@@ -342,29 +403,29 @@ struct RuleBackup: Codable {
             let keys = Set(LatencyConditions.CodingKeys.allCases.map(\.rawValue))
             try Self.rejectUnknown(rawLatency, allowed: keys, location: "latency")
         }
-        if let error = latency?.validationError { throw BackupError(error) }
+        if let error = latency?.validationIssue { throw BackupError(error) }
         try Self.validateIDs(reverse, section: .reverse)
         var reversePorts = Set<UInt16>()
         for rule in reverse ?? [] where rule.enabled {
             do { _ = try ReverseProxyRoute(rule) }
             catch { throw BackupError(error.localizedDescription) }
-            guard reversePorts.insert(rule.listenPort).inserted else { throw BackupError("反向代理包含重复监听端口。") }
+            guard reversePorts.insert(rule.listenPort).inserted else { throw BackupError(OperationIssue.modelBackupReverseDuplicatePort) }
         }
-        if let external, external.enabled, let error = external.validationError { throw BackupError(error) }
+        if let external, external.enabled, let error = external.validationIssue { throw BackupError(error) }
         if let h2c {
             guard h2c.hosts.count <= 1000, h2c.hosts.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 && !$0.contains("/") }) else {
-                throw BackupError("HTTP/2 明文上游主机规则无效。")
+                throw BackupError(OperationIssue.modelBackupH2cHostInvalid)
             }
         }
         for (index, rule) in (mapLocal ?? []).enumerated() {
             if let status = rule.responseStatus, !(200...599).contains(status) {
-                throw BackupError("Map Local 第 \(index + 1) 条规则的响应状态码无效。")
+                throw BackupError(OperationIssue.modelBackupMapLocalStatusInvalid(index + 1))
             }
             if rule.responseHeaders?.pairs.contains(where: { field in
                 field.name.isEmpty || !field.name.utf8.allSatisfy(Self.isTokenByte) ||
                     field.value.utf8.contains { $0 < 32 && $0 != 9 || $0 == 127 }
             }) == true {
-                throw BackupError("Map Local 第 \(index + 1) 条规则包含无效响应头。")
+                throw BackupError(OperationIssue.modelBackupMapLocalHeadersInvalid(index + 1))
             }
         }
         for (index, rule) in (mapRemote ?? []).enumerated() where rule.enabled && !rule.target.isEmpty {
@@ -372,18 +433,18 @@ struct RuleBackup: Codable {
                   let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
                   url.user == nil, url.password == nil, url.fragment == nil,
                   url.port.map({ (1...65535).contains($0) }) ?? true else {
-                throw BackupError("Map Remote 第 \(index + 1) 条规则的目标 URL 无效。")
+                throw BackupError(OperationIssue.modelBackupMapRemoteUrlInvalid(index + 1))
             }
         }
         for (index, rule) in (dns ?? []).enumerated() where rule.enabled {
             guard !rule.hostPattern.isEmpty, URLParser.isIPAddress(rule.ip) else {
-                throw BackupError("DNS 映射第 \(index + 1) 条规则需要主机和有效的 IP 地址。")
+                throw BackupError(OperationIssue.modelBackupDnsTargetInvalid(index + 1))
             }
         }
         for (index, rule) in (breakpoints ?? []).enumerated() where rule.enabled && rule.rule.matchMode == .regex {
             guard !rule.rule.regexPattern.isEmpty,
                   (try? NSRegularExpression(pattern: rule.rule.regexPattern)) != nil else {
-                throw BackupError("断点第 \(index + 1) 条规则的 URL 正则无效。")
+                throw BackupError(OperationIssue.modelBackupBreakpointRegexInvalid(index + 1))
             }
         }
     }
@@ -391,7 +452,7 @@ struct RuleBackup: Codable {
     private static func validateIDs<T: Identifiable>(_ records: [T]?, section: Section) throws {
         guard let records else { return }
         guard Set(records.map(\.id)).count == records.count else {
-            throw BackupError("\(section.title) 包含重复的规则 ID。")
+            throw BackupError(OperationIssue.modelBackupDuplicateRuleIds(section))
         }
     }
 
@@ -405,7 +466,7 @@ struct RuleBackup: Codable {
     private static func rejectUnknown(_ object: [String: Any], allowed: Set<String>, location: String) throws {
         let unknown = Set(object.keys).subtracting(allowed).sorted()
         guard unknown.isEmpty else {
-            throw BackupError("\(location) 包含无法映射的规则字段 \(unknown.joined(separator: "、"))。")
+            throw BackupError(OperationIssue.modelBackupUnknownFields(location, unknown.joined(separator: ", ")))
         }
     }
 
@@ -417,12 +478,12 @@ struct RuleBackup: Codable {
     func migrationNotes() -> [String] {
         let local = (mapLocal ?? []).enumerated().compactMap { index, rule -> String? in
             guard rule.enabled, !rule.target.isEmpty, !FileManager.default.isReadableFile(atPath: rule.target) else { return nil }
-            return "Map Local 第 \(index + 1) 条规则的目标在此 Mac 上不可读取，导入后需要更新路径。"
+            return Strings.Models.backupMapLocalPathUnavailable(index + 1)
         }
         let certificates = (customCertificates ?? []).enumerated().compactMap { index, rule -> String? in
             guard rule.enabled, !FileManager.default.isReadableFile(atPath: rule.certificatePath)
                 || !FileManager.default.isReadableFile(atPath: rule.privateKeyPath) else { return nil }
-            return "自定义服务端证书第 \(index + 1) 条规则的证书链或私钥在此 Mac 上不可读取，导入后需要更新路径。"
+            return Strings.Models.backupCertificatePathUnavailable(index + 1)
         }
         return local + certificates
     }
@@ -430,10 +491,10 @@ struct RuleBackup: Codable {
     func subset(_ section: Section?) -> RuleBackup {
         guard let section else {
             var copy = self
-            copy.version = 1
+            copy.version = Self.currentVersion
             return copy
         }
-        var result = RuleBackup(version: 1)
+        var result = RuleBackup(version: Self.currentVersion)
         if let organization {
             result.organization = RuleOrganization(
                 folders: organization.folders.filter { $0.tool == section.rawValue },
@@ -565,8 +626,24 @@ struct RuleBackup: Codable {
         return incoming == current ? Change(section: section, unchanged: 1) : Change(section: section, updated: 1)
     }
 
-    struct BackupError: LocalizedError {
-        let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+    struct BackupError: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+        var errorDescription: String? { operationIssue.diagnostic }
+    }
+}
+
+// 诊断使用稳定 section ID；界面才读取该 section 的本地化标题。
+extension OperationIssue {
+    static func modelBackupSectionRegexInvalid(_ section: RuleBackup.Section) -> Self {
+        let issue = Self.modelBackupSectionRegexInvalid(section.rawValue)
+        return Self(code: issue.code, diagnostic: issue.diagnostic,
+                    render: { Strings.Models.backupSectionRegexInvalid(section.localizedTitle) })
+    }
+    static func modelBackupDuplicateRuleIds(_ section: RuleBackup.Section) -> Self {
+        let issue = Self.modelBackupDuplicateRuleIds(section.rawValue)
+        return Self(code: issue.code, diagnostic: issue.diagnostic,
+                    render: { Strings.Models.backupDuplicateRuleIds(section.localizedTitle) })
     }
 }

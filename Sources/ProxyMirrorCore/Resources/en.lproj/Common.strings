@@ -1,0 +1,17 @@
+/* Common interface actions. */
+"add" = "Add";
+"cancel" = "Cancel";
+"close" = "Close";
+"copy" = "Copy";
+"delete" = "Delete";
+"edit" = "Edit";
+"error" = "Error";
+"loading" = "Loading…";
+"none" = "None";
+"ok" = "OK";
+"remove" = "Remove";
+"save" = "Save";
+"search" = "Search";
+"unknown" = "Unknown";
+"language_restart_notice" = "重启后生效 / Applies after restarting";
+"resource_unavailable" = "Language resources are missing or damaged. Reinstall ProxyMirror.";

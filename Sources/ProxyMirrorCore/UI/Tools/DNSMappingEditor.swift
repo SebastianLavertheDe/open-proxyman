@@ -20,13 +20,13 @@ struct DNSMappingEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("DNS 映射").font(.headline)
-            Text("指定目标主机连接的 IP，HTTP Host 和 TLS 域名仍使用原主机。")
+            Text(Strings.Tools.dnsMapping).font(.headline)
+            Text(Strings.Tools.specifyTheIpUsedToConnectToATarget)
                 .font(.caption).foregroundStyle(.secondary)
             List(selection: $selection) {
                 ForEach($rules) { $rule in
                     HStack {
-                        Toggle("启用规则", isOn: $rule.enabled).labelsHidden()
+                        Toggle(Strings.Tools.enableRule, isOn: $rule.enabled).labelsHidden()
                         VStack(alignment: .leading, spacing: 2) {
                             Text(rule.name.flatMap { $0.isEmpty ? nil : $0 } ?? rule.hostPattern)
                             if let name = rule.name, !name.isEmpty {
@@ -40,28 +40,28 @@ struct DNSMappingEditor: View {
                 }
             }
             if selection.count == 1, let id = selection.first, let index = rules.firstIndex(where: { $0.id == id }) {
-                TextField("选中规则名称（可选）", text: Binding(
+                TextField(Strings.Tools.selectedRuleNameOptional, text: Binding(
                     get: { rules[index].name ?? "" },
                     set: { rules[index].name = $0.isEmpty ? nil : $0 }
                 ))
                 HStack {
-                    TextField("选中规则主机", text: $rules[index].hostPattern)
-                    TextField("选中规则 IP", text: $rules[index].ip)
+                    TextField(Strings.Tools.selectedRuleHost, text: $rules[index].hostPattern)
+                    TextField(Strings.Tools.selectedRuleIp, text: $rules[index].ip)
                 }
                 RuleFolderPicker(tool: "dns", ruleID: id.uuidString, draft: $folderDraft).id(id)
             }
             HStack {
-                TextField("主机或 *.example.com", text: $host)
-                TextField("IPv4 或 IPv6 地址", text: $address)
-                Button("添加") { append() }.disabled(!canAdd)
-                Button("移除所选") { rules.removeAll { selection.contains($0.id) }; selection = [] }
+                TextField(Strings.Tools.hostOrExampleCom, text: $host)
+                TextField(Strings.Tools.ipv4OrIpv6Address, text: $address)
+                Button(Strings.Tools.add) { append() }.disabled(!canAdd)
+                Button(Strings.Tools.removeSelected) { rules.removeAll { selection.contains($0.id) }; selection = [] }
                     .disabled(selection.isEmpty)
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") {
+                Button(Strings.Tools.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.save) {
                     if canAdd { append() }
                     let store = RulesStore.shared
                     var backup = store.backup()
@@ -71,7 +71,7 @@ struct DNSMappingEditor: View {
                         try store.install(backup)
                         dismiss()
                     } catch let failure {
-                        error = failure.localizedDescription
+                        error = LocalizedErrorPresentation.message(for: failure)
                     }
                 }
                 .keyboardShortcut(.defaultAction)

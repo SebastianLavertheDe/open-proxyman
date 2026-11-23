@@ -39,7 +39,7 @@ struct LatencySimulation: Equatable {
 struct LatencyConditions: Codable, Equatable {
     static let maxDelayMs = 5000
     static let responseSpikeMs = 500
-    static let disconnectReason = "弱网模拟：随机断连"
+    static let disconnectReason = OperationIssue.modelNetworkRandomDisconnect.diagnostic
 
     var enabled = false
     var milliseconds = 150
@@ -59,27 +59,29 @@ struct LatencyConditions: Codable, Equatable {
         case disconnectPercent, responseSpikePercent, bodyPausePercent, rules
     }
 
-    var validationError: String? {
+    var validationIssue: OperationIssue? {
         if let rules {
             guard rules.count <= 500, Set(rules.map(\.id)).count == rules.count else {
-                return "弱网规则最多 500 条，且 ID 不能重复。"
+                return OperationIssue.modelNetworkRuleCount
             }
             for rule in rules {
-                if let error = rule.validationError { return "\(rule.name)：\(error)" }
+                if let issue = rule.validationIssue { return .modelRuleValidation(ruleName: rule.name, issue: issue) }
             }
         }
         if ![milliseconds, jitterMilliseconds ?? 0].allSatisfy({ (0...Self.maxDelayMs).contains($0) }) {
-            return "请求延迟和抖动必须在 0 到 5000 毫秒之间。"
+            return OperationIssue.modelNetworkDelayRange
         }
         if ![uploadKbps ?? 0, downloadKbps ?? 0].allSatisfy({ (0...LinkBandwidth.maxKbps).contains($0) }) {
-            return "上传和下载速率必须在 0 到 1,000,000 kbps 之间。"
+            return OperationIssue.modelNetworkBandwidthRange
         }
         if ![disconnectPercent ?? 0, responseSpikePercent ?? 0, bodyPausePercent ?? 0]
             .allSatisfy({ (0...100).contains($0) }) {
-            return "弱网模拟概率必须在 0% 到 100% 之间。"
+            return OperationIssue.modelNetworkProbabilityRange
         }
         return nil
     }
+    var validationError: String? { validationIssue?.diagnostic }
+    var localizedValidationError: String? { validationIssue?.localizedPresentation }
 
     enum Preset: String, CaseIterable {
         case totalLoss = "100% Loss", veryBad = "Very Bad Network", twoG = "2G"
@@ -106,11 +108,27 @@ struct LatencyConditions: Codable, Equatable {
                                      downloadKbps: download, jitterMilliseconds: jitter > 0 ? jitter : nil,
                                      disconnectPercent: self == .totalLoss ? 100 : self == .veryBad ? 20 : nil)
         }
+        var localizedTitle: String {
+            switch self {
+            case .totalLoss: return Strings.Models.networkPresetTotalLoss
+            case .veryBad: return Strings.Models.networkPresetVeryBad
+            case .twoG: return Strings.Models.networkPresetTwoG
+            case .threeG: return Strings.Models.networkPresetThreeG
+            case .fourG: return Strings.Models.networkPresetFourG
+            case .fiveG: return Strings.Models.networkPresetFiveG
+            case .lte: return Strings.Models.networkPresetLte
+            case .wifi: return Strings.Models.networkPresetWifi
+            case .wifi802: return Strings.Models.networkPresetWifi802
+            case .slow: return Strings.Models.networkPresetSlow
+            case .medium: return Strings.Models.networkPresetMedium
+            case .dialUp: return Strings.Models.networkPresetDialUp
+            }
+        }
     }
 
     private static let current: LockedBox<LatencyConditions> = {
         let consolidated: RuleBackup? = RulesFileIO.load("rules.json")
-        return LockedBox(consolidated?.latency ?? RulesFileIO.load("latency.json") ?? LatencyConditions())
+        return LockedBox(consolidated?.latency ?? LatencyConditions())
     }()
 
     static func snapshot() -> Self { current.value }
@@ -169,7 +187,7 @@ struct LatencyConditions: Codable, Equatable {
 /// One independent host condition. Order is significant: the first enabled match wins.
 struct NetworkConditionRule: Codable, Equatable, Identifiable {
     var id = UUID()
-    var name = "弱网规则"
+    var name = Strings.Models.networkRuleName
     var enabled = true
     var host = ""
     var milliseconds = 150
@@ -180,7 +198,7 @@ struct NetworkConditionRule: Codable, Equatable, Identifiable {
     var responseSpikePercent: Int?
     var bodyPausePercent: Int?
 
-    init(legacy: LatencyConditions = LatencyConditions(), name: String = "弱网规则") {
+    init(legacy: LatencyConditions = LatencyConditions(), name: String = Strings.Models.networkRuleName) {
         self.name = name
         enabled = legacy.enabled
         host = legacy.host
@@ -200,14 +218,16 @@ struct NetworkConditionRule: Codable, Equatable, Identifiable {
                           responseSpikePercent: responseSpikePercent, bodyPausePercent: bodyPausePercent)
     }
 
-    var validationError: String? {
+    var validationIssue: OperationIssue? {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.utf8.count <= 512 else {
-            return "请填写不超过 512 字节的规则名称。"
+            return OperationIssue.modelNetworkRuleNameInvalid
         }
         guard host.utf8.count <= 1024, !host.contains("/"),
               host.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
-            return "主机应为域名、IP 或 *.example.com 通配符。"
+            return OperationIssue.modelNetworkHostInvalid
         }
-        return legacy.validationError
+        return legacy.validationIssue
     }
+    var validationError: String? { validationIssue?.diagnostic }
+    var localizedValidationError: String? { validationIssue?.localizedPresentation }
 }

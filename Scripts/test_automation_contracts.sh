@@ -12,6 +12,9 @@ from pathlib import Path
 import sys
 import re
 root, temporary = map(Path, sys.argv[1:])
+sys.path.insert(0, str(root / 'Scripts'))
+from localization_model_test_support import localization_sources
+localization_sources(temporary)
 models = (root / 'Sources/ProxyMirrorCore/Interception/RuleStores.swift').read_text()
 models = models[models.index('enum RewriteAction:'):models.index('// MARK: - JSON 持久化')]
 phase = (root / 'Sources/ProxyMirrorCore/Interception/ScriptingService.swift').read_text()
@@ -48,11 +51,17 @@ for name in ['ExternalInclusiveChecks.swift', 'RuleMutationChecks.swift']:
     text = (root / 'Tests/ProxyMirrorCoreChecks' / name).read_text()
     (temporary / name).write_text(text.replace('@testable import ProxyMirrorCore\n', ''))
 PY
-swiftc -swift-version 5 "$automation_temp/Models.swift" \
+"${PM_SWIFTC:-swiftc}" -swift-version 5 "$automation_temp/Models.swift" \
   "$automation_root/Sources/ProxyMirrorCore/Interception/URLRule.swift" \
   "$automation_root/Sources/ProxyMirrorCore/Proxy/ExternalProxyTarget.swift" \
   "$automation_root/Sources/ProxyMirrorCore/Model/RuleMutation.swift" \
   "$automation_temp/ExternalInclusiveChecks.swift" "$automation_temp/RuleMutationChecks.swift" \
   "$automation_root/Tests/Fixtures/AutomationContracts/main.swift" \
+  "$automation_root/Sources/ProxyMirrorCore/Localization/Generated/Strings.swift" \
+  "$automation_root/Sources/ProxyMirrorCore/Localization/Generated/EnglishFallbacks.swift" \
+  "$automation_root/Sources/ProxyMirrorCore/System/LocalizedErrorPresentation.swift" \
+  "$automation_root/Sources/ProxyMirrorCore/System/GeneratedOperationIssues.swift" \
+  "$automation_root/Sources/ProxyMirrorCore/System/GeneratedModelOperationIssues.swift" \
+  "$automation_temp/LocalizationPresentationBoundary.swift" \
   -o "$automation_temp/contracts"
 "$automation_temp/contracts"

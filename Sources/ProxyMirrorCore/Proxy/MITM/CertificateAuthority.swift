@@ -4,6 +4,7 @@ import X509
 import SwiftASN1
 import NIOSSL
 import Darwin
+import Security
 
 /// CA 证书管理：首次启动生成 CA（P-256），按域名动态签发叶子证书并缓存 NIOSSLContext。
 /// CA 私钥与证书持久化在 AppSupport（自用工具，文件权限 600）。
@@ -16,6 +17,7 @@ final class CertificateAuthority: @unchecked Sendable {
     private var caCertificate: X509.Certificate?
     private var caPEMText: String?
     private var caTLSCertificate: NIOSSLCertificate?
+    private var cachedTrustProbe: TrustProbe?
     private var leafContexts: [String: NIOSSLContext] = [:]
     private var leafOrder: [String] = []
     private var leafGeneration: UInt64 = 0
@@ -26,6 +28,14 @@ final class CertificateAuthority: @unchecked Sendable {
     struct CustomChain: @unchecked Sendable {
         let certificates: [NIOSSLCertificate]
         let privateKey: NIOSSLPrivateKey
+    }
+
+    struct TrustProbe: Equatable, Sendable {
+        let hostname: String
+        let leafDER: Data
+        let authorityDER: Data
+        let notBefore: Date
+        let expiresAt: Date
     }
 
     private let customProvider = LockedBox<(@Sendable (String) -> CustomChain?)?>(nil)
@@ -169,6 +179,7 @@ final class CertificateAuthority: @unchecked Sendable {
         caCertificate = certificate
         caPEMText = pem
         caTLSCertificate = tls
+        cachedTrustProbe = nil
         invalidateLeafContexts()
     }
 
@@ -201,10 +212,66 @@ final class CertificateAuthority: @unchecked Sendable {
         }
     }
 
+    var caNotBefore: Date? {
+        queue.sync {
+            try? loadOrCreateCA()
+            return caCertificate?.notValidBefore
+        }
+    }
+
+    var caCommonName: String? {
+        guard let der = try? caDER(), let certificate = SecCertificateCreateWithData(nil, der as CFData) else { return nil }
+        var name: CFString?
+        guard SecCertificateCopyCommonName(certificate, &name) == errSecSuccess else { return nil }
+        return name as String?
+    }
+
     var caFingerprintSHA256: String? {
         guard let der = try? caDER() else { return nil }
         let digest = SHA256.hash(data: der)
         return digest.map { String(format: "%02X", $0) }.joined()
+    }
+
+    /// An actual TLS server leaf is required for SSL trust evaluation: a CA is not
+    /// itself a valid server leaf. Never consult custom host-certificate rules here.
+    func makeTrustProbe(now: Date = Date()) throws -> TrustProbe {
+        try queue.sync {
+            try loadOrCreateCA()
+            if let cachedTrustProbe, cachedTrustProbe.expiresAt > now.addingTimeInterval(60),
+               cachedTrustProbe.notBefore <= now {
+                return cachedTrustProbe
+            }
+            guard let caCertificate, let caPrivateKey, let caTLSCertificate else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let hostname = "trust-check.proxymirror.invalid"
+            let key = P256.Signing.PrivateKey()
+            let beginning = max(now.addingTimeInterval(-300), caCertificate.notValidBefore)
+            let expiry = min(now.addingTimeInterval(3600), caCertificate.notValidAfter)
+            guard beginning < expiry else { throw CocoaError(.fileReadCorruptFile) }
+            let leaf = try Certificate(
+                version: .v3,
+                serialNumber: Certificate.SerialNumber(bytes: (0..<16).map { _ in UInt8.random(in: 0...255) }),
+                publicKey: Certificate.PublicKey(key.publicKey),
+                notValidBefore: beginning,
+                notValidAfter: expiry,
+                issuer: caCertificate.subject,
+                subject: try DistinguishedName { CommonName(hostname) },
+                extensions: try Certificate.Extensions {
+                    Critical(BasicConstraints.notCertificateAuthority)
+                    Critical(KeyUsage(digitalSignature: true))
+                    try ExtendedKeyUsage([.serverAuth])
+                    try SubjectAlternativeNames([.dnsName(hostname)])
+                },
+                issuerPrivateKey: caPrivateKey
+            )
+            let probe = TrustProbe(hostname: hostname,
+                                   leafDER: Data(try leaf.serializeAsPEM().derBytes),
+                                   authorityDER: Data(try caTLSCertificate.toDERBytes()),
+                                   notBefore: beginning, expiresAt: expiry)
+            cachedTrustProbe = probe
+            return probe
+        }
     }
 
     // MARK: - 动态叶子证书（给 nio 的 TLS ServerContext）

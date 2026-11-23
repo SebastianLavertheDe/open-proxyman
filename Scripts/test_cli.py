@@ -72,6 +72,7 @@ def prepare_bundle(source, destination, identifier):
 
 def write_preferences(identifier, port):
     for key, kind, value in (
+        ("storage.localizationVersion", "-int", "2"),
         ("proxy.port", "-int", str(port)),
         ("proxy.autoStart", "-bool", "true"),
         ("proxy.autoTakeOverSystemProxy", "-bool", "false"),
@@ -187,8 +188,8 @@ def check_rules(binary, env, directory, proxy_port, origin_url):
             "target": "", "comment": "CLI integration fixture"}
     original = directory / "rule.json"
     changed = directory / "changed.json"
-    original.write_text(json.dumps({"version": 1, "blockList": [rule]}), encoding="utf-8")
-    changed.write_text(json.dumps({"version": 1, "blockList": [{**rule, "pattern": url + "/changed"}]}),
+    original.write_text(json.dumps({"version": 2, "blockList": [rule]}), encoding="utf-8")
+    changed.write_text(json.dumps({"version": 2, "blockList": [{**rule, "pattern": url + "/changed"}]}),
                        encoding="utf-8")
     preview = json.loads(command(binary, env, "rules", "preview", "--input", str(original), "--mode", "merge"))
     changes = {change["section"]: change for change in preview["changes"]}

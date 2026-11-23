@@ -26,15 +26,15 @@ struct TrafficFilterEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("高级过滤").font(.headline)
-                TextField("搜索预设 / 条件（⌘F）", text: $search).focused($searchFocused)
+                Text(Strings.Tools.advancedFilters).font(.headline)
+                TextField(Strings.Tools.searchPresetsConditionsF, text: $search).focused($searchFocused)
                     .textFieldStyle(.roundedBorder).frame(maxWidth: 320)
                 Spacer()
                 actions
             }
             HSplitView {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("命名预设 · ⌘↑ / ⌘↓ 选择").font(.caption).foregroundStyle(.secondary)
+                    Text(Strings.Tools.namedPresetsSelectWith).font(.caption).foregroundStyle(.secondary)
                     List {
                         ForEach(visibleProfiles) { profile in
                             Button { load(profile) } label: {
@@ -50,8 +50,8 @@ struct TrafficFilterEditor: View {
                         }
                     }
                     HStack {
-                        Button("新预设") { selectedProfile = nil; name = ""; draft = TrafficConditionGroup(); highlight = ""; selectedCondition = nil }
-                        Button("删除") { if let selectedProfile { write(profiles.filter { $0.id != selectedProfile }); self.selectedProfile = nil } }
+                        Button(Strings.Tools.newPreset) { selectedProfile = nil; name = ""; draft = TrafficConditionGroup(); highlight = ""; selectedCondition = nil }
+                        Button(Strings.Tools.delete) { if let selectedProfile { write(profiles.filter { $0.id != selectedProfile }); self.selectedProfile = nil } }
                             .disabled(selectedProfile == nil)
                     }
                 }.frame(minWidth: 180, idealWidth: 200, maxWidth: 240)
@@ -69,8 +69,8 @@ struct TrafficFilterEditor: View {
 
     private var conditionPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("匹配方式", selection: $draft.mode) {
-                ForEach(TrafficConditionGroup.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Picker(Strings.Tools.matchType, selection: $draft.mode) {
+                ForEach(TrafficConditionGroup.Mode.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
             }
             ScrollViewReader { scroll in
                 ScrollView {
@@ -79,13 +79,13 @@ struct TrafficFilterEditor: View {
                 }
                 .onChange(of: selectedCondition) { id in if let id { navigateProfiles = false; scroll.scrollTo(id, anchor: .center) } }
             }.frame(minHeight: 160)
-            Text("正文条件检查解码后前 1 MiB。⌘N 新增条件，⇧⌘N 新增 AND/OR 子组；⌘↑↓ 在当前条件或预设中导航。")
+            Text(Strings.Tools.bodyConditionsInspectTheFirst1MibAfterDecoding)
                 .font(.caption).foregroundStyle(.secondary)
-            Picker("匹配时着色", selection: $highlight) {
-                Text("停用着色").tag("")
-                ForEach(ProxymanTheme.highlightNames, id: \.self) { Text($0).tag($0) }
+            Picker(Strings.Tools.colorMatchingRequests, selection: $highlight) {
+                Text(Strings.Tools.disableColoring).tag("")
+                ForEach(ProxymanTheme.highlightNames, id: \.self) { Text(ProxymanTheme.localizedHighlightName($0)).tag($0) }
             }
-            Text("⌘B 启用 / 停用选中预设着色；预设按列表顺序生效，手动高亮优先。")
+            Text(Strings.Tools.bTogglesColoringForTheSelectedPresetPresetsApply)
                 .font(.caption).foregroundStyle(.secondary)
         }.padding(.leading, 10).frame(minWidth: 680)
     }
@@ -95,27 +95,27 @@ struct TrafficFilterEditor: View {
             if let feedback { Text(feedback).font(.caption).foregroundStyle(.secondary) }
             Divider()
             HStack {
-                TextField("过滤器名称", text: $name)
-                Button("保存预设") { saveProfile() }.disabled(!valid || draft.isEmpty || profileName.isEmpty)
+                TextField(Strings.Tools.filterName, text: $name)
+                Button(Strings.Tools.savePreset) { saveProfile() }.disabled(!valid || draft.isEmpty || profileName.isEmpty)
                 Spacer()
-                Button("取消（Esc）") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("应用") { store.filter.conditions = draft; dismiss() }
+                Button(Strings.Tools.cancelEsc) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.applyAction) { store.filter.conditions = draft; dismiss() }
                     .keyboardShortcut(.defaultAction).disabled(!valid)
             }
         }
     }
 
     private var actions: some View {
-        Menu("面板操作") {
-            Button("新增条件  ⌘N") { handle(.addCondition) }
-            Button("新增 AND/OR 子组  ⇧⌘N") { handle(.addGroup) }
+        Menu(Strings.Tools.panelActions) {
+            Button(Strings.Tools.addConditionN) { handle(.addCondition) }
+            Button(Strings.Tools.addAndOrGroupN) { handle(.addGroup) }
             Divider()
-            Button("上一" + (navigateProfiles ? "预设" : "条件") + "  ⌘↑") { handle(.previous) }
-            Button("下一" + (navigateProfiles ? "预设" : "条件") + "  ⌘↓") { handle(.next) }
-            Button("切换选中预设着色  ⌘B") { handle(.toggleColor) }.disabled(selectedProfile == nil)
-            Button("搜索面板  ⌘F") { handle(.search) }
+            Button(navigateProfiles ? Strings.Tools.previousPresetShortcut : Strings.Tools.previousConditionShortcut) { handle(.previous) }
+            Button(navigateProfiles ? Strings.Tools.nextPresetShortcut : Strings.Tools.nextConditionShortcut) { handle(.next) }
+            Button(Strings.Tools.toggleSelectedPresetColoringB) { handle(.toggleColor) }.disabled(selectedProfile == nil)
+            Button(Strings.Tools.searchPanelF) { handle(.search) }
             Divider()
-            Button("取消  Esc") { dismiss() }
+            Button(Strings.Tools.cancelEsc2) { dismiss() }
         }.fixedSize()
     }
 
@@ -143,12 +143,12 @@ struct TrafficFilterEditor: View {
                 selectedCondition = conditionIDs[index]; conditionFocused = conditionIDs[index]
             }
         case .toggleColor:
-            guard let id = selectedProfile, let index = profiles.firstIndex(where: { $0.id == id }) else { feedback = "请先选择或保存一个预设。"; return }
+            guard let id = selectedProfile, let index = profiles.firstIndex(where: { $0.id == id }) else { feedback = Strings.Tools.selectOrSaveAPresetFirst; return }
             var next = profiles
             next[index].highlightName = next[index].highlightName == nil ? (highlight.isEmpty ? "Yellow" : highlight) : nil
             highlight = next[index].highlightName ?? ""
             write(next)
-            feedback = next[index].highlightName == nil ? "已停用选中预设着色。" : "已启用选中预设着色。"
+            feedback = next[index].highlightName == nil ? Strings.Tools.coloringDisabledForTheSelectedPreset : Strings.Tools.coloringEnabledForTheSelectedPreset
         }
     }
 
@@ -161,7 +161,7 @@ struct TrafficFilterEditor: View {
         let profile = SavedTrafficFilter(id: id, name: profileName, group: draft, highlightName: highlight.isEmpty ? nil : highlight)
         var next = profiles
         if let index = next.firstIndex(where: { $0.id == id }) { next[index] = profile } else { next.append(profile) }
-        write(next); selectedProfile = id; feedback = "预设已保存。"
+        write(next); selectedProfile = id; feedback = Strings.Tools.presetSaved
     }
     private func write(_ profiles: [SavedTrafficFilter]) {
         if let encoded = try? JSONEncoder().encode(profiles) { stored = encoded }
@@ -180,7 +180,7 @@ private struct TrafficConditionGroupEditor: View {
     let focus: FocusState<UUID?>.Binding
 
     static func matches(_ condition: TrafficCondition, query: String) -> Bool {
-        query.isEmpty || "\(condition.field.rawValue) \(condition.comparison.rawValue) \(condition.value)".localizedCaseInsensitiveContains(query)
+        query.isEmpty || "\(condition.field.localizedTitle) \(condition.comparison.localizedTitle) \(condition.value)".localizedCaseInsensitiveContains(query)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -188,21 +188,21 @@ private struct TrafficConditionGroupEditor: View {
                 if Self.matches(condition, query: query) {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Picker("字段", selection: $condition.field) {
-                                ForEach(TrafficCondition.Field.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            Picker(Strings.Tools.field, selection: $condition.field) {
+                                ForEach(TrafficCondition.Field.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
                             }.labelsHidden().frame(width: 130)
-                            Picker("条件", selection: $condition.comparison) {
-                                ForEach(TrafficCondition.Comparison.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            Picker(Strings.Tools.condition, selection: $condition.comparison) {
+                                ForEach(TrafficCondition.Comparison.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
                             }.labelsHidden().frame(width: 94)
-                            TextField(condition.comparison == .between ? "最小值...最大值" : "匹配值", text: $condition.value)
+                            TextField(condition.comparison == .between ? Strings.Tools.minimumMaximum : Strings.Tools.matchValue, text: $condition.value)
                                 .focused(focus, equals: condition.id)
                             Button {
                                 let id = condition.id; group.conditions.removeAll { $0.id == id }
                             } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless).accessibilityLabel("删除条件")
+                                .buttonStyle(.borderless).accessibilityLabel(Strings.Tools.deleteCondition)
                         }
                         if !condition.value.isEmpty && !condition.isValid {
-                            Text("条件无效：数值字段与区间须有效（10...100），正则必须有效。")
+                            Text(Strings.Tools.invalidConditionNumericFieldsAndRanges10100Must)
                                 .font(.caption).foregroundStyle(.red)
                         }
                     }.padding(4).id(condition.id)
@@ -213,21 +213,21 @@ private struct TrafficConditionGroupEditor: View {
             ForEach(Array((group.groups ?? []).indices), id: \.self) { index in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Picker("子组", selection: subgroup(index).mode) {
-                            ForEach(TrafficConditionGroup.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        Picker(Strings.Tools.subgroup, selection: subgroup(index).mode) {
+                            ForEach(TrafficConditionGroup.Mode.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
                         }
                         Spacer()
-                        Button("删除子组") { group.groups?.remove(at: index) }.buttonStyle(.borderless)
+                        Button(Strings.Tools.deleteSubgroup) { group.groups?.remove(at: index) }.buttonStyle(.borderless)
                     }
                     AnyView(TrafficConditionGroupEditor(group: subgroup(index), depth: depth + 1, query: query, selected: $selected, focus: focus))
                 }.padding(8).background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
             }
             HStack {
-                Button("添加条件") {
+                Button(Strings.Tools.addCondition) {
                     let condition = TrafficCondition(); group.conditions.append(condition); selected = condition.id; focus.wrappedValue = condition.id
                 }
                 if depth < 3 {
-                    Button("添加 AND/OR 子组") {
+                    Button(Strings.Tools.addAndOrGroup) {
                         let condition = TrafficCondition()
                         if group.groups == nil { group.groups = [] }
                         group.groups?.append(TrafficConditionGroup(conditions: [condition])); selected = condition.id; focus.wrappedValue = condition.id

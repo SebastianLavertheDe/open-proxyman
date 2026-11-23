@@ -10,21 +10,21 @@ enum CertificateToolWindows {
 
     static func showImporter(purpose: CertificateFormats.Purpose = .client) {
         if importer?.window?.isVisible == true { importer?.showWindow(nil); return }
-        importer = window(title: "证书导入向导", view: CertificateImporterView(initialPurpose: purpose))
+        importer = window(title: Strings.Tools.certificateImportAssistant, view: CertificateImporterView(initialPurpose: purpose))
         importer?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     static func showExporter(format: CertificateFormats.ExportFormat) {
         if exporter?.window?.isVisible == true { exporter?.showWindow(nil); return }
-        exporter = window(title: "导出 ProxyMirror CA", view: CertificateExportView(format: format))
+        exporter = window(title: Strings.Tools.exportProxymirrorCa, view: CertificateExportView(format: format))
         exporter?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    static func showSimulatorInstaller(platform: String = "全部") {
+    static func showSimulatorInstaller(platform: String = "all") {
         if simulatorInstaller?.window?.isVisible == true { simulatorInstaller?.showWindow(nil); return }
-        simulatorInstaller = window(title: "Simulator CA 安装器", view: SimulatorCertificateInstallerView(initialPlatform: platform))
+        simulatorInstaller = window(title: Strings.Tools.simulatorCaInstaller, view: SimulatorCertificateInstallerView(initialPlatform: platform))
         simulatorInstaller?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -53,19 +53,19 @@ private struct CertificateExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(format.rawValue).font(.headline)
+            Text(format.localizedTitle).font(.headline)
             if format.needsPassword {
-                Text("为导出身份设置口令。导出文件权限为 0600；口令仅传给本次格式转换进程。")
+                Text(Strings.Tools.setAPasswordForTheExportedIdentityFilePermissions)
                     .font(.caption).foregroundStyle(.secondary)
-                SecureField("导出口令", text: $password)
-                SecureField("确认口令", text: $confirmation)
+                SecureField(Strings.Tools.exportPassword, text: $password)
+                SecureField(Strings.Tools.confirmPassword, text: $confirmation)
             }
             if let feedback { Text(feedback).font(.caption).foregroundStyle(failed ? Color.red : .secondary).textSelection(.enabled) }
             HStack {
-                Button("关闭") { CertificateToolWindows.closeExporter() }.disabled(working)
+                Button(Strings.Tools.close) { CertificateToolWindows.closeExporter() }.disabled(working)
                 Spacer()
                 if working { ProgressView().controlSize(.small) }
-                Button("选择位置并导出…") { export() }
+                Button(Strings.Tools.chooseLocationExport) { export() }
                     .disabled(working || (format.needsPassword && (password.isEmpty || password != confirmation)))
                     .keyboardShortcut(.defaultAction)
             }
@@ -88,10 +88,10 @@ private struct CertificateExportView: View {
                 try await Task.detached(priority: .userInitiated) {
                     try CertificateFormats.export(format: selectedFormat, password: secret, to: target)
                 }.value
-                feedback = "已导出至 \(target.path)"
+                feedback = Strings.Tools.exportedTo1(String(describing: target.path))
                 failed = false
                 NSWorkspace.shared.activateFileViewerSelecting([target])
-            } catch { feedback = error.localizedDescription; failed = true }
+            } catch { feedback = LocalizedErrorPresentation.message(for: error); failed = true }
         }
     }
 }
@@ -114,51 +114,51 @@ private struct CertificateImporterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("1. 选择用途与文件").font(.headline)
-            Picker("导入用途", selection: $purpose) {
-                ForEach(CertificateFormats.Purpose.allCases) { Text($0.rawValue).tag($0) }
+            Text(Strings.Tools.step1ChoosePurposeFile).font(.headline)
+            Picker(Strings.Tools.importPurpose, selection: $purpose) {
+                ForEach(CertificateFormats.Purpose.allCases) { Text($0.localizedTitle).tag($0) }
             }
             HStack {
-                Button(certificate?.lastPathComponent ?? "选择 PEM / DER / CER / P12…") {
-                    certificate = choose("选择证书、证书链或 PKCS#12 身份") ?? certificate
+                Button(certificate?.lastPathComponent ?? Strings.Tools.choosePemDerCerP12) {
+                    certificate = choose(Strings.Tools.chooseACertificateCertificateChainOrPkcs12Identity) ?? certificate
                     material = nil
                 }
                 if purpose.needsKey && !pkcs12 {
-                    Button(privateKey?.lastPathComponent ?? "选择私钥（或使用同文件身份）…") {
-                        privateKey = choose("选择 PEM / DER 私钥") ?? privateKey
+                    Button(privateKey?.lastPathComponent ?? Strings.Tools.choosePrivateKeyOrUseTheSameIdentityFile) {
+                        privateKey = choose(Strings.Tools.chooseAPemDerPrivateKey) ?? privateKey
                         material = nil
                     }
                 }
             }
             if purpose.needsKey || pkcs12 {
-                SecureField("P12 / 加密私钥口令（无口令留空）", text: $password)
+                SecureField(Strings.Tools.p12EncryptedPrivateKeyPasswordLeaveEmptyIfNone, text: $password)
             }
             if purpose == .client || purpose == .server {
-                TextField("目标主机或 *.example.com", text: $host)
+                TextField(Strings.Tools.targetHostOrExampleCom, text: $host)
             }
-            Button("2. 解析并校验") { inspect() }.disabled(working || certificate == nil)
+            Button(Strings.Tools.step2ParseValidate) { inspect() }.disabled(working || certificate == nil)
             if let material {
                 Divider()
                 Group {
-                    Text("Subject: \(material.subject)")
-                    Text("Issuer: \(material.issuer)")
-                    Text("到期：\(material.expiry.formatted()) · \(material.certificateCount) 张证书 · \(material.isCA ? "CA" : "叶子证书")")
+                    Text(Strings.Tools.certificateSubject(material.subject))
+                    Text(Strings.Tools.certificateIssuer(material.issuer))
+                    Text(Strings.Tools.certificateMaterialSummary(String(describing: material.expiry.formatted()), material.certificateCount, String(describing: material.isCA ? "CA" : Strings.Tools.leafCertificate)))
                     Text("SHA-256: \(material.fingerprint)").font(.system(size: 10, design: .monospaced))
                 }.font(.caption).textSelection(.enabled)
-                Text("已检查有效期、CA/身份用途、密钥匹配及服务端 SAN。此步骤尚未修改信任或代理配置。")
+                Text(Strings.Tools.validityDatesCaIdentityUsageKeyMatchingAndServer)
                     .font(.caption).foregroundStyle(.secondary)
                 if purpose == .rootCA {
-                    Toggle("确认替换当前抓包根 CA；随后由我重新安装并信任新 CA", isOn: $confirmRootReplacement)
-                    Text("不会删除钥匙串中现有证书。已建立的 TLS 连接继续使用原证书。")
+                    Toggle(Strings.Tools.replaceTheCurrentCaptureRootCaIWillReinstall, isOn: $confirmRootReplacement)
+                    Text(Strings.Tools.existingKeychainCertificatesAreNotDeletedEstablishedTlsConnections)
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             if let feedback { Text(feedback).font(.caption).foregroundStyle(failed ? Color.red : .secondary).textSelection(.enabled) }
             HStack {
-                Button("关闭") { CertificateToolWindows.closeImporter() }.disabled(working)
+                Button(Strings.Tools.close) { CertificateToolWindows.closeImporter() }.disabled(working)
                 Spacer()
                 if working { ProgressView().controlSize(.small) }
-                Button(purpose == .rootCA ? "3. 替换抓包根 CA" : "3. 导入所选用途") { install() }
+                Button(purpose == .rootCA ? Strings.Tools.step3ReplaceTheCaptureRootCa : Strings.Tools.step3ImportForSelectedPurpose) { install() }
                     .disabled(working || material == nil || (purpose == .rootCA && !confirmRootReplacement))
             }
         }.padding(20).frame(width: 650).disabled(working)
@@ -191,8 +191,8 @@ private struct CertificateImporterView: View {
                     return value
                 }.value
                 material = parsed
-                feedback = "校验通过。核对证书信息后再导入。"; failed = false
-            } catch { feedback = error.localizedDescription; failed = true }
+                feedback = Strings.Tools.validationPassedReviewTheCertificateInformationBeforeImporting; failed = false
+            } catch { feedback = LocalizedErrorPresentation.message(for: error); failed = true }
         }
     }
 
@@ -210,7 +210,7 @@ private struct CertificateImporterView: View {
                     try await Task.detached(priority: .userInitiated) {
                         switch target {
                         case .rootCA:
-                            guard let key = material.privateKeyPEM else { throw CertificateFormats.FormatError("缺少 CA 私钥。") }
+                            guard let key = material.privateKeyPEM else { throw CertificateFormats.FormatError(Strings.Tools.theCaPrivateKeyIsMissing) }
                             try CertificateAuthority.shared.importRootCA(certificatePEM: material.certificatePEM, privateKeyPEM: key)
                         case .upstreamCA: try UpstreamTrust.install(Data(material.certificatePEM.utf8))
                         case .client:
@@ -220,18 +220,22 @@ private struct CertificateImporterView: View {
                         }
                     }.value
                 }
-                if target == .rootCA { AppState.shared.caInstalled = false; AppState.shared.caBannerDismissed = false }
+                if target == .rootCA {
+                    AppState.shared.caInstalled = false
+                    AppState.shared.caBannerDismissed = false
+                    UserDefaults.standard.set(false, forKey: "caBannerDismissed")
+                }
                 NotificationCenter.default.post(name: .proxyMirrorCertificatesChanged, object: nil)
                 self.material = nil; password = ""; confirmRootReplacement = false
-                feedback = target == .rootCA ? "已替换抓包 CA。请使用证书菜单重新安装，并在客户端信任新 CA。" : "已导入；新连接将使用所选证书配置。"
+                feedback = target == .rootCA ? Strings.Tools.theCaptureCaWasReplacedReinstallItFromThe : Strings.Tools.importedNewConnectionsWillUseTheSelectedCertificateConfiguration
                 failed = false
-            } catch { feedback = error.localizedDescription; failed = true }
+            } catch { feedback = LocalizedErrorPresentation.message(for: error); failed = true }
         }
     }
 
     private func installServer(_ material: CertificateFormats.Material, host input: String) throws {
         guard let key = material.privateKeyPEM, let host = ClientTLSIdentities.hostPattern(input) else {
-            throw CertificateFormats.FormatError("缺少有效的服务端身份或域名。")
+            throw CertificateFormats.FormatError(Strings.Tools.aValidServerIdentityAndDomainAreRequired)
         }
         let directory = CertificateAuthority.applicationSupport.appendingPathComponent("ServerIdentities", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

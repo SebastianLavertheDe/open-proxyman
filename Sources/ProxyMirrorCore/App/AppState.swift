@@ -10,6 +10,8 @@ final class AppState: ObservableObject, TrafficSink {
 
     let store = TrafficStore()
     let settings: AppSettings
+    /// A pending preference must never be advertised as an already bound endpoint.
+    var listenerPort: UInt16 { ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : settings.port }
     @Published private(set) var tabs: [TrafficStore] = []
     @Published private(set) var activeTabIndex = 0
     @Published private(set) var splitStore: TrafficStore?
@@ -37,15 +39,15 @@ final class AppState: ObservableObject, TrafficSink {
     @Published private(set) var transparentProxyState: TransparentProxyController.State = .idle
     var transparentProxyNeedsStop: Bool { transparentProxy.needsStop }
     var transparentProxyMenuTitle: String {
-        guard TransparentProxyController.isAvailable else { return "透明抓包不可用…" }
+        guard TransparentProxyController.isAvailable else { return Strings.Errors.appStateTransparentCaptureUnavailable }
         switch transparentProxyState {
-        case .activating: return "取消透明抓包启动"
-        case .awaitingApproval: return "取消透明抓包（等待系统批准）"
-        case .connecting: return "取消透明抓包连接"
-        case .running: return "停止透明抓包"
-        case .stopping: return "正在停止透明抓包…"
-        case .failed where transparentProxyNeedsStop: return "重试停止透明抓包"
-        default: return "启动透明抓包…"
+        case .activating: return Strings.Errors.appStateCancelTransparentCaptureActivation
+        case .awaitingApproval: return Strings.Errors.appStateCancelTransparentCaptureAwaitingApproval
+        case .connecting: return Strings.Errors.appStateCancelTransparentProxyConnection
+        case .running: return Strings.Errors.appStateStopTransparentCapture
+        case .stopping: return Strings.Errors.appStateStoppingTransparentCapture
+        case .failed where transparentProxyNeedsStop: return Strings.Errors.appStateRetryStoppingTransparentCapture
+        default: return Strings.Errors.appStateStartTransparentCapture
         }
     }
 
@@ -68,6 +70,9 @@ final class AppState: ObservableObject, TrafficSink {
     @Published var showFactoryReset = false
     @Published var showGistPublish = false
     private var storeChanges: AnyCancellable?
+    private var settingsChanges: AnyCancellable?
+    private var certificateChanges: AnyCancellable?
+    private var certificateStatusTask: Task<Void, Never>?
     @Published var dockRight = UserDefaults.standard.bool(forKey: "ui.dockRight") {
         didSet { UserDefaults.standard.set(dockRight, forKey: "ui.dockRight") }
     }
@@ -80,11 +85,16 @@ final class AppState: ObservableObject, TrafficSink {
 
     init(settings: AppSettings = .shared, launchServices: Bool = true) {
         self.settings = settings
+        recordingEnabled = settings.autoStartRecording
+        ProxyEngine.shared.recordingEnabled = recordingEnabled
         ProxyEngine.shared.sink = self
         tabs = [store]
         observeActiveWorkspace()
         store.maxTransactions = settings.maxTransactions
         store.followLatest = settings.followLatest
+        settingsChanges = settings.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in
+            self?.objectWillChange.send()
+        }
         ProxyEngine.shared.mitmEnabled = settings.mitmEnabled
         ProxyEngine.shared.http2Enabled = settings.http2Enabled
         ProxyEngine.shared.mitmExcludedHosts = settings.mitmExcludedHosts
@@ -97,7 +107,7 @@ final class AppState: ObservableObject, TrafficSink {
             self.transparentProxyState = state
             switch state {
             case .awaitingApproval:
-                self.systemProxyMessage = "请在 macOS 系统设置中允许 ProxyMirror 网络扩展。"
+                self.systemProxyMessage = Strings.Errors.appStateAllowTheProxymirrorNetworkExtensionInMacosSystem
             case .idle, .failed:
                 if !self.transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
                 if case .failed(let message) = state { self.systemProxyMessage = message }
@@ -105,9 +115,11 @@ final class AppState: ObservableObject, TrafficSink {
                 break
             }
         }
-        guard launchServices else { return }
+        guard launchServices, ProcessInfo.processInfo.environment["PM_SETTINGS_SNAPSHOT"] == nil else { return }
         pinnedDomains = UserDefaults.standard.stringArray(forKey: "pinnedDomains") ?? []
-        caInstalled = CertInstaller.isInstalled()
+        certificateChanges = NotificationCenter.default.publisher(for: .proxyMirrorCertificatesChanged)
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshCertificateStatus() }
+        refreshCertificateStatus()
         let hasExtension = TransparentProxyController.isAvailable
         if settings.autoStartProxy {
             startProxy(automaticallyTakeOver: !hasExtension)
@@ -208,7 +220,7 @@ final class AppState: ObservableObject, TrafficSink {
             proxyStartError = nil
             if automaticallyTakeOver { takeOverSystemProxyIfConfigured() }
         } catch {
-            proxyStartError = "启动失败：\(error.localizedDescription)\n请在设置中检查端口与局域网地址。"
+            proxyStartError = Strings.Errors.appStateUnableToStartCheckThePortAndLan(LocalizedErrorPresentation.message(for: error))
         }
     }
 
@@ -242,19 +254,22 @@ final class AppState: ObservableObject, TrafficSink {
     func toggleTransparentProxy() {
         guard !proxyRestarting else { return }
         guard TransparentProxyController.isAvailable else {
-            systemProxyMessage = "此版本没有透明代理扩展。请使用带网络扩展的签名版本。"
+            systemProxyMessage = Strings.Errors.appStateThisBuildHasNoTransparentProxyExtensionUse
             return
         }
         if transparentProxyNeedsStop {
             Task { _ = await stopTransparentProxy() }
             return
         }
-        guard !systemProxyActive, !systemProxyBusy else {
-            systemProxyMessage = "请先恢复系统代理，再启动透明抓包。"
-            return
-        }
+        guard !systemProxyBusy else { return }
         Task {
-            guard !transparentProxyNeedsStop, !systemProxyActive, !systemProxyBusy, !proxyRestarting else { return }
+            guard !transparentProxyNeedsStop, !systemProxyBusy, !proxyRestarting else { return }
+            if systemProxyActive {
+                let restored = await withCheckedContinuation { continuation in
+                    stopSystemProxy { continuation.resume(returning: $0) }
+                }
+                guard restored, !systemProxyActive else { return }
+            }
             if !proxyRunning { startProxy(automaticallyTakeOver: false) }
             guard proxyRunning else { return }
             _ = await startTransparentProxy()
@@ -293,7 +308,7 @@ final class AppState: ObservableObject, TrafficSink {
                 restoreCaptureOnExit(completion)
             }
         } else if systemProxyActive {
-            stopSystemProxy(onComplete: completion)
+            stopSystemProxy(restorePrevious: settings.restorePreviousSystemProxy, onComplete: completion)
         } else {
             completion(true)
         }
@@ -356,8 +371,8 @@ final class AppState: ObservableObject, TrafficSink {
                 settings.port = oldPort
                 restoreLAN(oldLAN)
                 systemProxyMessage = transparentProxyNeedsStop
-                    ? "请先停止透明抓包，再调整监听地址或端口。"
-                    : "请先恢复系统代理，再调整监听地址或端口。"
+                    ? Strings.Errors.appStateStopTransparentCaptureBeforeChangingTheListenAddress
+                    : Strings.Errors.appStateRestoreTheSystemProxyBeforeChangingTheListen
                 return
             }
             restartListener(oldPort: oldPort, oldLAN: oldLAN)
@@ -369,7 +384,7 @@ final class AppState: ObservableObject, TrafficSink {
         guard !systemProxyBusy, !proxyRestarting else { return }
         applyRuntimeSettings()
         guard proxyRunning else {
-            systemProxyMessage = "设置已应用，监听尚未启动。"
+            systemProxyMessage = Strings.Errors.appStateSettingsAppliedTheListenerIsNotRunning
             return
         }
         let oldPort = ProxyEngine.shared.port
@@ -377,7 +392,7 @@ final class AppState: ObservableObject, TrafficSink {
         let resumeSystemProxy = systemProxyActive
         let resumeTransparentProxy = transparentProxyNeedsStop
         proxyRestarting = true
-        systemProxyMessage = "正在应用并重启代理…"
+        systemProxyMessage = Strings.Errors.appStateApplyingSettingsAndRestartingTheProxy
         Task {
             defer { proxyRestarting = false }
             if resumeTransparentProxy, !(await stopTransparentProxy()) { return }
@@ -397,7 +412,7 @@ final class AppState: ObservableObject, TrafficSink {
                     startSystemProxy(duringRestart: true) { _, _ in continuation.resume() }
                 }
             } else if proxyStartError == nil {
-                systemProxyMessage = "设置已应用，代理已重启。"
+                systemProxyMessage = Strings.Errors.appStateSettingsAppliedTheProxyHasRestarted
             }
         }
     }
@@ -413,7 +428,7 @@ final class AppState: ObservableObject, TrafficSink {
             settings.port = oldPort
             restoreLAN(oldLAN)
             startProxy(automaticallyTakeOver: false, duringRestart: true)
-            if proxyRunning { proxyStartError = error.map { $0 + "\n已恢复原监听端口 \(oldPort)。" } }
+            if proxyRunning { proxyStartError = error.map { $0 + Strings.Errors.appStateRestoredThePreviousListenerPort(Int(oldPort)) } }
         }
     }
 
@@ -441,9 +456,9 @@ final class AppState: ObservableObject, TrafficSink {
         backup.sslApplications = applications
         do {
             try store.install(backup)
-            systemProxyMessage = "「\(name)」的新连接将使用透传。"
+            systemProxyMessage = Strings.Errors.appStateNewConnectionsFromWillUsePassthrough(String(name))
         } catch {
-            systemProxyMessage = "保存透传规则失败：\(error.localizedDescription)"
+            systemProxyMessage = Strings.Errors.appStateUnableToSaveThePassthroughRule(LocalizedErrorPresentation.message(for: error))
         }
     }
 
@@ -453,7 +468,7 @@ final class AppState: ObservableObject, TrafficSink {
             return
         }
         guard proxyRunning, let lan = ProxyEngine.shared.lanAccess else {
-            systemProxyMessage = "请先在「设置 → 常规」启用局域网代理，设置设备 IP / CIDR 白名单，再启动监听。"
+            systemProxyMessage = Strings.Errors.appStateEnableLanAccessInSettingsGeneralConfigureThe
             return
         }
         do {
@@ -476,13 +491,13 @@ final class AppState: ObservableObject, TrafficSink {
                         self.showBridgePairing = true
                     case .failed(let error), .waiting(let error):
                         self.stopBridgeCapture()
-                        self.systemProxyMessage = "应用内捕获监听失败：\(error.localizedDescription)"
+                        self.systemProxyMessage = Strings.Errors.appStateUnableToStartTheInAppCaptureListener(LocalizedErrorPresentation.message(for: error))
                     default: break
                     }
                 }
             }
         } catch {
-            systemProxyMessage = "应用内捕获监听失败：\(error.localizedDescription)"
+            systemProxyMessage = Strings.Errors.appStateUnableToStartTheInAppCaptureListener(LocalizedErrorPresentation.message(for: error))
         }
     }
 
@@ -500,7 +515,7 @@ final class AppState: ObservableObject, TrafficSink {
         onMain { [store] in
             MainActor.assumeIsolated {
                 if let address = tx.clientAddress, address != "127.0.0.1" {
-                    tx.clientName = "设备 \(address)"
+                    tx.clientName = Strings.Errors.appStateDevice(String(address))
                 }
                 store.ingestCaptured(tx)
                 if tx.clientAddress == nil || tx.clientAddress == "127.0.0.1",
@@ -547,11 +562,11 @@ final class AppState: ObservableObject, TrafficSink {
 
     func startSystemProxy(duringRestart: Bool = false, onComplete: ((Bool, String) -> Void)? = nil) {
         guard !proxyRestarting || duringRestart else {
-            onComplete?(false, "请等待代理重启完成。")
+            onComplete?(false, Strings.Errors.appStateWaitForTheProxyRestartToFinish)
             return
         }
         guard !transparentProxyNeedsStop else {
-            let message = "请先停止透明抓包，再接管系统代理。"
+            let message = Strings.Errors.appStateStopTransparentCaptureBeforeEnablingTheSystemProxy
             systemProxyMessage = message
             onComplete?(false, message)
             return
@@ -561,24 +576,24 @@ final class AppState: ObservableObject, TrafficSink {
             return
         }
         guard proxyRunning else {
-            let message = "请先启动监听，再接管系统代理。"
+            let message = Strings.Errors.appStateStartListeningBeforeEnablingTheSystemProxy
             systemProxyMessage = message
             onComplete?(false, message)
             return
         }
         let port = ProxyEngine.shared.port
         systemProxyBusy = true
-        systemProxyMessage = "正在接管系统代理…"
+        systemProxyMessage = Strings.Errors.appStateEnablingTheSystemProxy
         SystemProxyController.shared.enable(port: port, onDisconnect: { [weak self] in
             guard let self, self.systemProxyActive else { return }
             self.systemProxyActive = false
-            self.systemProxyMessage = "系统代理服务连接已断开，后台服务会尝试恢复原配置。"
+            self.systemProxyMessage = Strings.Errors.appStateTheSystemProxyServiceDisconnectedTheBackgroundService
         }) { [weak self] ok, msg in
             guard let self else { return }
             self.systemProxyBusy = false
             self.systemProxyActive = ok
             self.systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
-            self.systemProxyMessage = ok ? "系统代理已接管（127.0.0.1:\(port)）" : "系统代理未生效：\(msg)"
+            self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyEnabled127001(Int(port)) : Strings.Errors.appStateUnableToEnableTheSystemProxy(String(msg))
             onComplete?(ok, msg)
         }
     }
@@ -586,26 +601,27 @@ final class AppState: ObservableObject, TrafficSink {
     func uninstallSystemProxyService() {
         guard !systemProxyBusy, !systemProxyActive, !proxyRestarting else { return }
         systemProxyBusy = true
-        systemProxyMessage = "正在移除系统代理授权…"
+        systemProxyMessage = Strings.Errors.appStateRemovingSystemProxyAuthorization
         SystemProxyController.shared.uninstall { [weak self] ok, message in
             guard let self else { return }
             self.systemProxyBusy = false
             self.systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
             if ok { self.settings.autoTakeOverSystemProxy = false }
-            self.systemProxyMessage = ok ? "系统代理授权已移除。" : "移除系统代理授权失败：\(message)"
+            self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyAuthorizationRemoved : Strings.Errors.appStateUnableToRemoveSystemProxyAuthorization(String(message))
         }
     }
 
-    func stopSystemProxy(duringRestart: Bool = false, onComplete: ((Bool) -> Void)? = nil) {
+    func stopSystemProxy(duringRestart: Bool = false, restorePrevious: Bool = true,
+                         onComplete: ((Bool) -> Void)? = nil) {
         guard !proxyRestarting || duringRestart else { onComplete?(false); return }
         guard !systemProxyBusy else { onComplete?(false); return }
         systemProxyBusy = true
-        systemProxyMessage = "正在关闭系统代理…"
-        SystemProxyController.shared.disable { [weak self] ok, msg in
+        systemProxyMessage = Strings.Errors.appStateDisablingTheSystemProxy
+        SystemProxyController.shared.disable(restorePrevious: restorePrevious) { [weak self] ok, msg in
             guard let self else { return }
             self.systemProxyBusy = false
             if ok { self.systemProxyActive = false }
-            self.systemProxyMessage = ok ? "系统代理已还原" : "关闭系统代理失败：\(msg)"
+            self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyRestored : Strings.Errors.appStateUnableToDisableTheSystemProxy(String(msg))
             onComplete?(ok)
         }
     }
@@ -624,13 +640,13 @@ final class AppState: ObservableObject, TrafficSink {
                         self.systemProxyMessage = message
                     } else {
                         self.startSystemProxy(onComplete: { success, detail in
-                            let next = success ? "系统代理已接管。" : "请手动接管系统代理。\(detail)"
+                            let next = success ? Strings.Errors.appStateSystemProxyEnabled : Strings.Errors.appStateEnableTheSystemProxyManually(String(detail))
                             self.systemProxyMessage = message + "\n" + next
                         })
                     }
                 }
             } catch {
-                DispatchQueue.main.async { self?.systemProxyMessage = "模拟器配置失败：\(error.localizedDescription)" }
+                DispatchQueue.main.async { self?.systemProxyMessage = Strings.Errors.appStateSimulatorSetupFailed(LocalizedErrorPresentation.message(for: error)) }
             }
         }
     }
@@ -643,7 +659,7 @@ final class AppState: ObservableObject, TrafficSink {
                 let message = try DeviceAutomation.setupAndroidEmulator(certificatePath: ca)
                 DispatchQueue.main.async { self?.systemProxyMessage = message }
             } catch {
-                DispatchQueue.main.async { self?.systemProxyMessage = "Android 模拟器配置失败：\(error.localizedDescription)" }
+                DispatchQueue.main.async { self?.systemProxyMessage = Strings.Errors.appStateAndroidEmulatorSetupFailed(LocalizedErrorPresentation.message(for: error)) }
             }
         }
     }
@@ -658,7 +674,7 @@ final class AppState: ObservableObject, TrafficSink {
                 let message = try DeviceAutomation.prepareAndroidUserCertificate(certificatePath: temporary.path)
                 DispatchQueue.main.async { self?.systemProxyMessage = message }
             } catch {
-                DispatchQueue.main.async { self?.systemProxyMessage = "复制证书失败：\(error.localizedDescription)" }
+                DispatchQueue.main.async { self?.systemProxyMessage = Strings.Errors.appStateUnableToCopyTheCertificate(LocalizedErrorPresentation.message(for: error)) }
             }
         }
     }
@@ -666,13 +682,28 @@ final class AppState: ObservableObject, TrafficSink {
     func installCACertificate() {
         CertInstaller.installSystemWide { [weak self] ok, msg in
             guard let self else { return }
-            self.caInstalled = ok
-            if ok {
-                self.caBannerDismissed = true
-                UserDefaults.standard.set(true, forKey: "caBannerDismissed")
+            guard ok else {
+                self.systemProxyMessage = Strings.Errors.appStateCaInstallationFailed(String(msg))
+                self.refreshCertificateStatus()
+                return
             }
-            self.systemProxyMessage = ok ? "CA 证书已安装并系统级信任（浏览器刷新即生效）"
-                                         : "CA 安装失败：\(msg)"
+            self.refreshCertificateStatus { [weak self] trusted in
+                guard let self else { return }
+                self.caBannerDismissed = trusted
+                UserDefaults.standard.set(trusted, forKey: "caBannerDismissed")
+                self.systemProxyMessage = trusted ? Strings.Errors.appStateTheCaIsInstalledAndTrustedSystemWide
+                    : Strings.Errors.appStateTheCertificateWasImportedButTheCurrentCa
+            }
+        }
+    }
+
+    func refreshCertificateStatus(completion: ((Bool) -> Void)? = nil) {
+        certificateStatusTask?.cancel()
+        certificateStatusTask = Task { [weak self] in
+            let status = await Task.detached(priority: .utility) { CertInstaller.certificateStatus() }.value
+            guard !Task.isCancelled, let self else { return }
+            self.caInstalled = status.trusted
+            completion?(status.trusted)
         }
     }
 
@@ -683,15 +714,15 @@ final class AppState: ObservableObject, TrafficSink {
             return
         }
         let panel = NSSavePanel()
-        panel.title = "记录 ProxyMirror TLS 会话密钥"
-        panel.message = "密钥可用于解读对应连接的网络数据。记录仅对代理终止的 TLS 握手生效。"
+        panel.title = Strings.Errors.appStateRecordProxymirrorTlsSessionKeys
+        panel.message = Strings.Errors.appStateTheKeysCanDecryptNetworkDataForCorresponding
         panel.nameFieldStringValue = "proxymirror-tls.keys"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try TLSKeyLog.shared.start(at: url)
             tlsKeyLogURL = url
         } catch {
-            systemProxyMessage = "TLS 密钥日志打开失败：\(error.localizedDescription)"
+            systemProxyMessage = Strings.Errors.appStateUnableToOpenTheTlsKeyLog(LocalizedErrorPresentation.message(for: error))
         }
     }
 
@@ -712,7 +743,7 @@ final class AppState: ObservableObject, TrafficSink {
 
     func copyText(_ text: String) {
         if !CopyPaste.copy(text) {
-            systemProxyMessage = "复制失败，请重新选择请求后重试。"
+            systemProxyMessage = Strings.Errors.appStateUnableToCopySelectTheRequestsAgainAnd
         }
     }
 
@@ -724,7 +755,7 @@ final class AppState: ObservableObject, TrafficSink {
         guard !transactions.isEmpty else { return }
         let format = settings.defaultCopyFormat
         guard transactions.allSatisfy({ RequestCode.supported(format, for: $0) || (format == .curl && $0.isTunnel) }) else {
-            systemProxyMessage = "所选请求无法复制为 \(format.title)。请确认请求捕获完整，或在设置中选择其他默认复制格式。"
+            systemProxyMessage = Strings.Errors.appStateTheSelectedRequestsCannotBeCopiedAsCheck(String(format.title))
             return
         }
         copyText(transactions.map { RequestCode.generate($0, format: format) }.joined(separator: "\n\n"))
@@ -793,7 +824,7 @@ final class AppState: ObservableObject, TrafficSink {
         if let index = diffPool.firstIndex(where: { $0 === tx }) {
             diffPool.remove(at: index)
         } else if diffPool.count >= 100 {
-            systemProxyMessage = "对比池最多保留 100 条请求，请先移除部分记录。"
+            systemProxyMessage = Strings.Errors.appStateTheComparisonPoolHoldsUpTo100Requests
         } else {
             diffPool.append(tx)
         }
@@ -804,7 +835,7 @@ final class AppState: ObservableObject, TrafficSink {
     func addToDiffPool(_ transactions: [Transaction]) {
         for tx in transactions where !diffPool.contains(where: { $0.id == tx.id }) {
             guard diffPool.count < 100 else {
-                systemProxyMessage = "对比池最多保留 100 条请求，请先移除部分记录。"
+                systemProxyMessage = Strings.Errors.appStateTheComparisonPoolHoldsUpTo100Requests
                 return
             }
             diffPool.append(tx)
@@ -865,22 +896,22 @@ final class AppState: ObservableObject, TrafficSink {
                 case .success(let archive):
                     if isCharles {
                         let preview = NSAlert()
-                        preview.messageText = "导入 Charles 会话"
-                        preview.informativeText = "\(url.lastPathComponent)\n可导入 \(archive.records.count) 条事务 · 跳过 \(archive.skipped) 条"
+                        preview.messageText = Strings.Errors.appStateImportCharlesSession
+                        preview.informativeText = Strings.Errors.appStateTransactionsCanBeImportedSkipped(String(url.lastPathComponent), Int(archive.records.count), Int(archive.skipped))
                         if archive.records.isEmpty {
-                            preview.addButton(withTitle: "好")
+                            preview.addButton(withTitle: Strings.Errors.appStateOk)
                             preview.runModal()
                             return
                         }
-                        preview.addButton(withTitle: "导入")
-                        preview.addButton(withTitle: "取消")
+                        preview.addButton(withTitle: Strings.Errors.appStateImport)
+                        preview.addButton(withTitle: Strings.Errors.appStateCancel)
                         guard preview.runModal() == .alertFirstButtonReturn else { return }
                     }
                     workspace.loadArchive(archive.records, name: url.deletingPathExtension().lastPathComponent,
                                           pins: archive.pins, selection: archive.selection)
                     NSDocumentController.shared.noteNewRecentDocumentURL(url)
                 case .failure(let error):
-                    self.systemProxyMessage = "打开会话失败：\(error.localizedDescription)"
+                    self.systemProxyMessage = Strings.Errors.appStateUnableToOpenTheSession(LocalizedErrorPresentation.message(for: error))
                 }
             }
         }
@@ -910,7 +941,7 @@ final class AppState: ObservableObject, TrafficSink {
         var backup = rules.backup()
         backup.sslProxyingList = entries
         do { try rules.install(backup) }
-        catch { systemProxyMessage = "SSL 规则未保存：\(error.localizedDescription)" }
+        catch { systemProxyMessage = Strings.Errors.appStateTheSslRuleWasNotSaved(LocalizedErrorPresentation.message(for: error)) }
     }
 }
 

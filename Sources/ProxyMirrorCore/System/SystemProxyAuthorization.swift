@@ -18,8 +18,8 @@ enum SystemProxyAuthorization {
 
         var prompt: String {
             switch self {
-            case .install: "ProxyMirror 需要管理员授权来安装系统代理后台服务。"
-            case .uninstall: "ProxyMirror 需要管理员授权来移除系统代理后台服务。"
+            case .install: Strings.Errors.systemProxyAuthorizationProxymirrorNeedsAdministratorAuthorizationToInstallTheSystem
+            case .uninstall: Strings.Errors.systemProxyAuthorizationProxymirrorNeedsAdministratorAuthorizationToRemoveTheSystem
             }
         }
     }
@@ -29,7 +29,7 @@ enum SystemProxyAuthorization {
     static func run(_ operation: Operation, helper: URL, hash: String) throws {
         var reference: AuthorizationRef?
         try check(AuthorizationCreate(nil, nil, [], &reference))
-        guard let reference else { throw SystemProxyError("无法创建 macOS 授权会话。") }
+        guard let reference else { throw SystemProxyOperationError(OperationIssue.systemProxyAuthorizationUnableToCreateAMacosAuthorizationSession) }
         defer { AuthorizationFree(reference, [.destroyRights]) }
 
         // Request the right from the app process so macOS can identify ProxyMirror.
@@ -48,7 +48,7 @@ enum SystemProxyAuthorization {
                          "ProxyMirror", helper.path, requirement] + operation.arguments
         var pointers: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) }
         defer { pointers.forEach { free($0) } }
-        guard pointers.allSatisfy({ $0 != nil }) else { throw SystemProxyError("无法准备系统代理服务的安装参数。") }
+        guard pointers.allSatisfy({ $0 != nil }) else { throw SystemProxyOperationError(OperationIssue.systemProxyAuthorizationUnableToPrepareTheSystemProxyServiceInstallation) }
         pointers.append(nil)
 
         var pipe: UnsafeMutablePointer<FILE>?
@@ -59,11 +59,12 @@ enum SystemProxyAuthorization {
         }
         defer { if let pipe { fclose(pipe) } }
         try check(launched)
-        guard let pipe else { throw SystemProxyError("无法读取系统代理服务安装结果。") }
+        guard let pipe else { throw SystemProxyOperationError(OperationIssue.systemProxyAuthorizationUnableToReadTheSystemProxyServiceInstallation) }
         let output = try FileHandle(fileDescriptor: fileno(pipe), closeOnDealloc: false).readToEnd() ?? Data()
         let result = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard result.split(whereSeparator: \.isNewline).last == Substring(successMarker) else {
-            throw SystemProxyError(result.isEmpty ? "系统代理后台服务更新失败。" : result)
+            if !result.isEmpty { throw SystemProxyError.fromWire(result) }
+            throw SystemProxyOperationError(OperationIssue.systemProxyAuthorizationUnableToUpdateTheSystemProxyBackgroundService)
         }
     }
 
@@ -80,8 +81,8 @@ enum SystemProxyAuthorization {
 
     private static func check(_ status: OSStatus) throws {
         guard status != errAuthorizationSuccess else { return }
-        if status == errAuthorizationCanceled { throw SystemProxyError("已取消管理员授权。") }
-        throw SystemProxyError("macOS 无法授权更新系统代理后台服务（\(status)）。")
+        if status == errAuthorizationCanceled { throw SystemProxyOperationError(OperationIssue.systemProxyAuthorizationAdministratorAuthorizationWasCancelled) }
+        throw SystemProxyOperationError(OperationIssue.systemProxyAuthorizationMacosCouldNotAuthorizeTheSystemProxyService(Int(status)))
     }
 
     private static let tool = "/usr/bin/env"
@@ -95,7 +96,7 @@ enum SystemProxyAuthorization {
     helper="$directory/ProxyMirrorSystemProxyHelper"
     /bin/cp "$1" "$helper"
     if ! /usr/bin/codesign --verify --strict -R "=$2" "$helper"; then
-        echo "系统代理服务在授权期间发生了变更，请重试。"
+        echo "The system proxy service changed during authorization. Try again."
         exit 1
     fi
     /bin/chmod 700 "$helper"

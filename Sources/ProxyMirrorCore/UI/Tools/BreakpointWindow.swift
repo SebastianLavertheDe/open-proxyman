@@ -14,7 +14,7 @@ struct BreakpointMenu: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("断点队列与规则…") { openWindow(id: "breakpoints") }
+        Button(Strings.Tools.breakpointQueueRules) { openWindow(id: "breakpoints") }
     }
 }
 
@@ -33,18 +33,18 @@ struct BreakpointWindow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Picker("断点", selection: $tab) {
-                    Text("待处理 (\(manager.held.count))").tag(0)
-                    Text("规则").tag(1)
-                    Text("模板").tag(2)
+                Picker(Strings.Tools.breakpoints, selection: $tab) {
+                    Text(Strings.Tools.pending(Int(manager.held.count))).tag(0)
+                    Text(Strings.Tools.rules).tag(1)
+                    Text(Strings.Tools.template).tag(2)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 330)
 
                 Spacer()
-                Toggle("自动打开窗口", isOn: $manager.autoBringToFront)
-                Toggle("启用断点", isOn: $manager.enabled)
+                Toggle(Strings.Tools.openWindowAutomatically, isOn: $manager.autoBringToFront)
+                Toggle(Strings.Tools.enableBreakpoints, isOn: $manager.enabled)
             }
             if tab == 0 { queue }
             else if tab == 1 { BreakpointRuleEditor() }
@@ -65,7 +65,7 @@ struct BreakpointWindow: View {
             List(selection: $selected) {
                 ForEach(manager.held) { item in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(item.phase == .request ? "请求" : "响应")
+                        Text(item.phase == .request ? Strings.Tools.request : Strings.Tools.response)
                             .font(.caption.weight(.semibold))
                         Text(item.summary).lineLimit(2)
                         Text(item.rule).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -81,8 +81,8 @@ struct BreakpointWindow: View {
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "pause.circle").font(.title2)
-                    Text("没有等待处理的断点")
-                    Button("查看规则") { tab = 1 }
+                    Text(Strings.Tools.noPendingBreakpoints)
+                    Button(Strings.Tools.viewRules) { tab = 1 }
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -100,32 +100,32 @@ struct BreakpointWindow: View {
             }
             Text("\(item.source)  ·  \(item.rule)").font(.caption).foregroundStyle(.secondary)
             Text(item.message.body == nil
-                 ? "可编辑头部，原正文随报文继续传输。"
-                 : "可编辑头部和正文。用空行分隔，Content-Length 会随正文更新。")
+                 ? Strings.Tools.editTheHeadersTheOriginalBodyIsForwardedWith
+                 : Strings.Tools.editTheHeadersAndBodySeparatedByABlank)
                 .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $draft)
                 .font(.system(.body, design: .monospaced))
                 .border(.quaternary)
-                .accessibilityLabel("断点报文")
+                .accessibilityLabel(Strings.Tools.breakpointMessage)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
-                Button("取消此条", role: .destructive) { manager.drop(item) }
-                Menu("应用模板") {
+                Button(Strings.Tools.cancelThisRequest, role: .destructive) { manager.drop(item) }
+                Menu(Strings.Tools.applyTemplate) {
                     ForEach(templates.templates.filter { $0.phase == item.phase }) { template in
                         Button(template.name) {
                             do { draft = try template.draft(for: item.message, phase: item.phase); error = nil }
-                            catch { self.error = error.localizedDescription }
+                            catch { self.error = LocalizedErrorPresentation.message(for: error) }
                         }
                     }
                 }.disabled(!templates.templates.contains { $0.phase == item.phase })
-                Button("存为模板…") { saveTemplate(item) }
+                Button(Strings.Tools.saveAsTemplate) { saveTemplate(item) }
                 Spacer()
-                Button("还原编辑") { draft = item.message.text; error = nil }
+                Button(Strings.Tools.revertEdits) { draft = item.message.text; error = nil }
                     .disabled(draft == item.message.text)
-                Button("原样继续") { manager.continueOriginal(item) }
-                Button("应用并继续") {
+                Button(Strings.Tools.continueUnchanged) { manager.continueOriginal(item) }
+                Button(Strings.Tools.applyContinue) {
                     do { try manager.applyAndExecute(item, draft: draft) }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = LocalizedErrorPresentation.message(for: error) }
                 }
                 .keyboardShortcut(.return, modifiers: .command)
             }
@@ -144,26 +144,26 @@ struct BreakpointWindow: View {
                 HStack {
                     VStack(alignment: .leading) {
                         Text(template.name)
-                        Text("\(template.phase.rawValue) · \(template.headers.count) 个头部 · \(template.body?.count ?? 0) 字节")
+                        Text(Strings.Tools.breakpointTemplateSummary(String(describing: template.phase.localizedTitle), Int(template.headers.count), Int(template.body?.count ?? 0)))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("重命名") {
-                        let panel = NSAlert(); panel.messageText = "重命名模板"
+                    Button(Strings.Tools.rename) {
+                        let panel = NSAlert(); panel.messageText = Strings.Tools.renameTemplate
                         let field = NSTextField(string: template.name); panel.accessoryView = field
                         field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
-                        panel.addButton(withTitle: "保存"); panel.addButton(withTitle: "取消")
+                        panel.addButton(withTitle: Strings.Tools.save); panel.addButton(withTitle: Strings.Tools.cancel)
                         if panel.runModal() == .alertFirstButtonReturn, !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             var updated = template; updated.name = field.stringValue
-                            do { try templates.save(updated) } catch { self.error = error.localizedDescription }
+                            do { try templates.save(updated) } catch { self.error = LocalizedErrorPresentation.message(for: error) }
                         }
                     }
-                    Button("删除", role: .destructive) {
-                        do { try templates.remove(template.id) } catch { self.error = error.localizedDescription }
+                    Button(Strings.Tools.delete, role: .destructive) {
+                        do { try templates.remove(template.id) } catch { self.error = LocalizedErrorPresentation.message(for: error) }
                     }
                 }
             }
-            if templates.templates.isEmpty { Text("在待处理断点编辑报文后，点击「存为模板」。").foregroundStyle(.secondary) }
+            if templates.templates.isEmpty { Text(Strings.Tools.editAPendingBreakpointMessageThenClickSaveAs).foregroundStyle(.secondary) }
         }
         .overlay(alignment: .bottom) { if let error { Text(error).foregroundStyle(.red).padding() } }
     }
@@ -171,16 +171,16 @@ struct BreakpointWindow: View {
     private func saveTemplate(_ item: BreakpointManager.HeldItem) {
         do {
             let edited = try item.message.applying(draft)
-            let panel = NSAlert(); panel.messageText = "保存断点模板"
+            let panel = NSAlert(); panel.messageText = Strings.Tools.saveBreakpointTemplate
             let field = NSTextField(string: item.rule); field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
             panel.accessoryView = field
-            panel.addButton(withTitle: "保存"); panel.addButton(withTitle: "取消")
+            panel.addButton(withTitle: Strings.Tools.save); panel.addButton(withTitle: Strings.Tools.cancel)
             guard panel.runModal() == .alertFirstButtonReturn else { return }
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty else { throw BreakpointMessage.InvalidEdit("请填写模板名称") }
+            guard !name.isEmpty else { throw BreakpointMessage.InvalidEdit(Strings.Tools.enterATemplateName) }
             try templates.save(.capture(name: name, phase: item.phase, message: edited))
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = LocalizedErrorPresentation.message(for: error) }
     }
 }
 
@@ -193,14 +193,14 @@ private struct BreakpointRuleEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("按原始请求的主机和路径匹配。请求和响应可各设一条规则。")
+            Text(Strings.Tools.matchTheOriginalRequestSHostAndPathA)
                 .font(.caption).foregroundStyle(.secondary)
             HSplitView {
                 List(selection: $selected) {
                     ForEach(rules) { rule in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(rule.rule.name.isEmpty ? rule.rule.summary : rule.rule.name).lineLimit(1)
-                            Text("\(rule.phase == .request ? "请求" : "响应") · \(rule.enabled ? "启用" : "关闭")")
+                            Text(Strings.Tools.rulePhaseStatus(rule.phase.localizedTitle, rule.enabled ? Strings.Tools.stateEnabled : Strings.Tools.stateDisabled))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .tag(rule.id)
@@ -212,54 +212,54 @@ private struct BreakpointRuleEditor: View {
                         .id(id)
                         .frame(minWidth: 350, maxHeight: .infinity, alignment: .topLeading)
                 } else {
-                    Text("添加规则或选择已有规则")
+                    Text(Strings.Tools.addARuleOrSelectAnExistingRule)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
-                Button("添加规则") {
+                Button(Strings.Tools.addRule) {
                     let rule = BreakpointRule(enabled: false)
                     rules.append(rule)
                     selected = rule.id
                 }
-                Button("移除所选") {
+                Button(Strings.Tools.removeSelected) {
                     rules.removeAll { $0.id == selected }
                     selected = nil
                 }
                 .disabled(selected == nil)
                 Spacer()
-                Button("还原") { rules = InterceptionConfig.shared.breakpoints.value; folderDraft = RuleFolderEditingDraft(); error = nil }
+                Button(Strings.Tools.revert) { rules = InterceptionConfig.shared.breakpoints.value; folderDraft = RuleFolderEditingDraft(); error = nil }
                     .disabled(!dirty)
-                Button("保存规则") { save() }.disabled(!dirty)
+                Button(Strings.Tools.saveRule) { save() }.disabled(!dirty)
             }
         }
     }
 
     private func fields(_ rule: Binding<BreakpointRule>) -> some View {
         Form {
-            Toggle("启用此规则", isOn: rule.enabled)
-            TextField("名称", text: rule.rule.name)
+            Toggle(Strings.Tools.enableThisRule, isOn: rule.enabled)
+            TextField(Strings.Tools.name, text: rule.rule.name)
             RuleFolderPicker(tool: "breakpoints", ruleID: rule.wrappedValue.id.uuidString, draft: $folderDraft)
-            Picker("暂停阶段", selection: rule.phase) {
-                Text("请求").tag(BreakpointRule.Phase.request)
-                Text("响应").tag(BreakpointRule.Phase.response)
+            Picker(Strings.Tools.pausePhase, selection: rule.phase) {
+                Text(Strings.Tools.request).tag(BreakpointRule.Phase.request)
+                Text(Strings.Tools.response).tag(BreakpointRule.Phase.response)
             }
-            TextField("方法（ANY / GET / POST）", text: rule.rule.method)
-            TextField("协议（ANY / http / https）", text: rule.rule.scheme)
-            Picker("匹配方式", selection: rule.rule.matchMode) {
-                Text("通配符").tag(URLRule.MatchMode.wildcard)
-                Text("文本").tag(URLRule.MatchMode.plain)
-                Text("完整 URL 正则").tag(URLRule.MatchMode.regex)
+            TextField(Strings.Tools.methodAnyGetPost, text: rule.rule.method)
+            TextField(Strings.Tools.schemeAnyHttpHttps, text: rule.rule.scheme)
+            Picker(Strings.Tools.matchType, selection: rule.rule.matchMode) {
+                Text(Strings.Tools.wildcard).tag(URLRule.MatchMode.wildcard)
+                Text(Strings.Tools.text).tag(URLRule.MatchMode.plain)
+                Text(Strings.Tools.fullUrlRegularExpression).tag(URLRule.MatchMode.regex)
             }
             if rule.wrappedValue.rule.matchMode == .regex {
-                TextField("正则表达式", text: rule.rule.regexPattern)
+                TextField(Strings.Tools.regularExpression, text: rule.rule.regexPattern)
             } else {
-                TextField("主机（留空匹配所有）", text: rule.rule.host)
-                TextField("路径（* 匹配所有）", text: rule.rule.path)
-                TextField("查询字符串包含", text: rule.rule.query)
-                Toggle("包含子路径", isOn: rule.rule.includeSubpaths)
+                TextField(Strings.Tools.hostLeaveEmptyToMatchAll, text: rule.rule.host)
+                TextField(Strings.Tools.pathMatchesAll, text: rule.rule.path)
+                TextField(Strings.Tools.queryStringContains, text: rule.rule.query)
+                Toggle(Strings.Tools.includeSubpaths, isOn: rule.rule.includeSubpaths)
             }
         }
         .padding(10)
@@ -276,7 +276,7 @@ private struct BreakpointRuleEditor: View {
             if rule.method.isEmpty { rule.method = "ANY" }
             if rule.path.isEmpty { rule.path = "*" }
             if rule.matchMode == .regex && (rule.regexPattern.isEmpty || URLRule.regexCache(rule.regexPattern) == nil) {
-                error = "请填写有效的 URL 正则表达式"
+                error = Strings.Tools.enterAValidUrlRegularExpression
                 selected = updated[index].id
                 return
             }
@@ -289,7 +289,7 @@ private struct BreakpointRuleEditor: View {
             backup.organization = try folderDraft.merging(into: backup.organization ?? RuleOrganizationStore.shared.snapshot(), tool: "breakpoints", keeping: Set(updated.map { $0.id.uuidString }))
             try store.install(backup)
         } catch let failure {
-            error = failure.localizedDescription
+            error = LocalizedErrorPresentation.message(for: failure)
             return
         }
         rules = updated

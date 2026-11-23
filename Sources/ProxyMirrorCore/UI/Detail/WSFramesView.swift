@@ -18,7 +18,15 @@ struct WSFramesView: View {
     @State private var searchWorker = WSMessageSearch.Worker()
 
     private enum DirectionFilter: String, CaseIterable {
-        case all = "所有", sent = "发送", received = "接收"
+        case all, sent, received
+
+        var localizedTitle: String {
+            switch self {
+            case .all: return Strings.Detail.all
+            case .sent: return Strings.Detail.send
+            case .received: return Strings.Detail.received
+            }
+        }
 
         var direction: WSFrame.Direction? {
             switch self {
@@ -30,7 +38,15 @@ struct WSFramesView: View {
     }
 
     private enum MessageDisplay: String, CaseIterable {
-        case preview = "预览", rawText = "消息原文", tree = "JSON 树"
+        case preview, rawText, tree
+
+        var localizedTitle: String {
+            switch self {
+            case .preview: return Strings.Detail.preview
+            case .rawText: return Strings.Detail.rawMessage
+            case .tree: return Strings.Detail.jsonTree
+            }
+        }
     }
 
     private struct RecoveryInput: Equatable {
@@ -81,7 +97,7 @@ struct WSFramesView: View {
                 listControls
                 messageTable(rows, allFrames: allFrames, searching: searching)
                 if let searched, searched.unavailable > 0 {
-                    Text("\(searched.unavailable) 条压缩消息无法完整解码，已搜索其可用预览。")
+                    Text(Strings.Detail.compressedMessagesCouldNotBeFullyDecodedTheirAvailablePreviewsWere(searched.unavailable))
                         .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 7)
                 }
             }
@@ -145,11 +161,11 @@ struct WSFramesView: View {
 
     private var listControls: some View {
         HStack(spacing: 7) {
-            TextField("筛选消息", text: $filter)
+            TextField(Strings.Detail.filterMessages, text: $filter)
                 .textFieldStyle(.roundedBorder)
             if direction == nil {
-                Picker("消息方向", selection: $directionFilter) {
-                    ForEach(DirectionFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Picker(Strings.Detail.messageDirection, selection: $directionFilter) {
+                    ForEach(DirectionFilter.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
                 }
                 .labelsHidden()
                 .fixedSize()
@@ -162,38 +178,39 @@ struct WSFramesView: View {
 
     private func messageTable(_ rows: [WSFrame], allFrames: [WSFrame], searching: Bool) -> some View {
         Table(rows, selection: $selectedID) {
-            TableColumn("数据") { frame in
+            TableColumn(Strings.Detail.data) { frame in
                 HStack(spacing: 6) {
                     Image(systemName: frame.direction == .upstream ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                         .foregroundStyle(frame.direction == .upstream ? Color.green : Color.orange)
-                        .help(frame.directionGlyph)
-                        .accessibilityLabel(frame.direction == .upstream ? "发送" : "接收")
-                    Text(frame.previewText.isEmpty ? frame.opcodeName : frame.previewText)
+                        .help(frame.localizedDirectionGlyph)
+                        .accessibilityLabel(frame.direction == .upstream ? Strings.Detail.send : Strings.Detail.received)
+                    Text(frame.localizedPreviewText.isEmpty ? frame.localizedOpcodeName : frame.localizedPreviewText)
                         .font(PresentationFonts.swiftUIFont(size: 11))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
-            TableColumn("时间") { frame in
+            TableColumn(Strings.Detail.time) { frame in
                 Text(PresentationTime.string(from: frame.timestamp))
                     .font(PresentationFonts.swiftUIFont(size: 11))
                     .lineLimit(1)
             }
-            .width(presentationSettings.showFullDate ? (presentationSettings.use24HourClock ? 180 : 210) : (presentationSettings.use24HourClock ? 92 : 120))
+            .width(CGFloat(presentationSettings.showFullDate ? (presentationSettings.use24HourClock ? 235 : 265)
+                           : (presentationSettings.use24HourClock ? 92 : 120)) * CGFloat(presentationSettings.fontSize) / 12)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: presentationSettings.showAlternatingRows))
-        .accessibilityLabel("WebSocket 消息列表")
+        .accessibilityLabel(Strings.Detail.websocketMessageList)
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let frame = rows.first(where: { ids.contains($0.id) }) {
-                Button("复制原文") { copy(frame, from: allFrames, wireHex: false) }
+                Button(Strings.Detail.copyRawText) { copy(frame, from: allFrames, wireHex: false) }
                     .disabled(!canCopyText(frame))
-                Button("复制捕获负载（十六进制）") { copy(frame, from: allFrames, wireHex: true) }
+                Button(Strings.Detail.copyCapturedPayloadHex) { copy(frame, from: allFrames, wireHex: true) }
                     .disabled(frame.payload.isEmpty || frame.payload.count > Self.hexCopyLimit)
             }
         }
         .overlay {
             if rows.isEmpty {
-                Text(searching ? "正在搜索完整消息…" : filter.isEmpty ? "暂无 WebSocket 消息" : "没有匹配的消息")
+                Text(searching ? Strings.Detail.searchingCompleteMessages : filter.isEmpty ? Strings.Detail.noWebsocketMessagesYet : Strings.Detail.noMatchingMessages)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .allowsHitTesting(false)
@@ -206,8 +223,8 @@ struct WSFramesView: View {
         if let frame {
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
-                    Picker("消息显示方式", selection: $display) {
-                        ForEach(MessageDisplay.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    Picker(Strings.Detail.messageDisplay, selection: $display) {
+                        ForEach(MessageDisplay.allCases, id: \.self) { Text($0.localizedTitle).tag($0) }
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
@@ -216,11 +233,11 @@ struct WSFramesView: View {
                     if let copyFeedback {
                         Text(copyFeedback).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    Button("复制原文") { copy(frame, from: allFrames, wireHex: false) }
+                    Button(Strings.Detail.copyRawText) { copy(frame, from: allFrames, wireHex: false) }
                         .disabled(!canCopyText(frame))
-                        .help("复制消息的原始文本，保留解压后的内容和原有格式")
+                        .help(Strings.Detail.copyTheOriginalMessageTextPreservingDecompressedContentAndFormatting)
                     Menu {
-                        Button("复制捕获负载（十六进制）") { copy(frame, from: allFrames, wireHex: true) }
+                        Button(Strings.Detail.copyCapturedPayloadHex) { copy(frame, from: allFrames, wireHex: true) }
                             .disabled(frame.payload.isEmpty || frame.payload.count > Self.hexCopyLimit)
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -228,7 +245,7 @@ struct WSFramesView: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .accessibilityLabel("更多消息操作")
+                    .accessibilityLabel(Strings.Detail.moreMessageActions)
                 }
                 .controlSize(.small)
                 .padding(.horizontal, 7)
@@ -239,7 +256,7 @@ struct WSFramesView: View {
                     .id(PreviewID(frame: frame.id, rsv1: frame.rsv1, decodedCount: frame.decompressedPreview?.count))
             }
         } else {
-            Text("选择一条 WebSocket 消息查看内容")
+            Text(Strings.Detail.selectAWebsocketMessageToInspectItsContents)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -256,13 +273,13 @@ struct WSFramesView: View {
     private func preview(_ frame: WSFrame) -> some View {
         if let data = frame.displayPayload {
             if data.isEmpty {
-                messageHint("\(frame.opcodeName) · 无负载")
+                messageHint(frame.localizedOpcodeName + " · " + Strings.Detail.noPayload)
             } else if BodyContentView.isBinary(data: data, contentType: "text/plain") {
                 HexView(data: data)
             } else {
                 VStack(spacing: 0) {
                     if frame.decompressedPreviewTruncated == true {
-                        Text("仅显示解压后的预览")
+                        Text(Strings.Detail.showingDecompressedPreviewOnly)
                             .font(.caption).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(6)
                     }
@@ -274,7 +291,7 @@ struct WSFramesView: View {
                 }
             }
         } else {
-            messageHint(WSFrame.unavailablePreview)
+            messageHint(WSFrame.localizedUnavailablePreview)
         }
     }
 
@@ -294,7 +311,7 @@ struct WSFramesView: View {
 
     private func copy(_ frame: WSFrame, from frames: [WSFrame], wireHex: Bool) {
         cancelCopy()
-        copyFeedback = "正在复制…"
+        copyFeedback = Strings.Detail.copying
         let deflate = WebSocketDeflate.negotiated(in: tx.responseHeaders, direction: frame.direction)
         let worker = Task.detached(priority: .userInitiated) { () -> String? in
             if wireHex {
@@ -320,9 +337,9 @@ struct WSFramesView: View {
             guard !Task.isCancelled else { return }
             if let result {
                 CopyPaste.copy(result)
-                copyFeedback = "已复制"
+                copyFeedback = Strings.Detail.copied
             } else {
-                copyFeedback = "完整文本不可用"
+                copyFeedback = Strings.Detail.completeTextUnavailable
             }
         }
     }
@@ -389,7 +406,7 @@ struct JSONTreeNodesView: View {
                     HStack(spacing: 4) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 8, weight: .bold))
-                        Text("\(node.key) : \(node.kindName) (\(node.childCount))")
+                        Text("\(node.key) : \(localizedKindName) (\(node.childCount))")
                             .font(PresentationFonts.swiftUIFont(size: 11))
                             .foregroundColor(ProxymanTheme.jsonKey)
                     }
@@ -401,7 +418,7 @@ struct JSONTreeNodesView: View {
                             .padding(.leading, 14)
                     }
                     if node.childCount > node.children.count {
-                        Text("其余项目未展开预览").font(.caption).foregroundStyle(.secondary)
+                        Text(Strings.Detail.remainingItemsNotExpanded).font(.caption).foregroundStyle(.secondary)
                             .padding(.leading, 14)
                     }
                 }
@@ -416,6 +433,18 @@ struct JSONTreeNodesView: View {
                         .textSelection(.enabled)
                 }
             }
+        }
+    }
+
+    private var localizedKindName: String {
+        switch node.kindName {
+        case "Object": return Strings.Detail.jsonTypeObject
+        case "Array": return Strings.Detail.jsonTypeArray
+        case "String": return Strings.Detail.jsonTypeString
+        case "Number": return Strings.Detail.jsonTypeNumber
+        case "Bool": return Strings.Detail.jsonTypeBoolean
+        case "Null": return Strings.Detail.jsonTypeNull
+        default: return node.kindName
         }
     }
 
@@ -515,7 +544,7 @@ enum WSMessageSearch {
                 } else if frame.rsv1 == nil, decoder != nil {
                     result.unavailable += 1
                 }
-                if frame.opcodeName.localizedCaseInsensitiveContains(query) ||
+                if frame.localizedOpcodeName.localizedCaseInsensitiveContains(query) ||
                     payload.map({ String(decoding: $0, as: UTF8.self).localizedCaseInsensitiveContains(query) }) == true {
                     result.ids.insert(frame.id)
                 }

@@ -1,0 +1,17 @@
+/* 通用界面操作。 */
+"add" = "添加";
+"cancel" = "取消";
+"close" = "关闭";
+"copy" = "复制";
+"delete" = "删除";
+"edit" = "编辑";
+"error" = "错误";
+"loading" = "正在加载…";
+"none" = "无";
+"ok" = "好";
+"remove" = "移除";
+"save" = "保存";
+"search" = "搜索";
+"unknown" = "未知";
+"language_restart_notice" = "重启后生效 / Applies after restarting";
+"resource_unavailable" = "语言资源缺失或损坏，请重新安装 ProxyMirror。";

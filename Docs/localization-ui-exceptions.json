@@ -1,0 +1,453 @@
+{
+  "scope": "Conservative direct SwiftUI/AppKit literal audit; each exception was reviewed during the bilingual migration. This does not replace macOS UI review.",
+  "exceptions": [
+    {
+      "path": "Sources/ProxyMirror/App/LocalControl.swift",
+      "line": 344,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "alert.messageText = \"ProxyMirror MCP\""
+    },
+    {
+      "path": "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
+      "line": 52,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "WindowGroup(\"ProxyMirror\") {"
+    },
+    {
+      "path": "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
+      "line": 100,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"127.0.0.1:\\(appState.listenerPort)\")"
+    },
+    {
+      "path": "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
+      "line": 134,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Window(\"Protobuf\", id: \"protobuf\") {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/BodyContentView.swift",
+      "line": 158,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(preview.width) × \\(preview.height) · \\(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/GRPCInspectorView.swift",
+      "line": 199,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"grpc-status-details-bin: \\(details)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/GRPCInspectorView.swift",
+      "line": 277,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(field.name): \\(field.value)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/HTTPProtobufView.swift",
+      "line": 59,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"Protobuf\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/SseEventsView.swift",
+      "line": 88,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"#\\(event.index)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/SseEventsView.swift",
+      "line": 97,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"id: \\(id)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/SseEventsView.swift",
+      "line": 101,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"retry: \\(retry)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TimingChartView.swift",
+      "line": 94,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(label) \\(String(format: \"%.0f\", ms * 1000))ms\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 24,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"#\\(transaction.seq) \\(transaction.method)\").font(.caption).foregroundStyle(.secondary)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 66,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"#\\(transaction.seq) \\(transaction.method) \\(transaction.fullURL)\").tag(Optional(transaction.id))"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 125,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Button(\"FileMerge\") { openExternal(\"FileMerge\") }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 126,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Button(\"Kaleidoscope\") { openExternal(\"Kaleidoscope\") }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 136,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"+\\(comparison.inserted) / −\\(comparison.removed)\").foregroundStyle(.secondary)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 140,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"← \\(left.method) \\(left.fullURL)\").lineLimit(1).help(left.fullURL)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 142,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(right.method) \\(right.fullURL) →\").lineLimit(1).help(right.fullURL)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/TrafficDiffView.swift",
+      "line": 213,
+      "category": "empty_label",
+      "reason": "An empty layout/control label; the visible or accessibility label is supplied separately.",
+      "source": "return words.enumerated().reduce(Text(\"\")) { result, item in"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/WSFramesView.swift",
+      "line": 409,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(node.key) : \\(localizedKindName) (\\(node.childCount))\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Detail/WSFramesView.swift",
+      "line": 427,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(node.key) :\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/List/TrafficListView.swift",
+      "line": 533,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(tx.seq)\").frame(maxWidth: .infinity, alignment: .trailing)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/MainWindow.swift",
+      "line": 35,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": ".navigationTitle(\"ProxyMirror\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/MainWindow.swift",
+      "line": 50,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": ".alert(\"ProxyMirror\", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/MainWindow.swift",
+      "line": 331,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(store.selectedIDs.count)/\\(store.visible.count)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/MainWindow.swift",
+      "line": 337,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"↑ \\(counts.request) ↓ \\(counts.response)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/ProxyStatusPopover.swift",
+      "line": 49,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"HTTP/1.1\").tag(false)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/ProxyStatusPopover.swift",
+      "line": 50,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"HTTP/1.1 + HTTP/2\").tag(true)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/ClientTLSIdentitySettings.swift",
+      "line": 41,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"PKCS#12 (.p12/.pfx)\").tag(true)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesGeneralView.swift",
+      "line": 32,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"\", selection: Binding(get: { settings.contentLayout }, set: { settings.contentLayout = $0 })) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesGeneralView.swift",
+      "line": 47,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"\", selection: Binding(get: { settings.truncationStyle }, set: { settings.truncationStyle = $0 })) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesGeneralView.swift",
+      "line": 62,
+      "category": "technical_example",
+      "reason": "A numeric limit, network address, or executable input example.",
+      "source": "TextField(\"9090\", text: $portDraft)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesGeneralView.swift",
+      "line": 115,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"\", selection: Binding(get: { settings.applicationLanguage }, set: { settings.applicationLanguage = $0 })) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesIntegrationView.swift",
+      "line": 57,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"\", selection: $transport) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesIntegrationView.swift",
+      "line": 61,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"\", selection: $client) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesIntegrationView.swift",
+      "line": 98,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"\", selection: Binding(get: { settings.defaultCopyFormat }, set: { settings.defaultCopyFormat = $0 })) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesIntegrationView.swift",
+      "line": 167,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Toggle(\"\", isOn: Binding(get: { appState.transparentProxyNeedsStop }, set: { enabled in"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/PreferencesIntegrationView.swift",
+      "line": 398,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"ProxyMirror\").font(.title3).fontWeight(.semibold)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/SettingsView.swift",
+      "line": 63,
+      "category": "empty_label",
+      "reason": "An empty layout/control label; the visible or accessibility label is supplied separately.",
+      "source": "Button(\"\") { searchFocused = true }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/SystemBypassProxyView.swift",
+      "line": 33,
+      "category": "technical_example",
+      "reason": "A numeric limit, network address, or executable input example.",
+      "source": "TextField(\"*.example.com / 10.0.0.0/8\", text: $newHost).onSubmit(add)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Settings/UpdateSettingsView.swift",
+      "line": 10,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"ProxyMirror \\(Bundle.main.object(forInfoDictionaryKey: \"CFBundleShortVersionString\") as? String ?? Strings.Settings.developmentBuild)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Sidebar/SourceSidebar.swift",
+      "line": 300,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(count)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/BreakpointWindow.swift",
+      "line": 101,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(item.source)  ·  \\(item.rule)\").font(.caption).foregroundStyle(.secondary)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/CertificateImporter.swift",
+      "line": 146,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"SHA-256: \\(material.fingerprint)\").font(.system(size: 10, design: .monospaced))"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/LatencyConditionsView.swift",
+      "line": 102,
+      "category": "technical_example",
+      "reason": "A numeric limit, network address, or executable input example.",
+      "source": "TextField(\"0–5000\", value: binding(index, \\.milliseconds, fallback: 0), format: .number.grouping(.never))"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/LatencyConditionsView.swift",
+      "line": 120,
+      "category": "technical_example",
+      "reason": "A numeric limit, network address, or executable input example.",
+      "source": "TextField(\"0\", value: Binding(get: { draft.rules?[index][keyPath: field] ?? 0 }, set: {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ProtobufRulesView.swift",
+      "line": 21,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"Protobuf\").font(.headline)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ProtobufRulesView.swift",
+      "line": 29,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "schemas.tabItem { Text(\"Schema\") }.tag(0)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ProtobufRulesView.swift",
+      "line": 124,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"Schema\", selection: $converterSchema) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ProtobufRulesView.swift",
+      "line": 227,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Picker(\"Schema\", selection: $rule.schemaID) {"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ReverseProxyEditor.swift",
+      "line": 85,
+      "category": "technical_example",
+      "reason": "A numeric limit, network address, or executable input example.",
+      "source": "Text(\"127.0.0.1\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ReverseProxyEditor.swift",
+      "line": 92,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"HTTP\").tag(\"http\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ReverseProxyEditor.swift",
+      "line": 93,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Text(\"HTTPS\").tag(\"https\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/SSLApplicationRulesView.swift",
+      "line": 53,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "TextField(\"Bundle ID\", text: $bundleID)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ScriptingWindow.swift",
+      "line": 202,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Button(\"Lodash / Moment\") { source.wrappedValue += \"\\nconst _ = require('lodash');\\nconst moment = require('moment');\\nconsole.log(_.get(message, 'url'), moment().format());\" }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ScriptingWindow.swift",
+      "line": 203,
+      "category": "brand_or_protocol_term",
+      "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
+      "source": "Button(\"Crypto SHA-256\") { source.wrappedValue += \"\\nconsole.log(require('crypto').createHash('sha256').update(message.body || '').digest('hex'));\" }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ScriptingWindow.swift",
+      "line": 273,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(entry.date.formatted(date: .omitted, time: .standard))  \\(entry.url)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ScriptingWindow.swift",
+      "line": 300,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "ForEach([100, 500, 1000, 3000, 5000, 10_000, 15_000, 30_000], id: \\.self) { Text(\"\\($0) ms\").tag($0) }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/SimulatorCertificateInstallerView.swift",
+      "line": 43,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(device.runtimeName) · \\(device.id)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ToolWindows.swift",
+      "line": 98,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Button(\"\\(item.method) \\(item.url)\") { load(item) }"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ToolWindows.swift",
+      "line": 119,
+      "category": "technical_example",
+      "reason": "A numeric limit, network address, or executable input example.",
+      "source": "TextField(\"https://example.com/path\", text: $url)"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/ToolWindows.swift",
+      "line": 413,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"→ \\(rule.target)\")"
+    },
+    {
+      "path": "Sources/ProxyMirrorCore/UI/Tools/WorkbenchUtilities.swift",
+      "line": 29,
+      "category": "data_or_formatted_values",
+      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
+      "source": "Text(\"\\(bytes(monitor.memory)) · ↑\\(bytes(monitor.upload))/s ↓\\(bytes(monitor.download))/s\")"
+    }
+  ]
+}

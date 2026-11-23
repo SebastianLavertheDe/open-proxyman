@@ -4,25 +4,69 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
     private static let bodyLimit = 1_048_576
 
     enum Field: String, Codable, CaseIterable {
-        case url = "URL", host = "Host", ip = "IP", method = "方法", status = "状态码"
-        case requestHeader = "请求头", responseHeader = "响应头", requestBody = "请求正文", responseBody = "响应正文"
-        case query = "Query", client = "客户端", comment = "注释", duration = "耗时 (ms)"
-        case requestSize = "请求大小 (bytes)", responseSize = "响应大小 (bytes)", scheme = "Scheme"
-        case contentType = "Content-Type", httpVersion = "HTTP 协议", graphql = "GraphQL 操作名"
+        case url, host, ip, method, status
+        case requestHeader, responseHeader, requestBody, responseBody
+        case query, client, comment, duration
+        case requestSize, responseSize, scheme
+        case contentType, httpVersion, graphql
 
         var isNumeric: Bool { [.status, .duration, .requestSize, .responseSize].contains(self) }
+        var localizedTitle: String {
+            switch self {
+            case .url: return Strings.Models.fieldUrl
+            case .host: return Strings.Models.fieldHost
+            case .ip: return Strings.Models.fieldIp
+            case .method: return Strings.Models.fieldMethod
+            case .status: return Strings.Models.fieldStatus
+            case .requestHeader: return Strings.Models.fieldRequestHeader
+            case .responseHeader: return Strings.Models.fieldResponseHeader
+            case .requestBody: return Strings.Models.fieldRequestBody
+            case .responseBody: return Strings.Models.fieldResponseBody
+            case .query: return Strings.Models.fieldQuery
+            case .client: return Strings.Models.fieldClient
+            case .comment: return Strings.Models.fieldComment
+            case .duration: return Strings.Models.fieldDuration
+            case .requestSize: return Strings.Models.fieldRequestSize
+            case .responseSize: return Strings.Models.fieldResponseSize
+            case .scheme: return Strings.Models.fieldScheme
+            case .contentType: return Strings.Models.fieldContentType
+            case .httpVersion: return Strings.Models.fieldHttpVersion
+            case .graphql: return Strings.Models.fieldGraphql
+            }
+        }
     }
 
     enum Comparison: String, Codable, CaseIterable {
-        case contains = "包含", notContains = "不包含", equals = "等于", notEquals = "不等于"
-        case startsWith = "前缀", notStartsWith = "非前缀", endsWith = "后缀", notEndsWith = "非后缀"
-        case wildcard = "通配", notWildcard = "非通配"
-        case regex = "正则", notRegex = "非正则", atLeast = "至少", atMost = "至多"
-        case greaterThan = "大于", lessThan = "小于", between = "区间"
+        case contains, notContains, equals, notEquals
+        case startsWith, notStartsWith, endsWith, notEndsWith
+        case wildcard, notWildcard
+        case regex, notRegex, atLeast, atMost
+        case greaterThan, lessThan, between
 
         var isNumeric: Bool { [.atLeast, .atMost, .greaterThan, .lessThan, .between].contains(self) }
         var isNegative: Bool { [.notContains, .notEquals, .notStartsWith, .notEndsWith, .notWildcard, .notRegex].contains(self) }
         var usesRegex: Bool { [.regex, .notRegex, .wildcard, .notWildcard].contains(self) }
+        var localizedTitle: String {
+            switch self {
+            case .contains: return Strings.Models.comparisonContains
+            case .notContains: return Strings.Models.comparisonNotContains
+            case .equals: return Strings.Models.comparisonEquals
+            case .notEquals: return Strings.Models.comparisonNotEquals
+            case .startsWith: return Strings.Models.comparisonStartsWith
+            case .notStartsWith: return Strings.Models.comparisonNotStartsWith
+            case .endsWith: return Strings.Models.comparisonEndsWith
+            case .notEndsWith: return Strings.Models.comparisonNotEndsWith
+            case .wildcard: return Strings.Models.comparisonWildcard
+            case .notWildcard: return Strings.Models.comparisonNotWildcard
+            case .regex: return Strings.Models.comparisonRegex
+            case .notRegex: return Strings.Models.comparisonNotRegex
+            case .atLeast: return Strings.Models.comparisonAtLeast
+            case .atMost: return Strings.Models.comparisonAtMost
+            case .greaterThan: return Strings.Models.comparisonGreaterThan
+            case .lessThan: return Strings.Models.comparisonLessThan
+            case .between: return Strings.Models.comparisonBetween
+            }
+        }
     }
 
     var id = UUID()
@@ -178,7 +222,13 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
 
 struct TrafficConditionGroup: Codable, Equatable {
     enum Mode: String, Codable, CaseIterable {
-        case all = "全部匹配 (AND)", any = "任一匹配 (OR)"
+        case all, any
+        var localizedTitle: String {
+            switch self {
+            case .all: return Strings.Models.conditionGroupAll
+            case .any: return Strings.Models.conditionGroupAny
+            }
+        }
     }
 
     var mode = Mode.all

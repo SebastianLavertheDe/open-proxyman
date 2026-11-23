@@ -9,9 +9,15 @@ struct ProcessAppInfo: Equatable {
     let name: String
     let bundleID: String?
     let bundleURL: URL?
+    let isIOSSimulator: Bool
+
+    init(pid: Int, name: String, bundleID: String?, bundleURL: URL?, isIOSSimulator: Bool = false) {
+        self.pid = pid; self.name = name; self.bundleID = bundleID; self.bundleURL = bundleURL
+        self.isIOSSimulator = isIOSSimulator
+    }
 
     static func == (lhs: ProcessAppInfo, rhs: ProcessAppInfo) -> Bool {
-        lhs.pid == rhs.pid && lhs.name == rhs.name
+        lhs.pid == rhs.pid && lhs.name == rhs.name && lhs.isIOSSimulator == rhs.isIOSSimulator
     }
 }
 
@@ -240,7 +246,9 @@ final class ProcessAttribution: @unchecked Sendable {
     private static func withBundle(_ info: ProcessAppInfo) -> ProcessAppInfo {
         var path = [CChar](repeating: 0, count: 4096)
         guard info.pid > 0, proc_pidpath(Int32(info.pid), &path, UInt32(path.count)) > 0 else { return info }
-        var directory = URL(fileURLWithPath: String(cString: path)).deletingLastPathComponent()
+        let executablePath = String(cString: path)
+        let simulator = isSimulatorExecutablePath(executablePath)
+        var directory = URL(fileURLWithPath: executablePath).deletingLastPathComponent()
         var application: Bundle?
         // Network helpers inside a .app belong to the outer application selected by the user.
         while directory.path != "/" {
@@ -250,11 +258,22 @@ final class ProcessAttribution: @unchecked Sendable {
             }
             directory.deleteLastPathComponent()
         }
-        guard let application, let bundleID = application.bundleIdentifier else { return info }
+        guard let application, let bundleID = application.bundleIdentifier else {
+            return ProcessAppInfo(pid: info.pid, name: info.name, bundleID: info.bundleID,
+                                  bundleURL: info.bundleURL, isIOSSimulator: simulator)
+        }
         let name = application.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? application.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? application.bundleURL.deletingPathExtension().lastPathComponent
-        return ProcessAppInfo(pid: info.pid, name: name, bundleID: bundleID, bundleURL: application.bundleURL)
+        return ProcessAppInfo(pid: info.pid, name: name, bundleID: bundleID,
+                              bundleURL: application.bundleURL, isIOSSimulator: simulator)
+    }
+
+    static func isSimulatorExecutablePath(_ path: String) -> Bool {
+        let path = path.lowercased()
+        return path.contains("/coresimulator/devices/")
+            || (path.contains("/ios") && path.contains(".simruntime/contents/resources/runtimeroot/"))
+            || path.contains("/coresimulator/volumes/ios_")
     }
 
     // MARK: 定时快照

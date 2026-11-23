@@ -48,7 +48,7 @@ enum ProxymanTheme {
     static let tableSelectionColor = appearanceColor(light: NSColor(hex: 0x2461CE), dark: NSColor(hex: 0x1E59D1))
     static let sidebarSelection = dynamic(light: NSColor(hex: 0xD7D7D7), dark: NSColor(hex: 0x686868))
     static let controlBackground = dynamic(light: NSColor(hex: 0xD8D8D8), dark: NSColor(hex: 0x656565))
-    static let rowHeight: CGFloat = 24
+    static var rowHeight: CGFloat { max(24, CGFloat(AppSettings.shared.fontSize) + 12) }
     static let bottomBarHeight: CGFloat = 35
 
     // 详情面板
@@ -105,6 +105,17 @@ enum ProxymanTheme {
 
     /// Highlight 子菜单六色（行标记）
     static let highlightNames = ["Red", "Yellow", "Green", "Blue", "Purple", "Gray"]
+    static func localizedHighlightName(_ name: String) -> String {
+        switch name {
+        case "Red": return Strings.Editor.highlightRed
+        case "Yellow": return Strings.Editor.highlightYellow
+        case "Green": return Strings.Editor.highlightGreen
+        case "Blue": return Strings.Editor.highlightBlue
+        case "Purple": return Strings.Editor.highlightPurple
+        case "Gray": return Strings.Editor.highlightGray
+        default: return name
+        }
+    }
     static func highlightColor(_ name: String) -> Color {
         switch name {
         case "Red": return .red

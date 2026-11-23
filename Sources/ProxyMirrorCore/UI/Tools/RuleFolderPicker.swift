@@ -19,34 +19,34 @@ struct RuleFolderPicker: View {
 
     var body: some View {
         HStack {
-            Picker("文件夹", selection: selection) {
-                Text("未分组").tag("")
+            Picker(Strings.Tools.folder, selection: selection) {
+                Text(Strings.Tools.ungrouped).tag("")
                 ForEach(folders) { folder in Text(draft.path(folder)).tag(folder.id.uuidString) }
             }
-            Button("新建…") {
+            Button(Strings.Tools.new) {
                 name = ""; parent = selection.wrappedValue; error = nil; creating = true
             }
-            Button("移除归属") { selection.wrappedValue = "" }.disabled(selection.wrappedValue.isEmpty)
+            Button(Strings.Tools.removeFolderMembership) { selection.wrappedValue = "" }.disabled(selection.wrappedValue.isEmpty)
         }
-        .help("文件夹归属与新建文件夹在保存规则时一起提交；取消编辑会丢弃这些更改。")
+        .help(Strings.Tools.folderMembershipAndNewFoldersAreCommittedWhenThe)
         .sheet(isPresented: $creating) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("新建规则文件夹").font(.headline)
-                TextField("名称", text: $name)
-                Picker("父文件夹", selection: $parent) {
-                    Text("根目录").tag("")
+                Text(Strings.Tools.newRuleFolder).font(.headline)
+                TextField(Strings.Tools.name, text: $name)
+                Picker(Strings.Tools.parentFolder, selection: $parent) {
+                    Text(Strings.Tools.root).tag("")
                     ForEach(folders) { folder in Text(draft.path(folder)).tag(folder.id.uuidString) }
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.caption) }
                 HStack {
                     Spacer()
-                    Button("取消") { creating = false }.keyboardShortcut(.cancelAction)
-                    Button("新建并移动") {
+                    Button(Strings.Tools.cancel) { creating = false }.keyboardShortcut(.cancelAction)
+                    Button(Strings.Tools.createMove) {
                         do {
                             let folder = try draft.createFolder(tool: tool, name: name, parentID: UUID(uuidString: parent))
                             draft.assign(ruleID: ruleID, tool: tool, folderID: folder.id)
                             creating = false
-                        } catch { self.error = error.localizedDescription }
+                        } catch { self.error = LocalizedErrorPresentation.message(for: error) }
                     }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).keyboardShortcut(.defaultAction)
                 }
             }.padding(18).frame(width: 390)

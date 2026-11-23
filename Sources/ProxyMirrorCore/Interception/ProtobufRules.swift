@@ -3,11 +3,23 @@ import Combine
 
 enum ProtobufPayloadEncoding: String, Codable, CaseIterable, Sendable {
     case single = "Single", delimited = "Delimited"
-}
+        var localizedTitle: String {
+            switch self {
+            case .single: return Strings.Models.protobufEncodingSingle
+            case .delimited: return Strings.Models.protobufEncodingDelimited
+            }
+        }
+    }
 
 enum ProtobufPayloadType: String, Codable, CaseIterable, Sendable {
     case binary = "Protobuf", base64 = "Base64 Protobuf"
-}
+        var localizedTitle: String {
+            switch self {
+            case .binary: return Strings.Models.protobufTypeBinary
+            case .base64: return Strings.Models.protobufTypeBase64
+            }
+        }
+    }
 
 struct ProtobufSchemaRecord: Codable, Equatable, Identifiable {
     var id = UUID()
@@ -19,7 +31,7 @@ struct ProtobufSchemaRecord: Codable, Equatable, Identifiable {
 
 struct ProtobufMappingRule: Codable, Equatable, Identifiable {
     var id = UUID()
-    var name = "Protobuf 映射"
+    var name = Strings.Models.protobufMappingName
     var enabled = true
     /// Matches a complete URL when supplied, otherwise the RPC/request path.
     var pattern = "*"
@@ -36,34 +48,36 @@ struct ProtobufConfiguration: Codable, Equatable {
     var schemas: [ProtobufSchemaRecord] = []
     var rules: [ProtobufMappingRule] = []
 
-    var validationError: String? {
+    var validationIssue: OperationIssue? {
         guard schemas.count <= 128, rules.count <= 1000,
               Set(schemas.map(\.id)).count == schemas.count,
-              Set(rules.map(\.id)).count == rules.count else { return "Schema 或规则数量过多，或 ID 重复。" }
+              Set(rules.map(\.id)).count == rules.count else { return OperationIssue.modelProtobufSchemaCount }
         guard schemas.reduce(0, { $0 + ($1.descriptorData?.count ?? 0) }) <= 8 * 1024 * 1024 else {
-            return "Protobuf Schema 合计超过 8 MiB。"
+            return OperationIssue.modelProtobufSchemaSize
         }
         var parsed: [UUID: GRPCSchema] = [:]
         for record in schemas {
             guard !record.name.isEmpty, record.name.utf8.count <= 1024,
                   record.filename == record.id.uuidString + ".desc", let data = record.descriptorData else {
-                return "Schema 缺少有效名称、描述符字节或内部文件名。"
+                return OperationIssue.modelProtobufSchemaInvalid
             }
-            do { parsed[record.id] = try GRPCSchema.parse(data) } catch { return error.localizedDescription }
+            do { parsed[record.id] = try GRPCSchema.parse(data) } catch { return (error as? OperationIssueProviding)?.operationIssue ?? .technical(error.localizedDescription) }
         }
         for rule in rules {
             guard !rule.name.isEmpty, rule.name.utf8.count <= 512, rule.pattern.utf8.count <= 8192 else {
-                return "请填写有效的 Protobuf 规则名称和 URL 模式。"
+                return OperationIssue.modelProtobufRuleInvalid
             }
             if let id = rule.schemaID {
-                guard let schema = parsed[id] else { return "Protobuf 规则引用的 Schema 不存在。" }
+                guard let schema = parsed[id] else { return OperationIssue.modelProtobufSchemaMissing }
                 for type in [rule.requestMessage, rule.responseMessage] where !type.isEmpty {
-                    guard schema.contains(type) else { return "Schema 中没有消息类型 \(type)。" }
+                    guard schema.contains(type) else { return OperationIssue.modelProtobufTypeMissing(type) }
                 }
             }
         }
         return nil
     }
+    var validationError: String? { validationIssue?.diagnostic }
+    var localizedValidationError: String? { validationIssue?.localizedPresentation }
 
     func resolving(with current: ProtobufConfiguration, merge: Bool) -> ProtobufConfiguration {
         guard merge else { return self }
@@ -92,7 +106,7 @@ final class ProtobufRuntimeStore: @unchecked Sendable {
 
     private init() {
         let consolidated: RuleBackup? = RulesFileIO.load("rules.json")
-        var loaded = consolidated?.protobuf ?? RulesFileIO.load("protobuf.json") ?? ProtobufConfiguration()
+        var loaded = consolidated?.protobuf ?? ProtobufConfiguration()
         for index in loaded.schemas.indices where loaded.schemas[index].descriptorData == nil {
             let record = loaded.schemas[index]
             guard record.filename == record.id.uuidString + ".desc" else { continue }
@@ -127,39 +141,39 @@ enum ProtobufPayload {
 
     static func messages(_ input: Data, encoding: ProtobufPayloadEncoding,
                          payloadType: ProtobufPayloadType = .binary) throws -> [Data] {
-        guard input.count <= GRPCFrames.maxPayload * 2 else { throw GRPCInspectionError("Protobuf 转换输入超过 2 MiB。") }
+        guard input.count <= GRPCFrames.maxPayload * 2 else { throw GRPCInspectionError(OperationIssue.modelProtobufInputSize) }
         let data: Data
         switch payloadType {
         case .binary: data = Data(input)
         case .base64:
             let bytes = input.filter { ![9, 10, 13, 32].contains($0) }
-            guard let decoded = Data(base64Encoded: bytes) else { throw GRPCInspectionError("Protobuf Base64 无效。") }
+            guard let decoded = Data(base64Encoded: bytes) else { throw GRPCInspectionError(OperationIssue.modelProtobufBase64Invalid) }
             data = decoded
         }
         if encoding == .single {
-            guard data.count <= GRPCFrames.maxPayload else { throw GRPCInspectionError("Protobuf 消息超过 1 MiB。") }
+            guard data.count <= GRPCFrames.maxPayload else { throw GRPCInspectionError(OperationIssue.modelProtobufMessageSize) }
             return [data]
         }
         var output: [Data] = []
         var offset = 0
         while offset < data.count {
             try Task.checkCancellation()
-            guard output.count < messageLimit else { throw GRPCInspectionError("Delimited 消息超过 256 条。") }
+            guard output.count < messageLimit else { throw GRPCInspectionError(OperationIssue.modelProtobufDelimitedCount) }
             var length: UInt64 = 0
             var shift = 0
             var terminated = false
             for _ in 0..<10 {
-                guard offset < data.count else { throw GRPCInspectionError("Delimited 长度前缀不完整。") }
+                guard offset < data.count else { throw GRPCInspectionError(OperationIssue.modelProtobufDelimitedIncompletePrefix) }
                 let byte = data[data.startIndex + offset]
                 offset += 1
-                if shift == 63 && byte > 1 { throw GRPCInspectionError("Delimited 长度前缀溢出。") }
+                if shift == 63 && byte > 1 { throw GRPCInspectionError(OperationIssue.modelProtobufDelimitedOverflow) }
                 length |= UInt64(byte & 0x7f) << shift
                 if byte & 0x80 == 0 { terminated = true; break }
                 shift += 7
             }
-            guard terminated else { throw GRPCInspectionError("Delimited 长度前缀溢出。") }
+            guard terminated else { throw GRPCInspectionError(OperationIssue.modelProtobufDelimitedOverflow) }
             guard length <= UInt64(GRPCFrames.maxPayload), length <= UInt64(data.count - offset) else {
-                throw GRPCInspectionError("Delimited 消息不完整或超过 1 MiB。")
+                throw GRPCInspectionError(OperationIssue.modelProtobufDelimitedIncompleteBody)
             }
             let end = offset + Int(length)
             output.append(data.subdata(in: offset..<end))
@@ -183,7 +197,7 @@ enum ProtobufPayload {
             let text = (showNumbers ? "Message #\(index + 1)\n" : "")
                 + (try GRPCProtobuf.describe(payload, type: type, schema: schema))
             if bytes + text.utf8.count > limit {
-                output += "\n…（转换输出超过 1 MiB，后续消息已省略）"
+                output += Strings.Models.protobufOutputTruncated
                 break
             }
             if index > 0 { output += "\n\n" }
@@ -288,7 +302,7 @@ final class ProtobufRuleStore: ObservableObject {
                 try save(next)
                 schemas[id] = imported.0
                 revision = UUID()
-                log("已导入 \(record.name)，\(imported.0.messageTypes.count) 个消息类型。")
+                log(Strings.Models.protobufImported(record.name, imported.0.messageTypes.count))
             } catch { fail(error) }
         }
     }
@@ -296,7 +310,7 @@ final class ProtobufRuleStore: ObservableObject {
     func addRule(for target: String) {
         var next = configuration
         var rule = ProtobufMappingRule()
-        rule.name = URLComponents(string: target)?.host.map { "Protobuf · " + $0 } ?? "Protobuf 映射"
+        rule.name = URLComponents(string: target)?.host.map { "Protobuf · " + $0 } ?? Strings.Models.protobufMappingName
         rule.pattern = target
         rule.schemaID = next.schemas.first?.id
         next.rules.append(rule)
@@ -312,7 +326,7 @@ final class ProtobufRuleStore: ObservableObject {
     }
 
     func save(_ replacement: ProtobufConfiguration) throws {
-        if let issue = replacement.validationError { throw GRPCInspectionError(issue) }
+        if let issue = replacement.validationIssue { throw GRPCInspectionError(issue) }
         let store = RulesStore.shared
         var backup = store.backup()
         backup.protobuf = replacement
@@ -326,5 +340,5 @@ final class ProtobufRuleStore: ObservableObject {
     }
 
     func clearConsole() { console.removeAll() }
-    func fail(_ failure: Error) { error = failure.localizedDescription; log(failure.localizedDescription, isError: true) }
+    func fail(_ failure: Error) { error = LocalizedErrorPresentation.message(for: failure); log(failure.localizedDescription, isError: true) }
 }

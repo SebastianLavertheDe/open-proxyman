@@ -41,14 +41,14 @@ struct MainWindow: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .pmOpenProtobuf)) { _ in openWindow(id: "protobuf") }
         .onChange(of: appState.proxyStartError) { if let text = $0 { message = text } }
-        .onChange(of: appState.systemProxyMessage) { if let text = $0, !text.hasPrefix("正在") { message = text } }
+        .onChange(of: appState.systemProxyMessage) { if let text = $0, !appState.systemProxyBusy { message = text } }
         .onChange(of: appState.showDiff) { showing in
             if showing { openWindow(id: "traffic-diff"); appState.showDiff = false }
         }
         .onAppear { if let text = store.savedError { message = text } }
         .onChange(of: store.savedError) { if let text = $0 { message = text } }
         .alert("ProxyMirror", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("好") { message = nil }
+            Button(Strings.Traffic.ok) { message = nil }
         } message: {
             Text(message ?? "")
         }
@@ -122,11 +122,11 @@ struct MainWindow: View {
                 HStack(spacing: 5) {
                     ForEach(Array(appState.tabs.enumerated()), id: \.element.id) { index, view in
                         HStack(spacing: 5) {
-                            Button(view.archiveName ?? "视图 \(index + 1)") { appState.selectWorkspace(index) }
+                            Button(view.archiveName ?? Strings.Traffic.view(index + 1)) { appState.selectWorkspace(index) }
                                 .buttonStyle(.plain)
                             if appState.tabs.count > 1 {
                                 Button { appState.closeWorkspace(index) } label: { Image(systemName: "xmark").font(.system(size: 9)) }
-                                    .buttonStyle(.borderless).accessibilityLabel("关闭视图 \(index + 1)")
+                                    .buttonStyle(.borderless).accessibilityLabel(Strings.Traffic.closeView(index + 1))
                             }
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -136,9 +136,9 @@ struct MainWindow: View {
                 }
             }
             Button { appState.addWorkspace() } label: { Image(systemName: "plus") }
-                .buttonStyle(.borderless).help("新建视图").accessibilityLabel("新建视图")
+                .buttonStyle(.borderless).help(Strings.Traffic.newView).accessibilityLabel(Strings.Traffic.newView)
             Button { appState.toggleSplit() } label: { Image(systemName: "rectangle.split.2x1") }
-                .buttonStyle(.borderless).help("切换分屏").accessibilityLabel("切换分屏")
+                .buttonStyle(.borderless).help(Strings.Traffic.toggleSplitView).accessibilityLabel(Strings.Traffic.toggleSplitView)
         }
         .font(.caption)
         .padding(.horizontal, 10)
@@ -152,7 +152,7 @@ struct MainWindow: View {
                 appState.focusSplit(right)
             } label: {
                 HStack {
-                    Text(right ? "右侧视图" : "左侧视图")
+                    Text(right ? Strings.Traffic.rightView : Strings.Traffic.leftView)
                     Spacer()
                     if appState.splitFocused == right { Image(systemName: "circle.inset.filled") }
                 }
@@ -172,8 +172,8 @@ struct MainWindow: View {
 
     private var isRecording: Bool { appState.proxyRunning && appState.recordingEnabled }
     private var recordAction: String {
-        if !appState.proxyRunning { return "开始录制" }
-        return isRecording ? "暂停录制" : "恢复录制"
+        if !appState.proxyRunning { return Strings.Traffic.startRecording }
+        return isRecording ? Strings.Traffic.pauseRecording : Strings.Traffic.resumeRecording
     }
 
     private var isRoutingTraffic: Bool {
@@ -181,9 +181,9 @@ struct MainWindow: View {
     }
 
     private var listenStatus: String {
-        guard appState.proxyRunning else { return "ProxyMirror | 监听已停止" }
-        let mode = appState.systemProxyBusy ? " | macOS 代理切换中" : (isRoutingTraffic ? "" : " | 仅监听")
-        return "ProxyMirror | 正在监听 \(ProxyEngine.shared.listenAddress)" + mode + (isRecording ? "" : " | 暂停")
+        guard appState.proxyRunning else { return Strings.Traffic.proxymirrorListenerStopped }
+        let mode = appState.systemProxyBusy ? Strings.Traffic.switchingMacosProxy : (isRoutingTraffic ? "" : Strings.Traffic.listeningOnly)
+        return Strings.Traffic.proxymirrorListeningOn(ProxyEngine.shared.listenAddress) + mode + (isRecording ? "" : Strings.Traffic.paused)
     }
 
     @ToolbarContentBuilder
@@ -201,15 +201,15 @@ struct MainWindow: View {
             Button { appState.openTool(.compose) } label: {
                 Image(systemName: "square.and.pencil").frame(width: 30)
             }
-            .help("构建请求 ⌥⌘N")
-            .accessibilityLabel("构建请求")
+            .help(Strings.Traffic.composeRequestN)
+            .accessibilityLabel(Strings.Traffic.composeRequest)
         }
         ToolbarItem(id: "clear", placement: .navigation) {
             Button(action: appState.clearTraffic) {
                 Image(systemName: "trash").frame(width: 30)
             }
-            .help("清除所有请求")
-            .accessibilityLabel("清除")
+            .help(Strings.Traffic.clearAllRequests)
+            .accessibilityLabel(Strings.Traffic.clear)
         }
 
         ToolbarItem(id: "listen-status", placement: .principal) {
@@ -231,7 +231,7 @@ struct MainWindow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("显示代理详细信息")
+            .help(Strings.Traffic.showProxyDetails)
             .accessibilityIdentifier("proxy-status")
             .popover(isPresented: $showListenDetails, arrowEdge: .bottom) {
                 ProxyStatusPopover()
@@ -243,23 +243,23 @@ struct MainWindow: View {
         }
         ToolbarItem(id: "system-proxy", placement: .primaryAction) {
             Button(action: toggleSystemProxy) {
-                Label("系统代理", systemImage: appState.systemProxyActive ? "globe.badge.chevron.backward" : "globe")
+                Label(Strings.Traffic.systemProxy, systemImage: appState.systemProxyActive ? "globe.badge.chevron.backward" : "globe")
             }
-            .help(appState.systemProxyActive ? "恢复系统代理" : "接管系统代理")
+            .help(appState.systemProxyActive ? Strings.Traffic.restoreSystemProxy : Strings.Traffic.setAsSystemProxy)
             .disabled(appState.systemProxyBusy)
         }
         ToolbarItem(id: "command-palette", placement: .primaryAction) {
             Button { appState.showCommandPalette = true } label: {
-                Label("命令面板", systemImage: "command")
+                Label(Strings.Traffic.commandPalette, systemImage: "command")
             }
-            .help("命令面板 ⌘P")
+            .help(Strings.Traffic.commandPaletteP)
         }
         ToolbarItem(id: "split", placement: .primaryAction) {
             Button(action: appState.toggleSplit) {
-                Label("切换分屏", systemImage: "rectangle.split.2x1")
+                Label(Strings.Traffic.toggleSplitView, systemImage: "rectangle.split.2x1")
                     .foregroundStyle(appState.splitStore != nil ? Color.accentColor : Color.secondary)
             }
-            .help("切换分屏")
+            .help(Strings.Traffic.toggleSplitView)
         }
         ToolbarItem(id: "detach-details", placement: .primaryAction) {
             Button {
@@ -267,15 +267,15 @@ struct MainWindow: View {
                     openWindow(id: "request-detail", value: "\(store.id.uuidString):\(id.uuidString)")
                 }
             } label: {
-                Label("分离面板", systemImage: "macwindow.on.rectangle")
+                Label(Strings.Traffic.detachPanel, systemImage: "macwindow.on.rectangle")
             }
             .disabled(store.selectedID == nil)
-            .help("分离面板")
+            .help(Strings.Traffic.detachPanel)
         }
         ToolbarItem(id: "dock", placement: .primaryAction) {
             HStack(spacing: 13) {
-                dockButton("详情停靠在底部", icon: "rectangle.bottomthird.inset.filled", right: false)
-                dockButton("详情停靠在右侧", icon: "rectangle.righthalf.inset.filled", right: true)
+                dockButton(Strings.Traffic.dockInspectorAtBottom, icon: "rectangle.bottomthird.inset.filled", right: false)
+                dockButton(Strings.Traffic.dockInspectorOnRight, icon: "rectangle.righthalf.inset.filled", right: true)
             }
         }
     }
@@ -299,23 +299,23 @@ struct MainWindow: View {
 
     private var bottomStatusBar: some View {
         HStack(spacing: 7) {
-            Button(action: appState.clearTraffic) { Label("清除", systemImage: "trash") }
+            Button(action: appState.clearTraffic) { Label(Strings.Traffic.clear, systemImage: "trash") }
                 .buttonStyle(FooterButtonStyle())
             Button { showFilterEditor = true } label: {
                 let count = store.filter.conditions.conditionCount
-                Label(count == 0 ? "过滤器" : "过滤器（\(count)）", systemImage: "line.3.horizontal.decrease")
+                Label(count == 0 ? Strings.Traffic.filters2 : Strings.Traffic.filters(count), systemImage: "line.3.horizontal.decrease")
             }
             .buttonStyle(FooterButtonStyle())
             Button {
                 store.followLatest.toggle()
             } label: {
-                Text("自动选择").frame(minWidth: 76)
+                Text(Strings.Traffic.autoSelect).frame(minWidth: 76)
             }
             .buttonStyle(FooterButtonStyle(selected: store.followLatest))
             .accessibilityAddTraits(store.followLatest ? .isSelected : [])
 
             if showTrafficSearch || !store.filter.searchText.isEmpty {
-                TextField("过滤 (⌘F)", text: Binding(
+                TextField(Strings.Traffic.filterF, text: Binding(
                     get: { store.filter.searchText },
                     set: { store.filter.searchText = $0 }))
                     .textFieldStyle(.roundedBorder)
@@ -329,7 +329,7 @@ struct MainWindow: View {
             }
             Spacer(minLength: 6)
             Text("\(store.selectedIDs.count)/\(store.visible.count)")
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).help("所选 / 当前过滤后的请求数")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).help(Strings.Traffic.selectedCurrentlyFilteredRequests)
             if showResourceUsage {
                 ResourceUsageView(store: appState.store).lineLimit(1).minimumScaleFactor(0.85)
             } else {
@@ -338,7 +338,7 @@ struct MainWindow: View {
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            Text(appState.systemProxyActive ? "代理已覆盖" : listenFooter)
+            Text(appState.systemProxyActive ? Strings.Traffic.systemProxyEnabled : listenFooter)
                 .font(.system(size: 11, weight: .medium))
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(ProxymanTheme.controlBackground.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
@@ -351,8 +351,8 @@ struct MainWindow: View {
     }
 
     private var listenFooter: String {
-        if !appState.proxyRunning { return "监听已停止" }
-        return isRecording ? "录制中" : "录制已暂停"
+        if !appState.proxyRunning { return Strings.Traffic.listenerStopped }
+        return isRecording ? Strings.Traffic.recording : Strings.Traffic.recordingPaused
     }
 
     private func transferred() -> (request: String, response: String) {
@@ -388,7 +388,7 @@ private struct CaptureDetailSplit: View {
                             get: { top / height },
                             set: { detailSplit = $0 }
                         ), in: (minimumTop / height)...(maximumTop / height))
-                            .accessibilityLabel("调整详情面板高度")
+                            .accessibilityLabel(Strings.Traffic.resizeInspectorHeight)
                     }
                     .zIndex(1)
                 DetailView(store: store).frame(maxHeight: .infinity)
@@ -463,12 +463,12 @@ private struct CommentEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("编辑 \(targets.count) 条请求的备注").font(.headline)
-            TextEditor(text: $draft).accessibilityLabel("备注")
+            Text(Strings.Traffic.editCommentsForRequests(targets.count)).font(.headline)
+            TextEditor(text: $draft).accessibilityLabel(Strings.Traffic.comment)
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") {
+                Button(Strings.Traffic.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Traffic.save) {
                     for tx in targets { tx.comment = draft }
                     store.update(targets)
                     dismiss()
@@ -487,30 +487,57 @@ private struct CommandPalette: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var search = ""
-    private let windows = ["Diff 流量对比": "traffic-diff", "Scripting 脚本与 Console": "scripting", "断点队列与模板": "breakpoints",
-        "Protobuf Schema 与映射": "protobuf", "流量汇总": "flow-summary", "自定义 Previewer 预览器": "custom-previewers",
-        "Automation 自动化": "automation", "规则文件夹": "rule-folders", "软件更新": "updates"]
+    private struct WindowCommand: Identifiable {
+        let id: String
+        let title: String
+        let titleKey: String
+
+        var searchAliases: [String] {
+            [id, title] + ["en", "zh-Hans"].map {
+                L10n.render(table: "Traffic", key: titleKey, arguments: [], englishFallback: title, language: $0)
+            }
+        }
+    }
+
+    private var windows: [WindowCommand] {
+        [
+            WindowCommand(id: "traffic-diff", title: Strings.Traffic.trafficComparison, titleKey: "traffic_comparison"),
+            WindowCommand(id: "scripting", title: Strings.Traffic.scriptingAndConsole, titleKey: "scripting_and_console"),
+            WindowCommand(id: "breakpoints", title: Strings.Traffic.breakpointQueueAndTemplates, titleKey: "breakpoint_queue_and_templates"),
+            WindowCommand(id: "protobuf", title: Strings.Traffic.protobufSchemaAndMappings, titleKey: "protobuf_schema_and_mappings"),
+            WindowCommand(id: "flow-summary", title: Strings.Traffic.trafficSummary, titleKey: "traffic_summary"),
+            WindowCommand(id: "custom-previewers", title: Strings.Traffic.customPreviewers, titleKey: "custom_previewers"),
+            WindowCommand(id: "automation", title: Strings.Traffic.automation, titleKey: "automation"),
+            WindowCommand(id: "rule-folders", title: Strings.Traffic.ruleFolders, titleKey: "rule_folders"),
+            WindowCommand(id: "updates", title: Strings.Traffic.softwareUpdates, titleKey: "software_updates")
+        ]
+    }
+
+    private func matchesSearch(_ aliases: [String]) -> Bool {
+        let terms = search.split(whereSeparator: \.isWhitespace)
+        return terms.allSatisfy { term in aliases.contains { $0.localizedCaseInsensitiveContains(term) } }
+    }
 
     var body: some View {
         VStack(spacing: 10) {
-            TextField("搜索工具", text: $search).textFieldStyle(.roundedBorder)
+            TextField(Strings.Traffic.searchTools, text: $search).textFieldStyle(.roundedBorder)
             List {
-                ForEach(ToolKind.allCases.filter { search.isEmpty || $0.rawValue.localizedCaseInsensitiveContains(search) }) { tool in
-                    Button(tool.rawValue) {
+                ForEach(ToolKind.allCases.filter { matchesSearch($0.searchAliases) }) { tool in
+                    Button(tool.localizedTitle) {
                         dismiss()
                         DispatchQueue.main.async { appState.openTool(tool) }
                     }
                 }
-                ForEach(windows.keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { title in
-                    Button(title) {
+                ForEach(windows.filter { matchesSearch($0.searchAliases) }) { command in
+                    Button(command.title) {
                         dismiss()
-                        if let id = windows[title] { DispatchQueue.main.async { openWindow(id: id) } }
+                        DispatchQueue.main.async { openWindow(id: command.id) }
                     }
                 }
             }
-            Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+            Button(Strings.Traffic.close) { dismiss() }.keyboardShortcut(.cancelAction)
         }
         .padding()
-        .frame(width: 400, height: 320)
+        .frame(minWidth: 440, minHeight: 320)
     }
 }

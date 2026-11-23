@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "ProxyMirror Transparent Proxy";
+"NSSystemExtensionUsageDescription" = "ProxyMirror uses this extension to capture TCP connections when transparent proxying is enabled.";

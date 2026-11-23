@@ -11,21 +11,13 @@ final class ResourceUsageMonitor: ObservableObject {
     @Published private(set) var download: Int64 = 0
     private var previous: (time: TimeInterval, up: Int64, down: Int64)?
 
-    func sample(up: Int64, down: Int64) {
-        let now = ProcessInfo.processInfo.systemUptime
+    func sample(up: Int64, down: Int64, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         if let previous, now > previous.time {
             upload = Int64(Double(max(0, up - previous.up)) / (now - previous.time))
             download = Int64(Double(max(0, down - previous.down)) / (now - previous.time))
         }
         previous = (now, up, down)
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
-        let result = withUnsafeMutablePointer(to: &info) { pointer in
-            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-            }
-        }
-        if result == KERN_SUCCESS { memory = Int64(info.resident_size) }
+        if let resident = MemoryPressureController.residentMemory() { memory = Int64(clamping: resident) }
     }
 }
 
@@ -37,9 +29,9 @@ struct ResourceUsageView: View {
         Text("\(bytes(monitor.memory)) · ↑\(bytes(monitor.upload))/s ↓\(bytes(monitor.download))/s")
             .font(.system(size: 10).monospacedDigit())
             .foregroundStyle(.secondary)
-            .help("应用驻留内存 · 当前捕获的上传 / 下载速率")
+            .help(Strings.Tools.appResidentMemoryCapturedUploadDownloadSpeeds)
             .onReceive(timer) { _ in
-                let totals = store.transferredBytes
+                let totals = store.cumulativeTransferredBytes
                 monitor.sample(up: totals.request, down: totals.response)
             }
     }
@@ -56,7 +48,7 @@ enum AppDiagnostics {
         do {
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
             NSWorkspace.shared.open(target)
-        } catch { AppState.shared.systemProxyMessage = error.localizedDescription }
+        } catch { AppState.shared.systemProxyMessage = LocalizedErrorPresentation.message(for: error) }
     }
     static func debugInfo() -> String {
         let state = AppState.shared
@@ -65,7 +57,7 @@ enum AppDiagnostics {
         macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
         architecture: \(MemoryLayout<Int>.size * 8)-bit
         listening: \(state.proxyRunning), recording: \(state.recordingEnabled)
-        systemProxy: \(state.systemProxyActive), port: \(state.settings.port)
+        systemProxy: \(state.systemProxyActive), port: \(state.listenerPort)
         HTTP/2: \(state.settings.http2Enabled), MITM: \(state.settings.mitmEnabled)
         requests: \(state.store.visible.count)
         CA installed: \(state.caInstalled)
@@ -81,7 +73,7 @@ enum AppDiagnostics {
     static func factoryReset(keepRules: Bool) throws {
         guard !AppState.shared.proxyRunning, !AppState.shared.systemProxyActive, !AppState.shared.systemProxyBusy,
               !AppState.shared.transparentProxyNeedsStop else {
-            throw SystemProxyError("请先停止监听、透明抓包并恢复系统代理。")
+            throw SystemProxyError(Strings.Tools.stopTheListenerAndTransparentCaptureThenRestoreThe)
         }
         _ = try backup()
         if !keepRules {
@@ -98,10 +90,10 @@ enum AppDiagnostics {
             try RulesStore.shared.install(empty)
         }
         let defaults = UserDefaults.standard
-        for key in defaults.dictionaryRepresentation().keys where ["ui.", "proxy.", "capture.", "export.", "repeat."]
+        for key in defaults.dictionaryRepresentation().keys where ["ui.", "proxy.", "capture.", "export.", "repeat.", "automation.", "updates."]
             .contains(where: { key.hasPrefix($0) }) { defaults.removeObject(forKey: key) }
         AppState.shared.settings.objectWillChange.send()
-        AppState.shared.systemProxyMessage = "已恢复偏好设置，规则备份保存在 Backups 文件夹。重新打开应用后使用默认偏好。"
+        AppState.shared.systemProxyMessage = Strings.Tools.preferencesRestoredTheRuleBackupIsInTheBackups
     }
 }
 
@@ -111,15 +103,15 @@ struct FactoryResetView: View {
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("恢复默认设置").font(.headline)
-            Text("恢复前会保存规则备份。已保存会话和证书继续保留。")
-            Toggle("保留规则", isOn: $keepRules)
+            Text(Strings.Tools.restoreDefaults).font(.headline)
+            Text(Strings.Tools.rulesAreBackedUpBeforeRestoringDefaultsSavedSessions)
+            Toggle(Strings.Tools.keepRules, isOn: $keepRules)
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
-                Spacer(); Button("取消") { dismiss() }
-                Button("恢复默认", role: .destructive) {
+                Spacer(); Button(Strings.Tools.cancel) { dismiss() }
+                Button(Strings.Tools.restoreDefaults2, role: .destructive) {
                     do { try AppDiagnostics.factoryReset(keepRules: keepRules); dismiss() }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = LocalizedErrorPresentation.message(for: error) }
                 }
             }
         }.padding(20).frame(width: 420)

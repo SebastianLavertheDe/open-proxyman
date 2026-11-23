@@ -35,7 +35,7 @@ struct HTTPProtobufView: View {
     @ObservedObject private var rules = ProtobufRuleStore.shared
     @State private var output: (key: DecodeKey, value: Decoded)?
 
-    private struct DecodeKey: Equatable {
+    private struct DecodeKey: Hashable {
         let revision: UInt64
         let generation: UInt64
         let isError: Bool
@@ -54,40 +54,34 @@ struct HTTPProtobufView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 if case .rendered(let description) = decoded {
-                    Text(description.type.map { "Protobuf · \($0)" } ?? "Protobuf · 按字段编号显示")
+                    Text(description.type.map { "Protobuf · \($0)" } ?? Strings.Detail.protobufFieldNumbers)
                 } else {
                     Text("Protobuf")
                 }
                 Spacer()
-                if let decodedEncoding { Text("已解码 \(decodedEncoding)") }
+                if let decodedEncoding { Text(Strings.Detail.decoded(String(describing: decodedEncoding))) }
             }
             .font(.caption).foregroundStyle(.secondary)
             .padding(.horizontal, 8).padding(.vertical, 5)
 
             if data.isEmpty {
-                message(complete ? "无正文" : "等待接收正文…")
+                message(complete ? Strings.Detail.noBody2 : Strings.Detail.waitingForTheBody)
             } else if truncated {
-                fallback("正文已截断，无法完整解析 Protobuf。")
+                fallback(Strings.Detail.theBodyWasTruncatedAndCannotBeFullyParsedAsProtobuf)
             } else if !complete {
-                message("等待接收完整的 Protobuf 正文…")
+                message(Strings.Detail.waitingForTheCompleteProtobufBody)
             } else {
                 switch decoded {
                 case .rendered(let description):
-                    ScrollViewReader { scroll in
-                        ScrollView {
-                            if let rawHead { RawMessageHeadView(head: rawHead).equatable() }
-                            BodyPreview(data: Data(description.text.utf8), format: .text,
-                                        generation: generation, rawHead: rawHead) {
-                                scroll.scrollTo(BodyPreview.ScrollAnchor.pageTop, anchor: .top)
-                            }
-                            rawTrailerView
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    BodyPreview(data: Data(description.text.utf8), format: .text,
+                                generation: generation, rawHead: rawHead,
+                                includeHead: rawHead != nil, suffixText: rawTrailerText)
+                        .id(key)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 case .failure(let error):
                     fallback(error)
                 case nil:
-                    ProgressView("正在解析 Protobuf…").controlSize(.small)
+                    ProgressView(Strings.Detail.parsingProtobuf).controlSize(.small)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -102,7 +96,7 @@ struct HTTPProtobufView: View {
                     }
                     return .rendered(try GRPCProtobuf.describeHTTP(data, isError: isError))
                 }
-                catch { return .failure(error.localizedDescription) }
+                catch { return .failure(LocalizedErrorPresentation.message(for: error)) }
             }
             let value = await withTaskCancellationHandler {
                 await worker.value
@@ -112,7 +106,7 @@ struct HTTPProtobufView: View {
             if !Task.isCancelled {
                 output = (key, value)
                 if case .failure(let message) = value { rules.log("\(target)：\(message)", isError: true) }
-                else if let resolution { rules.log("\(resolution.ruleName)：已解码 \(isRequest ? "请求" : "响应")。") }
+                else if let resolution { rules.log(Strings.Detail.decoded2(String(describing: resolution.ruleName), String(describing: isRequest ? Strings.Detail.request : Strings.Detail.response))) }
             }
         }
     }
@@ -120,11 +114,8 @@ struct HTTPProtobufView: View {
     @ViewBuilder
     private func message(_ text: String) -> some View {
         if let rawHead {
-            ScrollView {
-                RawMessageHeadView(head: rawHead).equatable()
-                Text(text).font(.caption).foregroundStyle(.secondary).padding(10)
-                rawTrailerView
-            }
+            CodeDocument(text: rawHead.text + "\n" + text + rawTrailerText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Text(text).font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -134,18 +125,13 @@ struct HTTPProtobufView: View {
     private func fallback(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(text).font(.caption).foregroundStyle(.secondary).padding(6)
-            ScrollView {
-                if let rawHead { RawMessageHeadView(head: rawHead).equatable() }
-                BodyPreview(data: data, format: .hex, generation: generation, rawHead: rawHead)
-                rawTrailerView
-            }
+            BodyPreview(data: data, format: .hex, generation: generation, rawHead: rawHead,
+                        includeHead: rawHead != nil, suffixText: rawTrailerText)
         }
     }
 
-    @ViewBuilder
-    private var rawTrailerView: some View {
-        if rawHead != nil, rawTrailers.count > 0 {
-            RawMessageHeadView(head: RawMessageHead(startLine: "Trailers", headers: rawTrailers))
-        }
+    private var rawTrailerText: String {
+        guard rawHead != nil, rawTrailers.count > 0 else { return "" }
+        return "\r\n" + RawMessageHead(startLine: "Trailers", headers: rawTrailers).text
     }
 }

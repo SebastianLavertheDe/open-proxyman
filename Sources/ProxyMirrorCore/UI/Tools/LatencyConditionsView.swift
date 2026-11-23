@@ -11,9 +11,9 @@ struct LatencyConditionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Network Conditions · 弱网模拟").font(.headline)
+                Text(Strings.Tools.networkConditions).font(.headline)
                 Spacer()
-                Toggle("启用", isOn: $draft.enabled).toggleStyle(.switch)
+                Toggle(Strings.Tools.enable, isOn: $draft.enabled).toggleStyle(.switch)
             }
             HSplitView {
                 VStack(spacing: 8) {
@@ -21,7 +21,7 @@ struct LatencyConditionsView: View {
                         ForEach(draft.rules ?? []) { rule in
                             VStack(alignment: .leading, spacing: 3) {
                                 Label(rule.name, systemImage: rule.enabled ? "network" : "pause.circle")
-                                Text(rule.host.isEmpty ? "所有主机" : rule.host).font(.caption).foregroundStyle(.secondary)
+                                Text(rule.host.isEmpty ? Strings.Tools.allHosts : rule.host).font(.caption).foregroundStyle(.secondary)
                             }.tag(rule.id)
                         }
                     }
@@ -37,23 +37,23 @@ struct LatencyConditionsView: View {
                 if let index = selectedIndex {
                     editor(index).padding(.leading, 10).frame(minWidth: 390)
                 } else {
-                    Text("添加规则，为不同主机设置网络条件。")
+                    Text(Strings.Tools.addRulesToConfigureNetworkConditionsForDifferentHosts)
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            Text("从上到下使用第一条启用且匹配主机的规则；未匹配的请求保持正常网络。支持 HTTP/1、HTTP/2 及经过 HTTP 握手的连接。")
+            Text(Strings.Tools.useTheFirstEnabledRuleMatchingTheHostFrom)
                 .font(.caption).foregroundStyle(.secondary)
-            if let error = error ?? draft.validationError { Text(error).font(.caption).foregroundStyle(.red) }
+            if let error = error ?? draft.localizedValidationError { Text(error).font(.caption).foregroundStyle(.red) }
             Divider()
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") {
+                Button(Strings.Tools.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.save) {
                     for index in (draft.rules ?? []).indices {
                         draft.rules?[index].host = RulesSnapshot.sslHostPattern(draft.rules?[index].host ?? "")
                     }
                     if LatencyConditions.install(draft) { dismiss() }
-                    else { error = "无法保存弱网设置" }
+                    else { error = Strings.Tools.unableToSaveNetworkConditions }
                 }
                 .keyboardShortcut(.defaultAction).disabled(draft.validationError != nil)
             }
@@ -61,7 +61,7 @@ struct LatencyConditionsView: View {
         .padding(18).frame(width: 740, height: 480)
         .onAppear {
             if draft.rules == nil {
-                var migrated = NetworkConditionRule(legacy: draft, name: "原有网络条件")
+                var migrated = NetworkConditionRule(legacy: draft, name: Strings.Tools.existingNetworkConditions)
                 migrated.enabled = true
                 draft.rules = [migrated]
             }
@@ -82,13 +82,13 @@ struct LatencyConditionsView: View {
     private func editor(_ index: Int) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                TextField("规则名称", text: binding(index, \.name, fallback: ""))
-                Toggle("启用规则", isOn: binding(index, \.enabled, fallback: false))
+                TextField(Strings.Tools.ruleName, text: binding(index, \.name, fallback: ""))
+                Toggle(Strings.Tools.enableRule, isOn: binding(index, \.enabled, fallback: false))
             }
-            TextField("目标主机，空白为所有主机", text: binding(index, \.host, fallback: ""))
-            Menu("载入预设") {
+            TextField(Strings.Tools.targetHostLeaveEmptyForAllHosts, text: binding(index, \.host, fallback: ""))
+            Menu(Strings.Tools.loadPreset) {
                 ForEach(LatencyConditions.Preset.allCases, id: \.self) { preset in
-                    Button(preset.rawValue) {
+                    Button(preset.localizedTitle) {
                         guard let old = draft.rules?[index] else { return }
                         var replacement = NetworkConditionRule(legacy: preset.settings(for: old.host), name: old.name)
                         replacement.id = old.id
@@ -98,17 +98,17 @@ struct LatencyConditionsView: View {
             }.fixedSize()
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                 GridRow {
-                    Text("请求延迟 (ms)")
+                    Text(Strings.Tools.requestDelayMs)
                     TextField("0–5000", value: binding(index, \.milliseconds, fallback: 0), format: .number.grouping(.never))
                 }
-                numberRow(index, "请求抖动 (±ms)", \.jitterMilliseconds)
-                numberRow(index, "上传 (kbps)", \.uploadKbps)
-                numberRow(index, "下载 (kbps)", \.downloadKbps)
-                numberRow(index, "随机断连 (%)", \.disconnectPercent)
-                numberRow(index, "响应延迟尖峰 (%)", \.responseSpikePercent)
-                numberRow(index, "正文暂停 (%)", \.bodyPausePercent)
+                numberRow(index, Strings.Tools.requestJitterMs, \.jitterMilliseconds)
+                numberRow(index, Strings.Tools.uploadKbps, \.uploadKbps)
+                numberRow(index, Strings.Tools.downloadKbps, \.downloadKbps)
+                numberRow(index, Strings.Tools.randomDisconnect, \.disconnectPercent)
+                numberRow(index, Strings.Tools.responseLatencySpike, \.responseSpikePercent)
+                numberRow(index, Strings.Tools.bodyPause, \.bodyPausePercent)
             }
-            Text("速率为 0 时不限速。随机断连按请求抽样；响应尖峰增加 500 ms。正文暂停按块抽样后顺序补发，用于模拟不稳定链路。")
+            Text(Strings.Tools.aRateOf0IsUnlimitedRandomDisconnectionsAre)
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
         }.textFieldStyle(.roundedBorder)
@@ -124,7 +124,7 @@ struct LatencyConditionsView: View {
     }
 
     private func add() {
-        let rule = NetworkConditionRule(legacy: LatencyConditions.Preset.threeG.settings(for: ""), name: "规则 \((draft.rules?.count ?? 0) + 1)")
+        let rule = NetworkConditionRule(legacy: LatencyConditions.Preset.threeG.settings(for: ""), name: Strings.Tools.rule(Int((draft.rules?.count ?? 0) + 1)))
         draft.rules = (draft.rules ?? []) + [rule]
         selection = rule.id
     }

@@ -13,10 +13,10 @@ struct NetworkAccessPolicy: Equatable, Sendable {
     private let networks: [IPNetworkRange]
 
     init(ranges: [String]) throws {
-        guard ranges.count <= Self.maximumRanges else { throw ValidationError("访问名单最多 \(Self.maximumRanges) 项。") }
+        guard ranges.count <= Self.maximumRanges else { throw ValidationError(OperationIssue.networkAccessPolicyTheAccessListSupportsUpToEntries(Int(Self.maximumRanges))) }
         var parsed: [IPNetworkRange] = []
         for range in ranges {
-            guard let network = IPNetworkRange(range) else { throw ValidationError("无效的 IP 或 CIDR：\(String(range.prefix(128)))") }
+            guard let network = IPNetworkRange(range) else { throw ValidationError(OperationIssue.networkAccessPolicyInvalidIpAddressOrCidr(String(String(range.prefix(128))))) }
             if !parsed.contains(network) { parsed.append(network) }
         }
         networks = parsed
@@ -28,14 +28,23 @@ struct NetworkAccessPolicy: Equatable, Sendable {
         catch { return error.localizedDescription }
     }
 
+    static func localizedValidationError(for ranges: [String]) -> String? {
+        do { _ = try Self(ranges: ranges); return nil }
+        catch { return LocalizedErrorPresentation.message(for: error) }
+    }
+
     func allows(_ peer: String) -> Bool {
         guard let address = NumericIPAddress(peer), address.isUnicast else { return false }
         return networks.contains { $0.contains(address) }
     }
 
-    struct ValidationError: LocalizedError {
-        let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+    struct ValidationError: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ message: String) { operationIssue = .technical(message) }
+        var message: String { operationIssue.diagnostic }
+        var text: String { operationIssue.diagnostic }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 }
 

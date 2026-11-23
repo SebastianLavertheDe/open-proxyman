@@ -2,13 +2,14 @@
 """Compile and execute the actual SavedRequestFolderArchive Swift source on Linux.
 
 Only the unrelated SessionRecord payload and private-file writer are tiny test
-boundaries. The archive's migration, ID collision handling, hierarchy, validation,
+boundaries. The archive's version checks, ID collision handling, hierarchy, validation,
 copy/move/delete and rollback code is compiled verbatim from the repository.
 This is not a macOS UI, TrafficStore, or SessionFile integration test.
 """
 import argparse
 import os
 from pathlib import Path
+from localization_model_test_support import localization_sources
 import shutil
 import subprocess
 import tempfile
@@ -54,11 +55,14 @@ import Foundation
         let legacy = directory.appendingPathComponent("Saved.proxymirror")
         let original = try JSONEncoder().encode(Legacy(records: [first, second]))
         try original.write(to: legacy)
-        var loaded = try SavedRequestFolderArchive.load(legacy: legacy)
-        try expect(loaded.migrated && loaded.archive.unfiled == [first, second], "legacy migration lost snapshots")
+        rejects("obsolete native Saved file accepted") { _ = try SavedRequestFolderArchive.load(legacy: legacy) }
         let canonical = SavedRequestFolderArchive.fileURL(for: legacy)
-        try loaded.archive.write(to: canonical)
-        try expect(Data(contentsOf: legacy) == original, "migration rewrote original recovery file")
+        var seed = SavedRequestFolderArchive()
+        seed.unfiled = [first, second]
+        try seed.write(to: canonical)
+        var loaded = try SavedRequestFolderArchive.load(legacy: legacy)
+        try expect(!loaded.migrated && loaded.archive.unfiled == [first, second], "new-format load lost snapshots")
+        try expect(Data(contentsOf: legacy) == original, "new archive load touched an unrelated file")
         let parent = try loaded.archive.create(name: "接口")
         let child = try loaded.archive.create(name: "子文件夹", parentID: parent)
         try expect(loaded.archive.folders.first { $0.id == child }?.parentID == parent, "hierarchy was not stored")
@@ -103,11 +107,12 @@ import Foundation
         try expect(Data(contentsOf: badLegacy) == sourceBytes, "rejected migration modified source file")
         try sourceBytes.write(to: SavedRequestFolderArchive.fileURL(for: badLegacy))
         rejects("source folders misread as canonical request archive") { _ = try SavedRequestFolderArchive.load(legacy: badLegacy) }
-        let duplicateLegacy = directory.appendingPathComponent("Duplicates.proxymirror")
-        try JSONEncoder().encode(Legacy(records: [first, first])).write(to: duplicateLegacy)
-        let duplicates = try SavedRequestFolderArchive.load(legacy: duplicateLegacy).archive
-        try expect(duplicates.unfiled.count == 2 && Set(duplicates.unfiled.map(\.id)).count == 2, "legacy duplicate IDs dropped records")
-        try expect(duplicates.unfiled.allSatisfy { $0.body == first.body && $0.comment == first.comment }, "legacy duplicate migration lost payload")
+        var duplicateArchive = SavedRequestFolderArchive()
+        duplicateArchive.unfiled = [first, first]
+        rejects("duplicate snapshot IDs accepted") { try duplicateArchive.validate() }
+        var obsolete = loaded.archive
+        obsolete.version = 1
+        rejects("obsolete folder archive accepted") { try obsolete.validate() }
         print("PASS: \(checks) actual Swift Saved archive checks; no macOS UI or TrafficStore runtime executed")
     }
 }
@@ -126,7 +131,7 @@ def main():
         (work / "Harness.swift").write_text(HARNESS)
         executable = work / "saved-checks"
         subprocess.run([args.swiftc, "-swift-version", "5", str(ROOT / "Sources/ProxyMirrorCore/Model/SavedRequestFolder.swift"),
-                        str(work / "Boundaries.swift"), str(work / "Harness.swift"), "-o", str(executable)], check=True, timeout=120)
+                        str(work / "Boundaries.swift"), str(work / "Harness.swift"), *localization_sources(work), "-o", str(executable)], check=True, timeout=120)
         subprocess.run([str(executable)], check=True, timeout=30)
 
 

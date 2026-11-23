@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>app_state_transactions_can_be_imported_skipped</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@
+%2$#@importable@ · %3$ld skipped</string>
+		<key>importable</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>%ld transaction can be imported</string>
+			<key>other</key>
+			<string>%ld transactions can be imported</string>
+		</dict>
+	</dict>
+	<key>memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$@ · %3$#@caches@</string>
+		<key>caches</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>Cleared %ld type of rebuildable cache. Captured traffic and user files were preserved.</string>
+			<key>other</key>
+			<string>Cleared %ld types of rebuildable caches. Captured traffic and user files were preserved.</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

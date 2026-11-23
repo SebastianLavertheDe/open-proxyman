@@ -2,8 +2,17 @@ import Foundation
 
 struct CustomTrafficColumn: Codable, Hashable, Identifiable {
     enum Source: String, Codable, CaseIterable {
-        case requestHeader = "请求头", responseHeader = "响应头", query = "Query"
-        case requestJSON = "请求 JSON", responseJSON = "响应 JSON"
+        case requestHeader, responseHeader, query
+        case requestJSON, responseJSON
+        var localizedTitle: String {
+            switch self {
+            case .requestHeader: return Strings.Models.columnSourceRequestHeader
+            case .responseHeader: return Strings.Models.columnSourceResponseHeader
+            case .query: return Strings.Models.columnSourceQuery
+            case .requestJSON: return Strings.Models.columnSourceRequestJSON
+            case .responseJSON: return Strings.Models.columnSourceResponseJSON
+            }
+        }
     }
 
     var id = UUID()

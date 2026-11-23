@@ -4,15 +4,16 @@ import Security
 /// GitHub API: https://docs.github.com/en/rest/gists/gists#create-a-gist
 /// Tokens are stored only in the login Keychain, never in settings or backups.
 enum GistService {
-    enum GistError: LocalizedError {
-        case invalidToken, emptySelection, invalidPreview, tooLarge, keychain(OSStatus), response(String)
-        var errorDescription: String? {
+    enum GistError: LocalizedError, OperationIssueProviding {
+        case invalidToken, emptySelection, invalidPreview, tooLarge, keychain(OSStatus), response(OperationIssue)
+        var errorDescription: String? { operationIssue.diagnostic }
+        var operationIssue: OperationIssue {
             switch self {
-            case .invalidToken: return "请输入具有 Gists 写入权限的 GitHub Token。"
-            case .emptySelection: return "请选择要发布的请求。"
-            case .invalidPreview: return "预览必须是有效的 HAR JSON。"
-            case .tooLarge: return "此 Gist 超过 8 MiB，请缩小所选流量或移除不需要的正文。"
-            case .keychain(let status): return "无法访问钥匙串 (\(status))。"
+            case .invalidToken: return OperationIssue.gistServiceEnterAGithubTokenWithGistsWritePermission
+            case .emptySelection: return OperationIssue.gistServiceSelectTheRequestsToPublish
+            case .invalidPreview: return OperationIssue.gistServiceThePreviewMustBeValidHarJson
+            case .tooLarge: return OperationIssue.gistServiceThisGistExceeds8MibReduceTheSelection
+            case .keychain(let status): return OperationIssue.gistServiceUnableToAccessTheKeychain(Int(status))
             case .response(let message): return message
             }
         }
@@ -93,13 +94,13 @@ enum GistService {
         let session = URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw GistError.response("GitHub 未返回 HTTP 响应。") }
+        guard let http = response as? HTTPURLResponse else { throw GistError.response(OperationIssue.gistServiceGithubDidNotReturnAnHttpResponse) }
         guard http.statusCode == 201 else {
-            throw GistError.response("GitHub 发布失败 (HTTP \(http.statusCode))。请检查 Token 权限和 API 额度。")
+            throw GistError.response(OperationIssue.gistServiceGithubPublishingFailedHttpCheckTokenPermissionsAnd(Int(http.statusCode)))
         }
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let text = object?["html_url"] as? String, let url = URL(string: text),
-              url.scheme == "https", url.host == "gist.github.com" else { throw GistError.response("GitHub 返回了无效的 Gist 地址。") }
+              url.scheme == "https", url.host == "gist.github.com" else { throw GistError.response(OperationIssue.gistServiceGithubReturnedAnInvalidGistUrl) }
         return url
     }
 

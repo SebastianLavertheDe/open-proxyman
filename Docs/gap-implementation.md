@@ -25,7 +25,7 @@
 | RFC 8441 | HTTP/2 SETTINGS 协商、逐流 extended CONNECT、WebSocket 握手与 DATA 桥接、同连接普通 HTTP 流、取消及背压；复用帧分析和脚本 |
 | 证书 | PEM / DER / P12 导入向导、按用途校验、mTLS P12、DER / 加密私钥 PEM / P12 导出；Apple 模拟器证书安装器、自选 Preview 设备集、各框架指南 |
 | 诊断运维 | 六项故障排查子菜单直达主题；真实系统内存压力与模拟警告共用缓存清理，保留捕获数据及文件；复制调试信息、诊断日志、数据 / 备份文件夹及恢复默认配置 |
-| 软件更新 | 可选 Sparkle 2.10.1，签名 feed / archive 验证、检查更新与自动检查偏好、变更日志入口；未配置的开发构建明确使用手动 Releases 页面 |
+| 软件更新 | 可选 Sparkle 2.10.1 验证签名更新；普通构建也可检查公开 Releases 元数据并提示新版本，由用户打开下载页，提供启动通知与变更日志入口 |
 
 代理规则、文件夹、网络及 Protobuf 配置统一通过 `rules.json` 的私有原子文件提交；导入先验证，失败不发布新运行时快照。断点模板、自定义预览器和脚本运行时配置分别持久化。旧字段可继续解码。单份规则备份最多 16 MiB，Protobuf 描述符合计最多 8 MiB。私钥和 Gist Token 不纳入普通规则备份；外部代理认证配置会随对应配置备份，备份文件仅当前用户可读写。
 
@@ -50,11 +50,11 @@
 - Addons 支持受控本地 CommonJS / JSON，未内置 npm 安装器或 Node 文件系统。网络通过限定的 HTTP(S) API 访问，不是完整 Node 运行时；Axios 仅提供文档列出的 HTTP 子集。内置库和许可见 `ThirdParty/ScriptingLibraries.md`。
 - Inclusive 的 URL 路径匹配用于可读取 HTTP 请求的连接；不解密的 CONNECT 隧道只能按目标主机或根 URL 选择上游。
 - Compose WebSocket 用于握手和首条消息调试；完整持续会话和帧分析沿用抓包 WebSocket 详情。
-- 正文缩略导航基于已有分页，未引入完整 IDE 编辑器的字符级 Minimap。
+- 正文与 Raw 使用有界的原生连续文档和真实字符 Minimap；点击、拖动、键盘定位与正文视窗同步。预览仍保留原有大小上限，不额外加载未捕获字节。
 - RFC 8441 下游使用 HTTP/2 extended CONNECT，上游转换为 HTTP/1.1 WebSocket；没有宣称源站侧也使用 HTTP/2 WebSocket。异步帧脚本排空后结束输出，取消会丢弃迟到结果。
 - watchOS / tvOS / visionOS / SwiftUI Preview 提供实际 simctl 安装器及指南。标准设备集可直接列出；Preview 的自定义设备集目录需由用户选择，未猜测各 Xcode 版本隐藏路径。安装器不启动或删除设备。
 - Android VPN companion app 未实现。原评审中的“VPN 免 root 安装系统 CA”需要更正：VPN 转发与系统信任库写入是不同能力，Android 官方 `installCaCert` 安装的是用户 CA。现有用户 CA / adb root / Magisk 与调试应用方案继续可用。[Android CA 安装 API](https://developer.android.com/reference/android/app/admin/DevicePolicyManager#installCaCert(android.content.ComponentName,%20byte[]))、[Proxyman Android 证书指南](https://proxyman.com/docs/debug-devices/android-device)。
-- Sparkle 的发布 feed、公钥、Developer ID、公证及签名更新包由分发环境提供；当前仓库没有发布服务。普通开发构建保留手动更新入口。详见 `ThirdParty/Sparkle.md`。
+- Sparkle 的发布 feed、公钥、Developer ID、公证及签名更新包由分发环境提供；当前仓库没有发布服务。普通构建从 GitHub 的公开版本接口检查新版本，不自动下载或安装。详见 `ThirdParty/Sparkle.md` 及 [GitHub Releases API](https://docs.github.com/en/rest/releases/releases#get-the-latest-release)。
 - 保留中文及开源定位；未加入商业授权、Setapp、App Store 分发或遥测上报。
 
 ## 当前执行过的验证
@@ -78,6 +78,32 @@ git diff --check
 ```
 
 脚本测试直接运行 worker 使用的 JavaScript，并访问真实本地 HTTP 夹具；原生网络测试编译实际 `ScriptNetworkBridge.swift`，34 条断言覆盖请求、取消、超时、重定向、正文上限和并发限制。统计 / 文件夹草稿 28 项、Saved 档案 26 项、路由 / 规则复制 46 项、IP / CIDR 47 项原生模型检查通过；平台与存储边界使用最小测试桩，不替换被测算法。18 个代码生成目标的两个夹具完成 24 项语法检查，12 项因对应语言工具缺失跳过；Node / Go 生成代码另外通过真实本地 HTTP 校验。SOCKS5 / zstd 使用实际 C 实现。全部 Swift 源码通过 Swift 编译器的语法解析；只对上述可移植代码进行了编译和执行，未进行完整 macOS 类型检查。
+
+## 偏好设置对齐
+
+设置改为 970×750 原生窗口、220 点分类侧栏与 52 点标题导航，深色配色按参考图的 ICC 转为 sRGB 后取样。常规、外观、MCP、工具、网络扩展、高级页面连接实际状态；隐私、GitHub、Workspace 和产品页提供本项目已有操作。额外 SSL、LAN、mTLS、旁路、外部代理和捕获上限保留在可搜索的高级设置中。
+
+- 请求/响应上下或左右布局；字号、比例/等宽字体、Tab、字符缩略图、末行外滚动、含时区日期、主题、四款自有图标和独立外观重置。
+- 独立启动录制、退出确认、语言切换、真实 CA 指纹与信任检测。待应用端口不进入运行地址或生成命令。
+- MCP 运行中启停与 Claude Code / Codex / Manual 配置；默认专属脱敏覆盖流量、常见凭证、URL、正文和规则，内部记录不变。代码生成副本修正脱敏后的长度与编码。
+- 原始请求头偏好恢复内容相关头，始终过滤代理凭据及连接专用头；HTTP/1、HTTP/2 的规则诊断头策略一致。
+- 自动清理默认阈值 3072 MiB、周期 5 分钟，只处理较早已完成的实时请求；每轮有界，Saved、导入会话和处理中请求保留。实时速率使用单调计数，旧记录淘汰不抵消流量。
+- 模拟器来源使用结构字段识别并随会话保存；关闭应用时可选恢复旧代理。开启网络扩展先恢复系统代理，保持两种模式互斥。
+
+可在当前 Linux 环境执行的本轮回归：
+
+```sh
+python3 Scripts/test_preferences_models.py
+python3 Scripts/test_display_models.py
+python3 Scripts/test_system_retention_models.py
+python3 Scripts/test_mcp_privacy.py
+python3 Scripts/test_mcp_copy_commands.py
+python3 Scripts/test_diagnostic_headers.py
+python3 Scripts/test_release_updates.py
+python3 Scripts/generate_localizations.py --check
+```
+
+这些脚本编译可移植生产代码，平台依赖处使用有限替身；不能替代 macOS 的完整类型检查。原生界面可在 Mac 构建后通过 `Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --appearance both` 输出真实 PNG 再与参考图比较。当前 Linux 未执行 GUI、真实扩展激活或最终像素验收。
 
 ## macOS 验收
 

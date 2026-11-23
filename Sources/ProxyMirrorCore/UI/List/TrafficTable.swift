@@ -28,8 +28,10 @@ struct TrafficTable: NSViewRepresentable {
         table.allowsMultipleSelection = true
         table.allowsEmptySelection = true
         table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
-        table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("request")))
-        table.setAccessibilityLabel("请求列表")
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("request"))
+        column.title = Strings.Traffic.request
+        table.addTableColumn(column)
+        table.setAccessibilityLabel(Strings.Traffic.requestList)
 
         let coordinator = context.coordinator
         coordinator.attach(to: table)
@@ -44,6 +46,12 @@ struct TrafficTable: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let table = scroll.documentView as? Table else { return }
+        table.setAccessibilityLabel(Strings.Traffic.requestList)
+        table.tableColumns.first?.title = Strings.Traffic.request
+        if table.rowHeight != ProxymanTheme.rowHeight {
+            table.rowHeight = ProxymanTheme.rowHeight
+            table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows))
+        }
         table.showsAlternatingRows = presentationSettings.showAlternatingRows
         table.needsDisplay = true
         context.coordinator.update(self, table: table)

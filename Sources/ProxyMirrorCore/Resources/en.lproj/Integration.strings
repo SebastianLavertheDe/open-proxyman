@@ -1,0 +1,17 @@
+"cli_installed" = "Command line installed at %@. Open a new terminal to use proxymirror-cli.";
+"http_mcp_details" = "HTTP MCP listens only on this Mac, and its token changes each launch. You can also use proxymirror-cli mcp stdio without saving a token.";
+"copy_configuration" = "Copy Configuration";
+"close" = "Close";
+"mcp_not_running" = "MCP is not running. Enable it in Settings > MCP.";
+"mcp_start_failed" = "Unable to start the MCP service: %@";
+"external_target_limit" = "The inclusion list supports up to 256 targets.";
+"external_invalid_target" = "Invalid included target: %@";
+"external_inclusive_required" = "Inclusive mode requires at least one target host or URL.";
+"external_invalid_bypass" = "Invalid direct host: %@";
+"external_pac_required" = "Enter an HTTP, HTTPS or local-file PAC URL.";
+"external_host_required" = "Enter a hostname, IPv4 or IPv6 address.";
+"external_port_range" = "The port must be between 1 and 65535.";
+"external_credentials_required" = "Enter the proxy username and password.";
+"external_socks_credentials_size" = "The SOCKS5 username and password are limited to 255 bytes each.";
+"external_basic_credentials" = "The HTTP Basic username cannot contain a colon. Credentials are limited to 4096 bytes in total.";
+"external_control_characters" = "Proxy credentials contain control characters.";

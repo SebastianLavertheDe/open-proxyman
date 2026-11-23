@@ -83,7 +83,7 @@ enum UpstreamTrust {
         if let identity {
             let now = Date()
             guard identity.validFrom <= now, identity.expiry > now else {
-                throw ClientTLSIdentityError("目标主机配置的客户端证书未生效或已过期。")
+                throw ClientTLSIdentityError(OperationIssue.systemTrustAnchorsTheClientCertificateConfiguredForTheTargetHost)
             }
             let key = IdentityCacheKey(id: identity.id, http2: enableHTTP2)
             if let context = identityContexts[key] { return context }

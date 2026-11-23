@@ -5,7 +5,7 @@ import ProxyMirrorSystemProxy
 enum Installer {
     static func install(from source: URL, uid: uid_t, appHash: String) throws {
         guard uid > 0, SystemProxyService.isValidHash(appHash) else {
-            throw SystemProxyError("系统代理服务安装参数无效。")
+            throw SystemProxyError(.invalidArguments)
         }
         let lock = try SystemProxyService.acquireLock()
         defer { Darwin.close(lock) }
@@ -60,7 +60,7 @@ enum Installer {
         }
         guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
               info.st_uid == 0, info.st_mode & 0o022 == 0 else {
-            throw SystemProxyError("macOS 系统代理服务目录的所有者或权限不正确。")
+            throw SystemProxyError(.invalidDirectory)
         }
     }
 
@@ -72,7 +72,7 @@ enum Installer {
     private static func write(_ data: Data, to url: URL, permissions: mode_t) throws {
         try data.write(to: url, options: .atomic)
         guard chown(url.path, 0, 0) == 0, chmod(url.path, permissions) == 0 else {
-            throw SystemProxyError("无法设置系统代理服务文件权限。")
+            throw SystemProxyError(.permissionsFailed)
         }
     }
 
@@ -91,14 +91,14 @@ enum Installer {
     private static func unload() throws -> Bool {
         guard try launchctl(["print", target]) == 0 else { return false }
         guard try launchctl(["bootout", target]) == 0 else {
-            throw SystemProxyError("无法停止已安装的系统代理服务。")
+            throw SystemProxyError(.stopFailed)
         }
         return true
     }
 
     private static func bootstrap() throws {
         guard try launchctl(["bootstrap", "system", SystemProxyService.plist.path]) == 0 else {
-            throw SystemProxyError("macOS 未能加载系统代理服务，请在系统设置中检查后台项目权限。")
+            throw SystemProxyError(.loadFailed)
         }
     }
 

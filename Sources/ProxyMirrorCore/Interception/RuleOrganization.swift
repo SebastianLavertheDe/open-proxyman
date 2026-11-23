@@ -16,42 +16,44 @@ struct RuleOrganization: Codable, Equatable {
     /// nil denotes the whole backup; single-tool exports explicitly scope their metadata.
     var includedTools: [String]?
 
-    var validationError: String? {
+    var validationIssue: OperationIssue? {
         guard folders.count <= 2000, assignments.count <= 50_000,
-              Set(folders.map(\.id)).count == folders.count else { return "规则文件夹数量过多或 ID 重复。" }
+              Set(folders.map(\.id)).count == folders.count else { return OperationIssue.modelFolderCountInvalid }
         let byID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
         for folder in folders {
             guard !folder.tool.isEmpty, folder.tool.utf8.count <= 128,
                   !folder.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  folder.name.utf8.count <= 512 else { return "文件夹需要有效工具名和名称。" }
+                  folder.name.utf8.count <= 512 else { return OperationIssue.modelFolderNameInvalid }
             var ancestor = folder.parentID
             var seen: Set<UUID> = [folder.id]
             while let id = ancestor {
                 guard let parent = byID[id], parent.tool == folder.tool, seen.insert(id).inserted else {
-                    return "文件夹父级不存在、跨工具或形成循环。"
+                    return OperationIssue.modelFolderParentInvalid
                 }
                 ancestor = parent.parentID
-                guard seen.count <= 32 else { return "文件夹最多嵌套 32 层。" }
+                guard seen.count <= 32 else { return OperationIssue.modelFolderDepthLimit }
             }
         }
         for (key, value) in assignments {
             guard let id = UUID(uuidString: value), let folder = byID[id], key.hasPrefix(folder.tool + ":") else {
-                return "规则归属引用了无效文件夹。"
+                return OperationIssue.modelFolderAssignmentInvalid
             }
         }
         guard disabledTools.count <= 128, disabledTools.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }) else {
-            return "工具开关列表无效。"
+            return OperationIssue.modelFolderToolsInvalid
         }
         if let includedTools {
             let scope = Set(includedTools)
             guard includedTools.count <= 128, includedTools.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }),
                   folders.allSatisfy({ scope.contains($0.tool) }), disabledTools.allSatisfy(scope.contains),
                   assignments.keys.allSatisfy({ key in scope.contains(String(key.split(separator: ":", maxSplits: 1).first ?? "")) }) else {
-                return "备份工具范围无效或包含范围外的元数据。"
+                return OperationIssue.modelFolderScopeInvalid
             }
         }
         return nil
     }
+    var validationError: String? { validationIssue?.diagnostic }
+    var localizedValidationError: String? { validationIssue?.localizedPresentation }
 
     var disabledRuleKeys: Set<String> {
         let byID = Dictionary(folders.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
@@ -107,7 +109,7 @@ final class RuleOrganizationStore: @unchecked Sendable {
 
     private init() {
         let consolidated: RuleBackup? = RulesFileIO.load("rules.json")
-        let loaded = consolidated?.organization ?? RulesFileIO.load("rule-organization.json") ?? RuleOrganization()
+        let loaded = consolidated?.organization ?? RuleOrganization()
         value = loaded.validationError == nil ? loaded : RuleOrganization()
         disabledAssignments = value.disabledRuleKeys
     }
@@ -128,7 +130,7 @@ final class RuleOrganizationStore: @unchecked Sendable {
 
     func setFolderEnabled(id: UUID, enabled: Bool) throws {
         try mutate { state in
-            guard let index = state.folders.firstIndex(where: { $0.id == id }) else { throw OrganizationError("文件夹不存在。") }
+            guard let index = state.folders.firstIndex(where: { $0.id == id }) else { throw OrganizationError(OperationIssue.modelFolderMissing) }
             state.folders[index].enabled = enabled
         }
     }
@@ -157,21 +159,21 @@ final class RuleOrganizationStore: @unchecked Sendable {
 
     func renameFolder(id: UUID, name: String) throws {
         try mutate { state in
-            guard let index = state.folders.firstIndex(where: { $0.id == id }) else { throw OrganizationError("文件夹不存在。") }
+            guard let index = state.folders.firstIndex(where: { $0.id == id }) else { throw OrganizationError(OperationIssue.modelFolderMissing) }
             state.folders[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
     func moveFolder(id: UUID, parentID: UUID?) throws {
         try mutate { state in
-            guard let index = state.folders.firstIndex(where: { $0.id == id }) else { throw OrganizationError("文件夹不存在。") }
+            guard let index = state.folders.firstIndex(where: { $0.id == id }) else { throw OrganizationError(OperationIssue.modelFolderMissing) }
             state.folders[index].parentID = parentID
         }
     }
 
     func deleteFolder(id: UUID) throws {
         try mutate { state in
-            guard state.folders.contains(where: { $0.id == id }) else { throw OrganizationError("文件夹不存在。") }
+            guard state.folders.contains(where: { $0.id == id }) else { throw OrganizationError(OperationIssue.modelFolderMissing) }
             var deleted: Set<UUID> = [id]
             var previous = 0
             while deleted.count != previous {
@@ -185,10 +187,10 @@ final class RuleOrganizationStore: @unchecked Sendable {
 
     func assign(ruleID: String, tool: String, folderID: UUID?) throws {
         try mutate { state in
-            guard !ruleID.isEmpty, ruleID.utf8.count <= 512 else { throw OrganizationError("规则 ID 无效。") }
+            guard !ruleID.isEmpty, ruleID.utf8.count <= 512 else { throw OrganizationError(OperationIssue.modelFolderRuleIdInvalid) }
             if let folderID {
                 guard state.folders.contains(where: { $0.id == folderID && $0.tool == tool }) else {
-                    throw OrganizationError("目标文件夹不存在或属于其他工具。")
+                    throw OrganizationError(OperationIssue.modelFolderTargetInvalid)
                 }
                 state.assignments[tool + ":" + ruleID] = folderID.uuidString
             } else {
@@ -212,15 +214,17 @@ final class RuleOrganizationStore: @unchecked Sendable {
         mutationLock.lock(); defer { mutationLock.unlock() }
         var replacement = snapshot()
         try action(&replacement)
-        if let error = replacement.validationError { throw OrganizationError(error) }
+        if let error = replacement.validationIssue { throw OrganizationError(error) }
         let store = RulesStore.shared
         var backup = store.backup()
         backup.organization = replacement
         try store.install(backup)
     }
 
-    struct OrganizationError: LocalizedError {
-        let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+    struct OrganizationError: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ diagnostic: String) { operationIssue = .technical(diagnostic) }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 }

@@ -38,16 +38,16 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
     func start(port: UInt16, token: String) async throws {
         try Task.checkCancellation()
         guard startTask == nil, stopTask == nil, !needsStop else {
-            throw Failure("请先停止当前的透明抓包。")
+            throw Failure(OperationIssue.transparentProxyControllerStopTheCurrentTransparentCaptureFirst)
         }
         guard Self.isAvailable, let hostID = Bundle.main.bundleIdentifier else {
-            let failure = Failure("此应用包缺少透明代理系统扩展，请使用带扩展的签名版本。")
-            state = .failed(failure.message)
+            let failure = Failure(OperationIssue.transparentProxyControllerThisAppBundleDoesNotContainTheTransparent)
+            state = .failed(failure.operationIssue.localizedPresentation)
             throw failure
         }
         guard port != 0, !token.isEmpty else {
-            let failure = Failure("透明抓包的本地监听配置无效。")
-            state = .failed(failure.message)
+            let failure = Failure(OperationIssue.transparentProxyControllerTheLocalListenerConfigurationForTransparentCaptureIs)
+            state = .failed(failure.operationIssue.localizedPresentation)
             throw failure
         }
 
@@ -102,7 +102,7 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
             ]
 
             let profile = NETransparentProxyManager()
-            profile.localizedDescription = "ProxyMirror 透明抓包"
+            profile.localizedDescription = Strings.Errors.transparentProxyControllerProxymirrorTransparentCapture
             profile.protocolConfiguration = configuration
             profile.isEnabled = true
             manager = profile
@@ -116,18 +116,20 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
             try Task.checkCancellation()
             observeStatus()
             if isConnectionStopping {
-                throw Failure("透明代理连接已断开。")
+                throw Failure(OperationIssue.transparentProxyControllerTheTransparentProxyConnectionWasDisconnected)
             }
             state = .running
         } catch {
-            let failure = description(for: error, operation: "启动透明抓包失败")
+            let failure = issue(for: error, operation: .transparentProxyControllerUnableToStartTransparentCapture)
             if stopTask == nil {
-                let finalState: State = error is CancellationError ? .idle : .failed(failure)
+                let finalState: State = error is CancellationError ? .idle : .failed(failure.localizedPresentation)
                 do {
                     try await stopCapture(endingIn: finalState, waitForStart: false)
                 } catch {
-                    let combined = Failure("\(failure) \(error.localizedDescription)")
-                    state = .failed(combined.message)
+                    let cleanup = issue(for: error, operation: .transparentProxyControllerUnableToStopTransparentCapture)
+                    let combined = Failure(OperationIssue.transparentCaptureCleanupFailed(failure.diagnostic, cleanup.diagnostic)
+                        .withPresentation { Strings.Errors.transparentCaptureCleanupFailed(failure.localizedPresentation, cleanup.localizedPresentation) })
+                    state = .failed(combined.operationIssue.localizedPresentation)
                     throw combined
                 }
             }
@@ -158,8 +160,8 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
                 needsStop = false
                 state = finalState
             } catch {
-                let failure = Failure(description(for: error, operation: "停止透明抓包失败"))
-                state = .failed(failure.message)
+                let failure = Failure(issue(for: error, operation: .transparentProxyControllerUnableToStopTransparentCapture))
+                state = .failed(failure.operationIssue.localizedPresentation)
                 throw failure
             }
         }
@@ -208,15 +210,15 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
             case (true, .connecting), (true, .reasserting):
                 beganConnecting = true
             case (true, .invalid), (true, .disconnecting):
-                throw Failure("透明代理连接建立失败。")
+                throw Failure(OperationIssue.transparentProxyControllerUnableToEstablishTheTransparentProxyConnection)
             case (true, .disconnected) where beganConnecting:
-                throw Failure("透明代理连接建立失败。")
+                throw Failure(OperationIssue.transparentProxyControllerUnableToEstablishTheTransparentProxyConnection)
             default:
                 break
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw Failure(connected ? "等待透明代理连接超时。" : "等待透明代理断开超时，请重试停止。")
+        throw Failure(connected ? OperationIssue.transparentProxyControllerTimedOutWaitingForTheTransparentProxyConnection : OperationIssue.transparentProxyControllerTimedOutWaitingForTheTransparentProxyTo)
     }
 
     private var isConnectionStopping: Bool {
@@ -232,7 +234,7 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.state == .running, self.isConnectionStopping else { return }
-                try? await self.stopCapture(endingIn: .failed("透明代理连接已断开。"))
+                try? await self.stopCapture(endingIn: .failed(OperationIssue.transparentProxyControllerTheTransparentProxyConnectionWasDisconnected))
             }
         }
     }
@@ -277,14 +279,14 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
         case .completed:
             finishActivation(request, with: .success(()))
         case .willCompleteAfterReboot:
-            finishActivation(request, with: .failure(Failure("请重启 Mac 以完成透明代理系统扩展的激活。")))
+            finishActivation(request, with: .failure(Failure(OperationIssue.transparentProxyControllerRestartYourMacToFinishActivatingTheTransparent)))
         @unknown default:
-            finishActivation(request, with: .failure(Failure("系统扩展返回了未知的激活状态。")))
+            finishActivation(request, with: .failure(Failure(OperationIssue.transparentProxyControllerTheSystemExtensionReturnedAnUnknownActivationState)))
         }
     }
 
     func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
-        finishActivation(request, with: .failure(Failure("激活透明代理系统扩展失败。\(error.localizedDescription)")))
+        finishActivation(request, with: .failure(Failure(OperationIssue.transparentProxyControllerUnableToActivateTheTransparentProxySystemExtension(String(error.localizedDescription)))))
     }
 
     func request(
@@ -295,18 +297,22 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
         request === activationRequest ? .replace : .cancel
     }
 
-    private func description(for error: Error, operation: String) -> String {
-        if let failure = error as? Failure { return failure.message }
-        if error is CancellationError { return "已取消透明抓包。" }
+    private func issue(for error: Error, operation: OperationIssue) -> OperationIssue {
+        if let failure = error as? OperationIssueProviding { return failure.operationIssue }
+        if error is CancellationError { return .transparentProxyControllerTransparentCaptureWasCancelled }
         let systemError = error as NSError
-        return "\(operation)（\(systemError.domain) \(systemError.code)）。"
+        let domain = systemError.domain
+        let code = systemError.code
+        return OperationIssue.transparentSystemOperationFailed(operation.diagnostic, domain, code)
+            .withPresentation { Strings.Errors.transparentSystemOperationFailed(operation.localizedPresentation, domain, code) }
     }
 
-    private struct Failure: LocalizedError {
-        let message: String
-
-        init(_ message: String) { self.message = message }
-
-        var errorDescription: String? { message }
+    private struct Failure: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ message: String) { operationIssue = .technical(message) }
+        var message: String { operationIssue.diagnostic }
+        var text: String { operationIssue.diagnostic }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 }

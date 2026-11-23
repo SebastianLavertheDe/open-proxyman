@@ -1,0 +1,9 @@
+"body_text" = "Body Text";
+"highlight_red" = "Red";
+"highlight_yellow" = "Yellow";
+"highlight_green" = "Green";
+"highlight_blue" = "Blue";
+"highlight_purple" = "Purple";
+"highlight_gray" = "Gray";
+"body_minimap" = "Body Minimap";
+"minimap_help" = "Click, drag, or use the arrow keys to navigate the body. The highlighted area shows the current viewport.";

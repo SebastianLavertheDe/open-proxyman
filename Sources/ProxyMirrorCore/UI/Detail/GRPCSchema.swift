@@ -22,16 +22,16 @@ struct GRPCSchema: Sendable {
 
     static func load(_ url: URL) throws -> GRPCSchema {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true else { throw GRPCInspectionError("请选择普通的描述符文件。") }
+        guard values.isRegularFile == true else { throw GRPCInspectionError(Strings.Detail.chooseARegularDescriptorFile) }
         if let size = values.fileSize, size > maxDescriptorBytes {
-            throw GRPCInspectionError("描述符文件超过 4 MiB。")
+            throw GRPCInspectionError(Strings.Detail.theDescriptorFileExceeds4Mib)
         }
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         var bytes = Data()
         while let next = try file.read(upToCount: 64 * 1024), !next.isEmpty {
             guard bytes.count + next.count <= maxDescriptorBytes else {
-                throw GRPCInspectionError("描述符文件超过 4 MiB。")
+                throw GRPCInspectionError(Strings.Detail.theDescriptorFileExceeds4Mib)
             }
             bytes.append(next)
         }
@@ -39,7 +39,7 @@ struct GRPCSchema: Sendable {
     }
 
     static func parse(_ data: Data) throws -> GRPCSchema {
-        guard data.count <= maxDescriptorBytes else { throw GRPCInspectionError("描述符文件超过 4 MiB。") }
+        guard data.count <= maxDescriptorBytes else { throw GRPCInspectionError(Strings.Detail.theDescriptorFileExceeds4Mib) }
         let files = try ProtoWire.fields(data).messages(1)
         var schema = GRPCSchema()
         for file in files {
@@ -63,7 +63,7 @@ struct GRPCSchema: Sendable {
                 }
             }
         }
-        guard !schema.messages.isEmpty else { throw GRPCInspectionError("描述符中没有可用的消息类型。") }
+        guard !schema.messages.isEmpty else { throw GRPCInspectionError(Strings.Detail.theDescriptorContainsNoUsableMessageTypes) }
         return schema
     }
 
@@ -107,14 +107,14 @@ struct GRPCSchema: Sendable {
 
     private mutating func addMessage(_ bytes: Data, scope: String, depth: Int) throws {
         guard depth < 32, messages.count < 8192 else {
-            throw GRPCInspectionError("描述符包含过多类型或嵌套层级。")
+            throw GRPCInspectionError(Strings.Detail.theDescriptorContainsTooManyTypesOrNestingLevels)
         }
         let descriptor = try ProtoWire.fields(bytes)
         guard let name = descriptor.text(1), !name.isEmpty else {
-            throw GRPCInspectionError("描述符包含未命名的消息。")
+            throw GRPCInspectionError(Strings.Detail.theDescriptorContainsAnUnnamedMessage)
         }
         let qualified = Self.qualified(name, in: scope)
-        guard messages[qualified] == nil else { throw GRPCInspectionError("重复的消息类型：\(qualified)") }
+        guard messages[qualified] == nil else { throw GRPCInspectionError(Strings.Detail.duplicateMessageType(String(describing: qualified))) }
         var declared: [Int: Field] = [:]
         for bytes in descriptor.messages(2) {
             let properties = try ProtoWire.fields(bytes)
@@ -131,7 +131,7 @@ struct GRPCSchema: Sendable {
     }
 
     private mutating func addEnum(_ bytes: Data, scope: String) throws {
-        guard enums.count < 8192 else { throw GRPCInspectionError("描述符包含过多枚举类型。") }
+        guard enums.count < 8192 else { throw GRPCInspectionError(Strings.Detail.theDescriptorContainsTooManyEnumTypes) }
         let descriptor = try ProtoWire.fields(bytes)
         guard let name = descriptor.text(1), !name.isEmpty else { return }
         var values: [Int32: String] = [:]
@@ -147,7 +147,7 @@ struct GRPCSchema: Sendable {
 
 enum GRPCProtobuf {
     static func describe(_ data: Data, type: String? = nil, schema: GRPCSchema? = nil) throws -> String {
-        guard data.count <= GRPCFrames.maxPayload else { throw GRPCInspectionError("消息超过 1 MiB 解码上限。") }
+        guard data.count <= GRPCFrames.maxPayload else { throw GRPCInspectionError(Strings.Detail.theMessageExceedsThe1MibDecodingLimit) }
         var renderer = Renderer(schema: schema)
         try renderer.render(data, type: type.map { GRPCSchema.normalized($0) }, depth: 0)
         return renderer.lines.joined(separator: "\n")
@@ -159,7 +159,7 @@ enum GRPCProtobuf {
     }
 
     static func describeHTTP(_ data: Data, isError: Bool) throws -> HTTPDescription {
-        guard data.count <= GRPCFrames.maxPayload else { throw GRPCInspectionError("Protobuf 正文超过 1 MiB 解码上限。") }
+        guard data.count <= GRPCFrames.maxPayload else { throw GRPCInspectionError(Strings.Detail.theProtobufBodyExceedsThe1MibDecodingLimit) }
         let isStatus = isError && looksLikeGoogleStatus(data)
         let type = isStatus ? GRPCSchema.googleStatusType : nil
         var renderer = Renderer(schema: isStatus ? .commonGoogleErrors : nil, showUnknownText: true)
@@ -197,7 +197,7 @@ enum GRPCProtobuf {
             while !reader.finished, !exhausted {
                 try Task.checkCancellation()
                 if remaining == 0 {
-                    lines.append(indent + "…（字段预览上限）")
+                    lines.append(indent + Strings.Detail.fieldPreviewLimit)
                     exhausted = true
                     return
                 }
@@ -213,7 +213,7 @@ enum GRPCProtobuf {
                     (field == nil && showUnknownText && Self.unknownText(bytes) == nil &&
                      !bytes.isEmpty && (try? ProtoWire.fields(bytes))?.isEmpty == false) {
                     if depth >= 16 {
-                        lines.append(prefix + Self.byteSummary(bytes) + "（嵌套层级上限）")
+                        lines.append(prefix + Self.byteSummary(bytes) + Strings.Detail.nestingLimit)
                     } else {
                         lines.append(prefix + "{")
                         try render(bytes, type: nestedType, depth: depth + 1)
@@ -233,7 +233,7 @@ enum GRPCProtobuf {
                     lines.append(prefix + "[" + values.joined(separator: ", ") + "]")
                 default:
                     let validWire = field.map { $0.type.wire == record.value.wire } ?? true
-                    let suffix = validWire ? "" : "（wire type 与描述符不符）"
+                    let suffix = validWire ? "" : Strings.Detail.wireTypeDoesNotMatchDescriptor
                     lines.append(prefix + scalar(record.value, field: validWire ? field : nil) + suffix)
                 }
             }
@@ -309,7 +309,7 @@ enum GRPCProtobuf {
 
         private static func byteSummary(_ data: Data) -> String {
             let hex = data.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " ")
-            return "\(data.count) 字节" + (hex.isEmpty ? "" : " · " + hex + (data.count > 24 ? " …" : ""))
+            return Strings.Detail.bytes2(data.count) + (hex.isEmpty ? "" : " · " + hex + (data.count > 24 ? " …" : ""))
         }
     }
 }
@@ -380,7 +380,7 @@ private struct ProtoWire {
         var reader = Self(data)
         var result: [WireField] = []
         while !reader.finished {
-            guard result.count < 32_768 else { throw GRPCInspectionError("描述符字段过多。") }
+            guard result.count < 32_768 else { throw GRPCInspectionError(Strings.Detail.theDescriptorContainsTooManyFields) }
             if result.count.isMultiple(of: 128) { try Task.checkCancellation() }
             result.append(try reader.field())
         }
@@ -390,7 +390,7 @@ private struct ProtoWire {
     mutating func field() throws -> WireField {
         let key = try varint()
         let number = key >> 3
-        guard number > 0, number <= 536_870_911 else { throw invalid("无效字段编号") }
+        guard number > 0, number <= 536_870_911 else { throw invalid(Strings.Detail.invalidFieldNumber) }
         return WireField(number: Int(number), value: try value(wire: key & 7))
     }
 
@@ -400,31 +400,31 @@ private struct ProtoWire {
         case 1: return .fixed64(try fixed(8))
         case 2:
             let length = try varint()
-            guard length <= UInt64(data.endIndex - cursor) else { throw invalid("字段长度超过剩余数据") }
+            guard length <= UInt64(data.endIndex - cursor) else { throw invalid(Strings.Detail.fieldLengthExceedsTheRemainingData) }
             let end = cursor + Int(length)
             let bytes = data[cursor..<end]
             cursor = end
             return .bytes(bytes)
         case 5: return .fixed32(UInt32(try fixed(4)))
-        default: throw invalid("暂不支持 wire type \(wire)")
+        default: throw invalid(Strings.Detail.unsupportedWireType(Int(wire)))
         }
     }
 
     private mutating func varint() throws -> UInt64 {
         var result: UInt64 = 0
         for index in 0..<10 {
-            guard !finished else { throw invalid("varint 已截断") }
+            guard !finished else { throw invalid(Strings.Detail.truncatedVarint) }
             let byte = data[cursor]
             cursor += 1
-            guard index < 9 || byte <= 1 else { throw invalid("varint 溢出") }
+            guard index < 9 || byte <= 1 else { throw invalid(Strings.Detail.varintOverflow) }
             result |= UInt64(byte & 127) << (index * 7)
             if byte & 128 == 0 { return result }
         }
-        throw invalid("varint 溢出")
+        throw invalid(Strings.Detail.varintOverflow)
     }
 
     private mutating func fixed(_ count: Int) throws -> UInt64 {
-        guard count <= data.endIndex - cursor else { throw invalid("定长字段已截断") }
+        guard count <= data.endIndex - cursor else { throw invalid(Strings.Detail.truncatedFixedWidthField) }
         var value: UInt64 = 0
         for index in 0..<count {
             value |= UInt64(data[cursor + index]) << (index * 8)
@@ -434,6 +434,6 @@ private struct ProtoWire {
     }
 
     private func invalid(_ issue: String) -> GRPCInspectionError {
-        GRPCInspectionError("Protobuf 偏移 \(cursor - data.startIndex) · \(issue)。")
+        GRPCInspectionError(Strings.Detail.protobufOffset(cursor - data.startIndex, issue))
     }
 }

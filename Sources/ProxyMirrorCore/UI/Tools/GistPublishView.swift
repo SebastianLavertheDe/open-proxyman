@@ -4,7 +4,7 @@ struct GistPublishView: View {
     let transactions: [Transaction]
     @Environment(\.dismiss) private var dismiss
     @State private var token = ""
-    @State private var description = "Captured with ProxyMirror"
+    @State private var description = Strings.Tools.gistDefaultDescription
     @State private var isPublic = false
     @State private var rememberToken = true
     @State private var preview = ""
@@ -16,46 +16,46 @@ struct GistPublishView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("发布到 GitHub Gist").font(.headline)
+                Text(Strings.Tools.publishToGithubGist).font(.headline)
                 Spacer()
-                Text("\(transactions.count) 个请求").foregroundStyle(.secondary)
+                Text(Strings.Tools.requests(Int(transactions.count))).foregroundStyle(.secondary)
             }
             HStack {
-                SecureField("GitHub Token（Gists 写入权限）", text: $token)
-                Link("创建 Token", destination: URL(string: "https://github.com/settings/tokens/new?scopes=gist&description=ProxyMirror")!)
+                SecureField(Strings.Tools.githubTokenGistsWritePermission, text: $token)
+                Link(Strings.Tools.createToken, destination: URL(string: "https://github.com/settings/tokens/new?scopes=gist&description=ProxyMirror")!)
             }
             HStack {
-                Toggle("保存到钥匙串", isOn: $rememberToken)
-                Button("移除已保存 Token") {
+                Toggle(Strings.Tools.saveToKeychain, isOn: $rememberToken)
+                Button(Strings.Tools.removeSavedToken) {
                     do { try GistService.deleteToken(); token = "" }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = LocalizedErrorPresentation.message(for: error) }
                 }
                 Spacer()
-                Toggle("公开 Gist", isOn: $isPublic)
+                Toggle(Strings.Tools.publicGist, isOn: $isPublic)
             }
-            TextField("描述", text: $description)
-            Text("Authorization、Cookie、Set-Cookie 与常见 API Key 请求头已脱敏。URL、正文和注释保持原样，请检查下方预览。非公开 Gist 仍可由知道链接的人访问。")
+            TextField(Strings.Tools.description, text: $description)
+            Text(Strings.Tools.authorizationCookieSetCookieAndCommonApiKeyHeaders)
                 .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $preview).font(.system(.body, design: .monospaced))
-                .accessibilityLabel("发布前 HAR 预览")
+                .accessibilityLabel(Strings.Tools.harPreviewBeforePublishing)
                 .overlay(Rectangle().strokeBorder(.quaternary))
             if let error { Text(error).font(.callout).foregroundStyle(.red) }
-            if let publishedURL { Link("打开已发布 Gist", destination: publishedURL).textSelection(.enabled) }
+            if let publishedURL { Link(Strings.Tools.openPublishedGist, destination: publishedURL).textSelection(.enabled) }
             HStack {
-                Button("复制预览") { CopyPaste.copy(preview) }.disabled(preview.isEmpty)
+                Button(Strings.Tools.copyPreview) { CopyPaste.copy(preview) }.disabled(preview.isEmpty)
                 Spacer()
                 if publishing { ProgressView().controlSize(.small) }
-                Button(publishing ? "取消发布" : "关闭") {
+                Button(publishing ? Strings.Tools.cancelPublishing : Strings.Tools.close) {
                     if publishing { publishTask?.cancel() } else { dismiss() }
                 }.keyboardShortcut(.cancelAction)
-                Button("发布") { publish() }.buttonStyle(.borderedProminent)
+                Button(Strings.Tools.publish) { publish() }.buttonStyle(.borderedProminent)
                     .disabled(publishing || preview.isEmpty || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || publishedURL != nil)
             }
         }
         .padding(18).frame(width: 740, height: 580)
         .onAppear {
             do { preview = try GistService.preview(transactions); token = try GistService.savedToken() ?? "" }
-            catch { self.error = error.localizedDescription }
+            catch { self.error = LocalizedErrorPresentation.message(for: error) }
         }
         .onDisappear { publishTask?.cancel() }
     }
@@ -68,8 +68,8 @@ struct GistPublishView: View {
                 if rememberToken { try GistService.saveToken(token.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 else { try GistService.deleteToken() }
                 publishedURL = try await GistService.publish(preview: preview, description: description, isPublic: isPublic, token: token)
-            } catch is CancellationError { self.error = "已取消。若请求已送达 GitHub，请先检查账号中的 Gist，避免重复发布。" }
-            catch { self.error = error.localizedDescription }
+            } catch is CancellationError { self.error = Strings.Tools.canceledIfTheRequestReachedGithubCheckYourAccount }
+            catch { self.error = LocalizedErrorPresentation.message(for: error) }
         }
     }
 }

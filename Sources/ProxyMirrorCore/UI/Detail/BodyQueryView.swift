@@ -15,7 +15,7 @@ struct BodyQueryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Picker("查询语言", selection: $language) {
+                Picker(Strings.Detail.queryLanguage, selection: $language) {
                     ForEach(BodyQuery.Language.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .labelsHidden()
@@ -25,19 +25,19 @@ struct BodyQueryView: View {
                     clearResult()
                 }
                 if worker == nil {
-                    Button("运行") { run() }
+                    Button(Strings.Detail.run) { run() }
                         .disabled(unavailableReason != nil || expression.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 } else {
-                    Button("取消") {
+                    Button(Strings.Detail.cancel) {
                         clearResult()
-                        message = "查询已取消。"
+                        message = Strings.Detail.queryCancelled
                     }
                 }
             }
             TextField(language == .jsonPath ? "$.items[*].name" : ".items[] | .name", text: $expression)
                 .font(.system(.caption, design: .monospaced))
                 .textFieldStyle(.roundedBorder)
-                .accessibilityLabel("查询表达式")
+                .accessibilityLabel(Strings.Detail.queryExpression)
                 .onSubmit { if worker == nil { run() } }
                 .onChange(of: expression) { _ in clearResult() }
             if let detail = unavailableReason ?? message {
@@ -47,24 +47,24 @@ struct BodyQueryView: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             } else if worker != nil {
-                ProgressView("正在查询…").font(.caption).controlSize(.small)
+                ProgressView(Strings.Detail.querying).font(.caption).controlSize(.small)
             }
             if let result {
                 HStack {
                     if let count = result.matches {
-                        Text("匹配 \(count) 项")
+                        Text(Strings.Detail.matches(count))
                     } else {
-                        Text(result.text.isEmpty ? "无输出" : "查询结果")
+                        Text(result.text.isEmpty ? Strings.Detail.noOutput : Strings.Detail.queryResults)
                     }
                     Spacer()
                     if !result.text.isEmpty {
-                        Button("复制结果") { CopyPaste.copy(result.text) }.buttonStyle(.plain)
+                        Button(Strings.Detail.copyResult) { CopyPaste.copy(result.text) }.buttonStyle(.plain)
                     }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 if result.truncated {
-                    Text("结果预览限前 512 KiB。")
+                    Text(Strings.Detail.resultPreviewIsLimitedToTheFirst512Kib)
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -112,7 +112,7 @@ struct BodyQueryView: View {
                 result = value
             case .failure(let error):
                 failed = !(error is CancellationError)
-                message = failed ? error.localizedDescription : "查询已取消。"
+                message = failed ? LocalizedErrorPresentation.message(for: error) : Strings.Detail.queryCancelled
             }
         }
     }

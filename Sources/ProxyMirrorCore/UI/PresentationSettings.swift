@@ -10,7 +10,13 @@ enum PresentationFonts {
         }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    static func nsFont(size: CGFloat, settings: AppSettings = .shared, weight: NSFont.Weight = .regular) -> NSFont {
+    static func resolvedSize(_ baseSize: CGFloat = 12, settings: AppSettings = .shared) -> CGFloat {
+        max(8, min(48, CGFloat(settings.fontSize) + baseSize - 12))
+    }
+
+    static func nsFont(size: CGFloat = 12, settings: AppSettings = .shared, weight: NSFont.Weight = .regular) -> NSFont {
+        let size = resolvedSize(size, settings: settings)
+        guard settings.useMonospacedFont else { return NSFont.systemFont(ofSize: size, weight: weight) }
         if !settings.monospacedFontFamily.isEmpty,
            let font = NSFontManager.shared.font(withFamily: settings.monospacedFontFamily, traits: .fixedPitchFontMask,
                                                 weight: weight == .semibold || weight == .bold ? 9 : 5, size: size), font.isFixedPitch {
@@ -19,7 +25,7 @@ enum PresentationFonts {
         return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     }
 
-    static func swiftUIFont(size: CGFloat, settings: AppSettings = .shared, weight: NSFont.Weight = .regular) -> Font {
+    static func swiftUIFont(size: CGFloat = 12, settings: AppSettings = .shared, weight: NSFont.Weight = .regular) -> Font {
         Font(nsFont(size: size, settings: settings, weight: weight))
     }
 }
@@ -37,14 +43,14 @@ enum PresentationTime {
 
     static func string(from date: Date, settings: AppSettings = .shared,
                        timeZone: TimeZone = .autoupdatingCurrent,
-                       locale: Locale = Locale(identifier: "en_US_POSIX")) -> String {
+                       locale: Locale = .autoupdatingCurrent) -> String {
         string(from: date, uses24HourClock: settings.use24HourClock, includesDate: settings.showFullDate,
                timeZone: timeZone, locale: locale)
     }
 
     static func string(from date: Date, uses24HourClock: Bool, includesDate: Bool,
                        timeZone: TimeZone = .autoupdatingCurrent,
-                       locale: Locale = Locale(identifier: "en_US_POSIX")) -> String {
+                       locale: Locale = .autoupdatingCurrent) -> String {
         let key = Key(uses24HourClock: uses24HourClock, includesDate: includesDate,
                       timezone: timeZone.identifier, locale: locale.identifier)
         lock.lock(); defer { lock.unlock() }
@@ -54,7 +60,8 @@ enum PresentationTime {
             formatter = DateFormatter()
             formatter.locale = locale
             formatter.timeZone = timeZone
-            formatter.dateFormat = (includesDate ? "yyyy-MM-dd " : "") + (uses24HourClock ? "HH:mm:ss.SSS" : "hh:mm:ss.SSS a")
+            formatter.dateFormat = (includesDate ? "yyyy-MM-dd " : "")
+                + (uses24HourClock ? "HH:mm:ss.SSS" : "hh:mm:ss.SSS a") + (includesDate ? " xxx" : "")
             if formatters.count >= 16 { formatters.removeAll() }
             formatters[key] = formatter
         }
@@ -74,7 +81,7 @@ enum CodeTextStyle {
     }
 
     static func apply(to textView: NSTextView, settings: AppSettings = .shared,
-                      fontSize: CGFloat = 11, wordWrap: Bool = true) {
+                      fontSize: CGFloat = 12, wordWrap: Bool = true) {
         let font = PresentationFonts.nsFont(size: fontSize, settings: settings)
         let paragraph = paragraphStyle(font: font, tabWidth: settings.codeTabWidth, wordWrap: wordWrap)
         textView.font = font
@@ -92,7 +99,7 @@ enum CodeTextStyle {
 struct CodeText: NSViewRepresentable {
     let text: String
     var attributed: AttributedString?
-    var fontSize: CGFloat = 11
+    var fontSize: CGFloat = 12
     var wordWrap = true
     var showInvisibles = false
     @ObservedObject private var settings = AppSettings.shared
@@ -151,7 +158,7 @@ struct CodeText: NSViewRepresentable {
 @MainActor
 struct CodeTextEditor: NSViewRepresentable {
     @Binding var text: String
-    var fontSize: CGFloat = 11
+    var fontSize: CGFloat = 12
     var wordWrap = true
     @ObservedObject private var settings = AppSettings.shared
 

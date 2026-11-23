@@ -10,6 +10,15 @@ enum SimulatorCertificateInstaller {
         let runtime: String
         let state: String
         var isBooted: Bool { state.caseInsensitiveCompare("Booted") == .orderedSame }
+        var localizedState: String {
+            switch state.lowercased() {
+            case "booted": return Strings.Errors.simulatorStateBooted
+            case "shutdown": return Strings.Errors.simulatorStateShutdown
+            case "booting": return Strings.Errors.simulatorStateBooting
+            case "shutting down": return Strings.Errors.simulatorStateStopping
+            default: return state
+            }
+        }
         var runtimeName: String {
             let identifier = runtime.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "")
             let parts = identifier.split(separator: "-")
@@ -18,7 +27,7 @@ enum SimulatorCertificateInstaller {
             return display + (parts.count > 1 ? " " + parts.dropFirst().joined(separator: ".") : "")
         }
         func matches(platform: String) -> Bool {
-            if platform == "全部" || platform == "Xcode Preview (SwiftUI)" { return true }
+            if platform == "all" || platform == "Xcode Preview (SwiftUI)" { return true }
             let prefix = runtimeName.split(separator: " ").first.map(String.init) ?? runtimeName
             return prefix.caseInsensitiveCompare(platform) == .orderedSame
         }
@@ -36,10 +45,13 @@ enum SimulatorCertificateInstaller {
     }
     typealias Runner = @Sendable (Command) throws -> Output
 
-    struct Failure: LocalizedError {
-        let message: String
-        init(_ message: String) { self.message = message }
-        var errorDescription: String? { message }
+    struct Failure: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ message: String) { operationIssue = .technical(message) }
+        var message: String { operationIssue.diagnostic }
+        var text: String { operationIssue.diagnostic }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 
     private struct Listing: Decodable {
@@ -57,26 +69,26 @@ enum SimulatorCertificateInstaller {
         let metadata = deviceSet.appendingPathComponent("device_set.plist")
         guard directory.isDirectory == true,
               (try? metadata.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
-            throw Failure("请选择包含 device_set.plist 的现有 Simulator device-set 目录。不会创建新的设备集。")
+            throw Failure(OperationIssue.simulatorCertificateInstallerSelectAnExistingSimulatorDeviceSetDirectoryContaining)
         }
     }
 
     static func parseDevices(_ data: Data) throws -> [Device] {
-        guard data.count <= 4 * 1024 * 1024 else { throw Failure("simctl 设备列表超过 4 MiB。") }
+        guard data.count <= 4 * 1024 * 1024 else { throw Failure(OperationIssue.simulatorCertificateInstallerTheSimctlDeviceListExceeds4Mib) }
         let listing: Listing
         do { listing = try JSONDecoder().decode(Listing.self, from: data) }
-        catch { throw Failure("无法解析 simctl 设备列表。请确认已选择可用的 Xcode 与 Simulator runtime。") }
-        guard listing.devices.values.reduce(0, { $0 + $1.count }) <= 1000 else { throw Failure("设备数量超过 1000，请选择较小的设备集。") }
+        catch { throw Failure(OperationIssue.simulatorCertificateInstallerUnableToParseTheSimctlDeviceListCheck) }
+        guard listing.devices.values.reduce(0, { $0 + $1.count }) <= 1000 else { throw Failure(OperationIssue.simulatorCertificateInstallerTheDeviceCountExceeds1000SelectA) }
         var ids = Set<String>()
         var devices: [Device] = []
         for (runtime, records) in listing.devices {
             for record in records where record.isAvailable != false {
                 guard let identifier = UUID(uuidString: record.udid), !record.name.isEmpty,
                       record.name.utf8.count <= 2048, runtime.utf8.count <= 512 else {
-                    throw Failure("simctl 返回了无效的设备标识或名称。")
+                    throw Failure(OperationIssue.simulatorCertificateInstallerSimctlReturnedAnInvalidDeviceIdentifierOrName)
                 }
                 let id = identifier.uuidString
-                guard ids.insert(id).inserted else { throw Failure("simctl 返回了重复设备标识。") }
+                guard ids.insert(id).inserted else { throw Failure(OperationIssue.simulatorCertificateInstallerSimctlReturnedADuplicateDeviceIdentifier) }
                 devices.append(Device(id: id, name: record.name, runtime: runtime, state: record.state))
             }
         }
@@ -89,19 +101,19 @@ enum SimulatorCertificateInstaller {
     static func list(deviceSet: URL? = nil, runner: Runner = run) throws -> [Device] {
         let command = try command(["list", "devices", "available", "-j"], deviceSet: deviceSet, timeout: 15)
         let output = try runner(command)
-        try requireSuccess(output, operation: "读取设备列表")
+        try requireSuccess(output, operation: Strings.Errors.simulatorCertificateInstallerReadTheDeviceList)
         return try parseDevices(output.stdout)
     }
 
     static func install(certificate: URL, device: Device, deviceSet: URL? = nil, runner: Runner = run) throws {
         guard UUID(uuidString: device.id) != nil, device.isBooted else {
-            throw Failure("请先在 Xcode 或 Simulator 中启动 \(device.name)，然后刷新列表。安装器不会自动启动设备。")
+            throw Failure(OperationIssue.simulatorCertificateInstallerStartInXcodeOrSimulatorThenRefreshThe(String(device.name)))
         }
         let material = try CertificateFormats.load(certificate: certificate)
         try CertificateFormats.validate(material, purpose: .upstreamCA)
         let command = try command(["keychain", device.id, "add-root-cert", certificate.path], deviceSet: deviceSet, timeout: 20)
         let output = try runner(command)
-        try requireSuccess(output, operation: "向 \(device.name) 安装 CA")
+        try requireSuccess(output, operation: Strings.Errors.simulatorCertificateInstallerInstallTheCaOn(String(device.name)))
     }
 
     private static func command(_ arguments: [String], deviceSet: URL?, timeout: TimeInterval) throws -> Command {
@@ -117,7 +129,7 @@ enum SimulatorCertificateInstaller {
     private static func requireSuccess(_ output: Output, operation: String) throws {
         guard output.status == 0 else {
             let details = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw Failure("\(operation)失败（退出码 \(output.status)）。\(details.isEmpty ? "请检查 Xcode、runtime 与设备状态。" : String(details.prefix(2048)))")
+            throw Failure(OperationIssue.simulatorCertificateInstallerFailedExitCode(String(operation), Int(output.status), String(details.isEmpty ? OperationIssue.simulatorCheckRuntime.diagnostic : String(details.prefix(2048)))))
         }
     }
 
@@ -147,13 +159,13 @@ enum SimulatorCertificateInstaller {
             process.terminate()
             if finished.wait(timeout: .now() + 1) != .success { kill(process.processIdentifier, SIGKILL) }
             process.waitUntilExit()
-            throw Failure("simctl 执行超过 \(Int(command.timeout)) 秒，已停止本次命令。请检查 Xcode 和目标 runtime。")
+            throw Failure(OperationIssue.simulatorCertificateInstallerSimctlExceededSecondsAndWasStoppedCheckXcode(Int(Int(command.timeout))))
         }
         let output = try FileHandle(forReadingFrom: stdoutURL)
         let errors = try FileHandle(forReadingFrom: stderrURL)
         defer { try? output.close(); try? errors.close() }
         let data = try output.read(upToCount: 4 * 1024 * 1024 + 1) ?? Data()
-        guard data.count <= 4 * 1024 * 1024 else { throw Failure("simctl 标准输出超过 4 MiB。") }
+        guard data.count <= 4 * 1024 * 1024 else { throw Failure(OperationIssue.simulatorCertificateInstallerSimctlStandardOutputExceeds4Mib) }
         let errorData = try errors.read(upToCount: 8192) ?? Data()
         return Output(status: process.terminationStatus, stdout: data, stderr: String(decoding: errorData, as: UTF8.self))
     }

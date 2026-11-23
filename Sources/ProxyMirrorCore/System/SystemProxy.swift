@@ -15,9 +15,44 @@ final class SystemProxyController {
 
     var hasInstalledService: Bool { FileManager.default.fileExists(atPath: SystemProxyService.plist.path) }
 
+    struct ServiceStatus: Sendable {
+        let installed: Bool
+        let healthy: Bool
+        let identifier: String
+        let version: String
+        let statusText: String
+    }
+
+    /// Read-only diagnostics; this never installs a service or requests administrator rights.
+    func serviceStatus() -> ServiceStatus {
+        let identifier = SystemProxyService.name
+        guard hasInstalledService else {
+            return ServiceStatus(installed: false, healthy: false, identifier: identifier,
+                                 version: Strings.Errors.systemProxyNotInstalled, statusText: Strings.Errors.systemProxyTheSystemProxyHelperIsNotInstalled)
+        }
+        do {
+            _ = try SystemProxyService.codeHash(at: SystemProxyService.executable, identifier: identifier)
+            let versionResult = try CertInstaller.runCommand(SystemProxyService.executable.path, ["--version"])
+            let version = versionResult.status == 0 ? versionResult.output.trimmingCharacters(in: .whitespacesAndNewlines) : Strings.Errors.systemProxyLegacyVersionNoVersionInformation
+            let loaded = try CertInstaller.runCommand("/bin/launchctl", ["print", "system/\(identifier)"])
+            let appHash = try SystemProxyService.codeHash(at: Bundle.main.bundleURL, identifier: SystemProxyService.appIdentifier)
+            let compatible = SystemProxyService.installedArguments() == SystemProxyService.daemonArguments(uid: geteuid(), appHash: appHash)
+                && version == SystemProxyService.version
+            let healthy = loaded.status == 0 && compatible
+            let text = !compatible ? Strings.Errors.systemProxyInstalledAuthorizationIsRequiredForThisApplicationVersion
+                : healthy ? Strings.Errors.systemProxyInstalledLaunchdServiceLoadedAndCodeSignatureVerified : Strings.Errors.systemProxyInstalledButTheLaunchdServiceIsNotLoaded
+            return ServiceStatus(installed: true, healthy: healthy, identifier: identifier,
+                                 version: version.isEmpty ? Strings.Errors.systemProxyUnknown : version,
+                                 statusText: text)
+        } catch {
+            return ServiceStatus(installed: true, healthy: false, identifier: identifier,
+                                 version: Strings.Errors.systemProxyUnknown, statusText: Strings.Errors.systemProxyProxyHelperCheckFailed(LocalizedErrorPresentation.message(for: error)))
+        }
+    }
+
     func enable(port: UInt16, onDisconnect: @escaping () -> Void, completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
-            guard self.session == nil else { throw SystemProxyError("系统代理已接管，请先恢复原配置。") }
+            guard self.session == nil else { throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyIsEnabledRestoreTheOriginal) }
             let helper = try Self.bundledHelper()
             let appHash = try SystemProxyService.codeHash(at: Bundle.main.bundleURL,
                                                          identifier: SystemProxyService.appIdentifier)
@@ -59,10 +94,13 @@ final class SystemProxyController {
         }
     }
 
-    func disable(completion: @escaping (Bool, String) -> Void) {
+    func disable(restorePrevious: Bool = true, completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
             guard let connection = self.session?.connection else { return }
-            try Self.request(on: connection) { $0.restore(reply: $1) }
+            try Self.request(on: connection) { service, reply in
+                if restorePrevious { service.restore(reply: reply) }
+                else { service.disableOwned(reply: reply) }
+            }
             self.session = nil
             connection.invalidate()
         }
@@ -70,15 +108,15 @@ final class SystemProxyController {
 
     func updateBypass(_ hosts: [String]?, completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
-            guard let connection = self.session?.connection else { throw SystemProxyError("请先接管系统代理。") }
-            if let hosts, let issue = SystemProxyBypassList.validationError(hosts) { throw SystemProxyError(issue) }
+            guard let connection = self.session?.connection else { throw SystemProxyOperationError(OperationIssue.systemProxyEnableTheSystemProxyFirst) }
+            if let hosts, let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
             try Self.request(on: connection) { $0.updateBypass(hosts, reply: $1) }
         }
     }
 
     func uninstall(completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
-            guard self.session == nil else { throw SystemProxyError("请先恢复系统代理，再移除系统代理授权。") }
+            guard self.session == nil else { throw SystemProxyOperationError(OperationIssue.systemProxyRestoreTheSystemProxyBeforeRemovingItsAuthorization) }
             let helper = try Self.bundledHelper()
             let hash = try SystemProxyService.codeHash(at: helper, identifier: SystemProxyService.name)
             try SystemProxyAuthorization.run(.uninstall, helper: helper, hash: hash)
@@ -89,7 +127,7 @@ final class SystemProxyController {
         queue.async {
             let result: (Bool, String)
             do { try operation(); result = (true, "") }
-            catch { result = (false, error.localizedDescription) }
+            catch { result = (false, LocalizedErrorPresentation.message(for: error)) }
             DispatchQueue.main.async { completion(result.0, result.1) }
         }
     }
@@ -98,10 +136,10 @@ final class SystemProxyController {
                                 send: (SystemProxyServiceProtocol, @escaping (String?) -> Void) -> Void) throws {
         let reply = Reply()
         let object = connection.remoteObjectProxyWithErrorHandler { _ in
-            reply.finish("无法连接系统代理服务。请检查 macOS 的后台项目权限。")
+            reply.finish(SystemProxyError(.loadFailed).wireValue)
         }
         guard let service = object as? SystemProxyServiceProtocol else {
-            throw SystemProxyError("系统代理服务接口不可用。")
+            throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyServiceInterfaceIsUnavailable)
         }
         send(service, reply.finish)
         try reply.wait()
@@ -124,21 +162,21 @@ final class SystemProxyController {
 
         func wait() throws {
             guard semaphore.wait(timeout: .now() + .seconds(8)) == .success else {
-                throw SystemProxyError("系统代理服务未响应，请重试。")
+                throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyServiceDidNotRespondTry)
             }
             lock.lock()
             defer { lock.unlock() }
-            if let message { throw SystemProxyError(message) }
+            if let message { throw SystemProxyError.fromWire(message) }
         }
     }
 
     private static func bundledHelper() throws -> URL {
         guard let directory = Bundle.main.executableURL?.deletingLastPathComponent() else {
-            throw SystemProxyError("找不到系统代理服务，请使用完整的 .app 构建。")
+            throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyServiceIsMissingUseA)
         }
         let helper = directory.appendingPathComponent(SystemProxyService.helperName)
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            throw SystemProxyError("找不到系统代理服务，请使用完整的 .app 构建。")
+            throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyServiceIsMissingUseA)
         }
         return helper
     }
@@ -153,7 +191,7 @@ enum CertInstaller {
         func requireSuccess() throws {
             guard status == 0 else {
                 let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                throw SystemProxyError(detail.isEmpty ? "证书命令执行失败（退出码 \(status)）。" : detail)
+                throw SystemProxyOperationError(detail.isEmpty ? OperationIssue.systemProxyTheCertificateCommandFailedExitCode(Int(status)) : .technical(detail))
             }
         }
     }
@@ -189,12 +227,12 @@ enum CertInstaller {
     /// G7：导入外部根 CA（先选证书 PEM，再选私钥 PEM）
     static func importRootCA() {
         let certPanel = NSOpenPanel()
-        certPanel.message = "选择根 CA 证书（PEM）"
+        certPanel.message = Strings.Errors.systemProxySelectTheRootCaCertificatePem
         certPanel.allowedContentTypes = [UTType.data]
         certPanel.canChooseFiles = true
         guard certPanel.runModal() == .OK, let certURL = certPanel.url else { return }
         let keyPanel = NSOpenPanel()
-        keyPanel.message = "选择对应的私钥（PEM，支持 P-256 / Ed25519）"
+        keyPanel.message = Strings.Errors.systemProxySelectTheMatchingPrivateKeyPemP256
         keyPanel.allowedContentTypes = [UTType.data]
         keyPanel.canChooseFiles = true
         guard keyPanel.runModal() == .OK, let keyURL = keyPanel.url else { return }
@@ -206,28 +244,105 @@ enum CertInstaller {
                 let keyPEM = try String(contentsOfFile: keyPath, encoding: .utf8)
                 try CertificateAuthority.shared.importRootCA(certificatePEM: certPEM, privateKeyPEM: keyPEM)
                 DispatchQueue.main.async {
+                    AppState.shared.caInstalled = false
+                    AppState.shared.caBannerDismissed = false
+                    UserDefaults.standard.set(false, forKey: "caBannerDismissed")
+                    NotificationCenter.default.post(name: .proxyMirrorCertificatesChanged, object: nil)
                     AppState.shared.systemProxyMessage =
-                        "已导入自定义根 CA。请在各客户端重新安装并信任新 CA（证书菜单可导出）。"
+                        Strings.Errors.systemProxyTheCustomRootCaWasImportedReinstallAnd
                 }
             } catch {
                 DispatchQueue.main.async {
-                    AppState.shared.systemProxyMessage = "导入根 CA 失败：\(error.localizedDescription)"
+                    AppState.shared.systemProxyMessage = Strings.Errors.systemProxyUnableToImportTheRootCa(LocalizedErrorPresentation.message(for: error))
                 }
             }
         }
     }
 
-    /// 检测 CA 是否已存在于任意钥匙串
-    static func isInstalled() -> Bool {
-        let p = Process()
-        p.launchPath = "/usr/bin/security"
-        p.arguments = ["find-certificate", "-c", "ProxyMirror CA"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = Pipe()
-        p.launch()
-        p.waitUntilExit()
-        return p.terminationStatus == 0
+    struct CertificateStatus: Sendable {
+        let installed: Bool
+        let trusted: Bool
+        let commonName: String
+        let notBefore: Date?
+        let notAfter: Date?
+        let statusText: String
+    }
+
+    /// Compare the current authority's DER fingerprint, then evaluate SSL trust using macOS.
+    /// A same-name certificate or a certificate merely imported without trust is insufficient.
+    static func certificateStatus(authority: CertificateAuthority = .shared,
+                                  installedCertificates: () throws -> [Data] = installedCertificateData,
+                                  evaluateTrust: ((Data) -> Bool)? = nil,
+                                  now: Date = Date()) -> CertificateStatus {
+        var name = "CA"
+        var before: Date?
+        var after: Date?
+        var installed = false
+        do {
+            let der = try authority.caDER()
+            let certificate = try X509.Certificate(derEncoded: Array(der))
+            before = certificate.notValidBefore
+            after = certificate.notValidAfter
+            if let reference = SecCertificateCreateWithData(nil, der as CFData) {
+                var commonName: CFString?
+                if SecCertificateCopyCommonName(reference, &commonName) == errSecSuccess {
+                    name = commonName as String? ?? "CA"
+                }
+            }
+            let fingerprint = SHA256.hash(data: der)
+            installed = try installedCertificates().contains { SHA256.hash(data: $0) == fingerprint }
+            let valid = certificate.notValidBefore <= now && now < certificate.notValidAfter
+            let trusted: Bool
+            if installed && valid {
+                if let evaluateTrust { trusted = evaluateTrust(der) }
+                else {
+                    let probe = try authority.makeTrustProbe(now: now)
+                    // A concurrent root replacement must not mix status from two authorities.
+                    trusted = probe.authorityDER == der && certificateIsTrusted(probe)
+                }
+            } else { trusted = false }
+            return CertificateStatus(installed: installed, trusted: trusted, commonName: name,
+                                     notBefore: before, notAfter: after,
+                                     statusText: trusted ? Strings.Errors.systemProxyTheCurrentCaIsInstalledAndTrustedFor : installed ? Strings.Errors.systemProxyTheCurrentCaIsInstalledButIsNot : Strings.Errors.systemProxyTheCurrentCaIsNotInstalled)
+        } catch {
+            return CertificateStatus(installed: installed, trusted: false, commonName: name,
+                                     notBefore: before, notAfter: after,
+                                     statusText: Strings.Errors.systemProxyUnableToCheckTheCurrentCa(LocalizedErrorPresentation.message(for: error)))
+        }
+    }
+
+    static func isInstalled() -> Bool { certificateStatus().installed }
+
+    private static func installedCertificateData() throws -> [Data] {
+        func query(_ keychain: SecKeychain? = nil) throws -> [Data] {
+            var query: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecMatchLimit: kSecMatchLimitAll, kSecReturnRef: true]
+            if let keychain { query[kSecMatchSearchList] = [keychain] }
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            if status == errSecItemNotFound { return [] }
+            try requireSecuritySuccess(status)
+            guard let certificates = result as? [SecCertificate] else { throw SystemProxyOperationError(OperationIssue.systemProxyUnableToReadTheInstalledCertificateList) }
+            return certificates.map { SecCertificateCopyData($0) as Data }
+        }
+        var certificates = try query()
+        var system: SecKeychain?
+        if SecKeychainOpen("/Library/Keychains/System.keychain", &system) == errSecSuccess, let system {
+            certificates.append(contentsOf: try query(system))
+        }
+        return certificates
+    }
+
+    private static func certificateIsTrusted(_ probe: CertificateAuthority.TrustProbe) -> Bool {
+        guard let leaf = SecCertificateCreateWithData(nil, probe.leafDER as CFData),
+              let authority = SecCertificateCreateWithData(nil, probe.authorityDER as CFData) else { return false }
+        var trust: SecTrust?
+        let policy = SecPolicyCreateSSL(true, probe.hostname as CFString)
+        guard SecTrustCreateWithCertificates([leaf, authority] as CFArray, policy, &trust) == errSecSuccess,
+              let trust else { return false }
+        // Do not add the CA as an explicit anchor: only the user's actual macOS
+        // SSL trust settings may authorize this otherwise self-signed chain.
+        SecTrustSetNetworkFetchAllowed(trust, false)
+        return SecTrustEvaluateWithError(trust, nil)
     }
 
     /// 系统级信任安装（-d 写入系统信任存储；一次管理员授权；Chrome/所有应用直接生效）
@@ -308,16 +423,16 @@ enum CertInstaller {
         panel.allowedContentTypes = [UTType(filenameExtension: "pem") ?? .data,
                                      UTType(filenameExtension: "cer") ?? .data,
                                      UTType(filenameExtension: "p12") ?? .data]
-        panel.message = "选择要导入的证书文件（.pem / .cer / .p12）"
+        panel.message = Strings.Errors.systemProxySelectTheCertificateToImportPemCerOr
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        AppState.shared.systemProxyMessage = "正在导入自定义证书…"
+        AppState.shared.systemProxyMessage = Strings.Errors.systemProxyImportingTheCustomCertificate
         DispatchQueue.global(qos: .userInitiated).async {
             let message: String
             do {
                 try importCertificate(at: url)
-                message = "已将 \(url.lastPathComponent) 导入登录钥匙串。"
+                message = Strings.Errors.systemProxyImportedIntoTheLoginKeychain(String(url.lastPathComponent))
             } catch {
-                message = "导入自定义证书失败：\(error.localizedDescription)"
+                message = Strings.Errors.systemProxyUnableToImportTheCustomCertificate(LocalizedErrorPresentation.message(for: error))
             }
             DispatchQueue.main.async { AppState.shared.systemProxyMessage = message }
         }
@@ -355,7 +470,7 @@ enum CertInstaller {
     static func certificateFingerprints(in path: String) throws -> [String] {
         var keychain: SecKeychain?
         try requireSecuritySuccess(SecKeychainOpen(path, &keychain))
-        guard let keychain else { throw SystemProxyError("无法打开钥匙串：\(path)") }
+        guard let keychain else { throw SystemProxyOperationError(OperationIssue.systemProxyUnableToOpenTheKeychain(String(path))) }
         let query: [CFString: Any] = [
             kSecClass: kSecClassCertificate,
             kSecMatchSearchList: [keychain],
@@ -368,7 +483,7 @@ enum CertInstaller {
         if status == errSecItemNotFound { return [] }
         try requireSecuritySuccess(status)
         guard let certificates = matches as? [SecCertificate] else {
-            throw SystemProxyError("无法读取钥匙串证书：\(path)")
+            throw SystemProxyOperationError(OperationIssue.systemProxyUnableToReadKeychainCertificates(String(path)))
         }
         return try certificates.compactMap(resetFingerprint)
     }
@@ -390,7 +505,7 @@ enum CertInstaller {
     private static func requireSecuritySuccess(_ status: OSStatus) throws {
         guard status == errSecSuccess else {
             let message = SecCopyErrorMessageString(status, nil) as String?
-            throw SystemProxyError(message ?? "读取钥匙串失败（错误码 \(status)）。")
+            throw SystemProxyOperationError(message.map(OperationIssue.technical) ?? OperationIssue.systemProxyUnableToReadTheKeychainErrorCode(Int(status)))
         }
     }
 

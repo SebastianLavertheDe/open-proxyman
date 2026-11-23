@@ -5,8 +5,19 @@ import Foundation
 /// avoid changing an already-running browser or the user's existing preferences.
 enum ProxyAutomation {
     enum Target: String, CaseIterable, Identifiable {
-        case terminal = "Apple Terminal", iTerm = "iTerm2", ghostty = "Ghostty"
-        case customTerminal = "其他终端", chrome = "Google Chrome", firefox = "Firefox", electron = "Electron App"
+        case terminal, iTerm, ghostty
+        case customTerminal, chrome, firefox, electron
+        var localizedTitle: String {
+            switch self {
+            case .terminal: return "Apple Terminal"
+            case .iTerm: return "iTerm2"
+            case .ghostty: return "Ghostty"
+            case .customTerminal: return Strings.Errors.automationOtherTerminal
+            case .chrome: return "Google Chrome"
+            case .firefox: return "Firefox"
+            case .electron: return "Electron App"
+            }
+        }
         var id: String { rawValue }
         var needsApplication: Bool { self == .customTerminal || self == .electron }
     }
@@ -19,9 +30,15 @@ enum ProxyAutomation {
         let message: String
     }
 
-    struct Failure: LocalizedError {
-        let text: String
-        var errorDescription: String? { text }
+    struct Failure: LocalizedError, OperationIssueProviding {
+        let operationIssue: OperationIssue
+        init(_ issue: OperationIssue) { operationIssue = issue }
+        init(_ message: String) { operationIssue = .technical(message) }
+        var message: String { operationIssue.diagnostic }
+        var text: String { operationIssue.diagnostic }
+        var errorDescription: String? { operationIssue.diagnostic }
+        init(text: OperationIssue) { operationIssue = text }
+        init(text: String) { operationIssue = .technical(text) }
     }
 
     static func shellQuote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
@@ -40,7 +57,7 @@ enum ProxyAutomation {
 
     static func plan(_ target: Target, port: UInt16, certificate: URL, application: URL? = nil,
                      support: URL = CertificateAuthority.applicationSupport) throws -> LaunchPlan {
-        guard port > 0 else { throw Failure(text: "请先启动代理监听。") }
+        guard port > 0 else { throw Failure(text: OperationIssue.proxyAutomationStartTheProxyListenerFirst) }
         let environment = environment(port: port, certificate: certificate)
         let directory = support.appendingPathComponent("Automation", isDirectory: true)
         let launch = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -48,7 +65,7 @@ enum ProxyAutomation {
         let exports = environment.keys.sorted().map { "export \($0)=\(shellQuote(environment[$0]!))" }.joined(separator: "\n")
         let scriptText = "#!/bin/zsh\n\(exports)\nprintf '%s\\n' \(shellQuote("ProxyMirror → 127.0.0.1:\(port)"))\nexec /bin/zsh -il\n"
         let files = [(script, Data(scriptText.utf8), 0o700)]
-        let terminalMessage = "已打开带代理与 CA 环境变量的终端。关闭该窗口即可结束本次配置。"
+        let terminalMessage = Strings.Errors.proxyAutomationOpenedATerminalWithProxyAndCaEnvironment
         switch target {
         case .terminal:
             return LaunchPlan(executable: URL(fileURLWithPath: "/usr/bin/osascript"),
@@ -56,31 +73,31 @@ enum ProxyAutomation {
                 environment: environment, files: files, message: terminalMessage)
         case .iTerm:
             guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") != nil else {
-                throw Failure(text: "请先安装 iTerm2。")
+                throw Failure(text: OperationIssue.proxyAutomationInstallIterm2First)
             }
             return LaunchPlan(executable: URL(fileURLWithPath: "/usr/bin/osascript"),
                 arguments: ["-e", "tell application \"iTerm\"\nactivate\ncreate window with default profile command \(appleScriptQuote("/bin/zsh " + shellQuote(script.path)))\nend tell"],
                 environment: environment, files: files, message: terminalMessage)
         case .ghostty, .customTerminal:
             let app = application ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.mitchellh.ghostty")
-            guard let app, app.pathExtension == "app" else { throw Failure(text: "请选择已安装的终端 .app。") }
+            guard let app, app.pathExtension == "app" else { throw Failure(text: OperationIssue.proxyAutomationSelectAnInstalledTerminalApp) }
             return LaunchPlan(executable: URL(fileURLWithPath: "/usr/bin/open"),
                 arguments: ["-na", app.path, "--args", "-e", "/bin/zsh", script.path],
                 environment: environment, files: files,
-                message: terminalMessage + (target == .customTerminal ? "所选终端需要支持 -e 启动命令参数。" : ""))
+                message: terminalMessage + (target == .customTerminal ? " " + Strings.Errors.proxyAutomationTheSelectedTerminalMustSupportTheECommand : ""))
         case .chrome, .electron:
             let app = target == .chrome
                 ? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") : application
-            guard let app, app.pathExtension == "app" else { throw Failure(text: "请选择已安装的 \(target.rawValue) .app。") }
+            guard let app, app.pathExtension == "app" else { throw Failure(text: OperationIssue.proxyAutomationSelectAnInstalledApp(target.localizedTitle)) }
             let profile = launch.appendingPathComponent("BrowserProfile", isDirectory: true)
             let arguments = ["-na", app.path, "--args", "--proxy-server=http://127.0.0.1:\(port)",
                              "--proxy-bypass-list=<-loopback>", "--user-data-dir=\(profile.path)"]
             return LaunchPlan(executable: URL(fileURLWithPath: "/usr/bin/open"), arguments: arguments,
                 environment: environment, files: [(profile.appendingPathComponent(".proxymirror"), Data(), 0o600)],
-                message: "已启动独立 Profile，并指定 ProxyMirror 代理。HTTPS 需要先安装并信任 ProxyMirror CA。")
+                message: Strings.Errors.proxyAutomationStartedAnIsolatedProfileUsingTheProxymirrorProxy)
         case .firefox:
             guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "org.mozilla.firefox") else {
-                throw Failure(text: "请先安装 Firefox。")
+                throw Failure(text: OperationIssue.proxyAutomationInstallFirefoxFirst)
             }
             let profile = launch.appendingPathComponent("FirefoxProfile", isDirectory: true)
             let preferences = """
@@ -96,7 +113,7 @@ enum ProxyAutomation {
             return LaunchPlan(executable: URL(fileURLWithPath: "/usr/bin/open"),
                 arguments: ["-na", app.path, "--args", "-no-remote", "-profile", profile.path, "about:blank"],
                 environment: environment, files: [(profile.appendingPathComponent("user.js"), Data(preferences.utf8), 0o600)],
-                message: "已启动带代理的 Firefox 独立 Profile。请先在 macOS 中信任 ProxyMirror CA。")
+                message: Strings.Errors.proxyAutomationStartedAnIsolatedFirefoxProfileWithTheProxy)
         }
     }
 
@@ -138,7 +155,7 @@ enum ProxyAutomation {
             }
         }
         do { try process.run() } catch { try? log.close(); throw error }
-        return "已提交 \(target.rawValue) 启动请求。启动日志：\(logURL.path)"
+        return OperationIssue.proxyAutomationSubmittedTheLaunchRequestLaunchLog(target.rawValue, String(logURL.path)).diagnostic
     }
 
     /// The interactive dashboard can await the launcher and show permission or
@@ -154,7 +171,7 @@ enum ProxyAutomation {
                     let details = (try? Data(contentsOf: logURL)).map {
                         String(decoding: $0.suffix(2048), as: UTF8.self)
                     } ?? ""
-                    continuation.resume(throwing: Failure(text: "启动失败（\(completed.terminationStatus)）：\(details)"))
+                    continuation.resume(throwing: Failure(text: OperationIssue.proxyAutomationLaunchFailed(Int(completed.terminationStatus), String(details))))
                 }
             }
             do { try process.run() } catch {

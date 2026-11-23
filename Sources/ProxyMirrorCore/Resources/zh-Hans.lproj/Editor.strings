@@ -1,0 +1,9 @@
+"body_text" = "正文文本";
+"highlight_red" = "红色";
+"highlight_yellow" = "黄色";
+"highlight_green" = "绿色";
+"highlight_blue" = "蓝色";
+"highlight_purple" = "紫色";
+"highlight_gray" = "灰色";
+"body_minimap" = "正文缩略图";
+"minimap_help" = "点击、拖动或使用上下方向键定位正文。高亮区域表示当前可见内容。";

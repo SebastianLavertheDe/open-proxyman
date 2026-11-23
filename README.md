@@ -20,12 +20,22 @@
 - 局域网按多 IP / CIDR 白名单接入，默认只监听回环地址；macOS 系统代理旁路列表随接管恢复。
 - External Proxy 支持全部、排除列表和 Inclusive 包含列表；可按主机或 HTTP(S) URL 通配选择上游路由。
 - Saved 请求支持嵌套文件夹、移动和复制，旧 Saved 托盘自动迁移；流量汇总提供状态分桶、耗时直方图与 P50 / P95 / P99。
-- 等宽字体、真实 Tab 宽度、12 / 24 小时制、完整日期、斑马纹和默认复制格式均可设置；帮助菜单提供六项故障排查和模拟内存警告。
+- 偏好设置采用分类侧栏，支持搜索及前进后退；请求/响应可上下或左右排列。字号、等宽字体、Tab、字符 Minimap、末行外滚动、含时区的日期、主题和四款桌面图标均可设置。
+- MCP 可运行中启停，提供 Claude Code / Codex / Manual 的 HTTP 与 stdio 配置；默认脱敏 AI 返回数据。复制可保留原始内容头，规则处理消息可附带诊断头。
+- 支持独立启动录制、退出确认、中英界面、更新通知，以及按内存阈值和间隔清理较早已完成请求；帮助菜单保留故障排查和模拟内存警告。
 - 脚本支持 `fetch`、`@proxymirror/http` 及 Axios 的 HTTP 子集，可等待 HTTP(S)、取消请求并设置超时；脚本窗口可复制 MCP 生成脚本任务。
 
 常用快捷键为 ⌘F 过滤当前流量、⇧⌘F 查找来源、⌥⌘N 构建请求、⌘K 编辑请求、⇧⌘R 编辑并重发，以及 ⇧⌘C 复制 cURL。
 
 高级过滤面板内，⌘N 新增条件，⇧⌘N 新增子组，⌘↑ / ⌘↓ 导航，⌘B 切换预设着色；列表 ⌘C 使用所选默认复制格式。
+
+## 界面语言
+
+支持简体中文和英文，在设置中选择跟随系统、简体中文或 English，修改后下次启动生效。菜单、工具、帮助和自有错误反馈使用原生语言资源；用户名称、网络正文和脚本保持原文。
+
+本版本首次正常启动会一次性清空旧版本的应用设置、规则、Saved 等本地数据，并改用稳定英文存储 ID；旧专有会话及规则备份不提供兼容读取。CA、钥匙串和系统代理恢复记录不在这次通用重置范围。
+
+开发和验证方式见 [本地化实施记录](Docs/localization-implementation.md)。
 
 ## 构建 / 运行
 
@@ -49,7 +59,7 @@ open build_app/ProxyMirror.app
 
 ### macOS 透明抓包
 
-带网络扩展的签名版本可从「工具 → 启动透明抓包」接入未设置 HTTP 代理的 Mac 应用。首次启动需按 macOS 提示批准网络扩展。当前覆盖 IPv4 / IPv6 的 TCP 80（HTTP）和 443（HTTPS）；HTTPS 沿用现有 CA 和按域、按应用 SSL 规则。UDP / QUIC / HTTP/3、其他端口和回环连接继续直连。透明抓包与 ProxyMirror 的「接管系统代理」分别使用，切换前先关闭当前模式。
+带网络扩展的签名版本可从「工具 → 启动透明抓包」或「偏好设置 → 网络扩展」接入未设置 HTTP 代理的 Mac 应用。首次启动需按 macOS 提示批准网络扩展。当前覆盖 IPv4 / IPv6 的 TCP 80（HTTP）和 443（HTTPS）；HTTPS 沿用现有 CA 和按域、按应用 SSL 规则。UDP / QUIC / HTTP/3、其他端口和回环连接继续直连。开启透明抓包会先恢复系统代理；切回系统代理前需停止透明抓包。
 
 默认 ad hoc 构建不附带扩展。准备匹配的 Developer ID Application 签名身份，以及主应用 `com.sebastianLavertheDe.proxymirror` 和系统扩展 `com.sebastianLavertheDe.proxymirror.transparent-proxy` 各自的 Network Extension 配置文件后构建：
 
@@ -197,6 +207,22 @@ Scripts/                  # 测试夹具、打包与构建
 仅需 macOS Command Line Tools，项目通过 SelfTest 可执行文件运行回归。如果本机环境终止并行编译，可改用 `swift build -j 1`。首次拉取依赖后遇到明确的 UTF-8 解码错误时，可检查依赖 checkout 的文件内容。
 
 ## 测试
+
+### 偏好设置界面验收
+
+设置窗口按参考布局提供常规、外观、隐私、MCP、GitHub、工具、网络扩展、高级、Workspace 和产品页面。旧 SSL、局域网、mTLS、旁路和外部代理设置位于「高级代理设置…」，也可直接搜索定位。
+
+在 Mac 上构建后可导出真实原生窗口截图。截图模式使用临时数据目录，跳过代理、MCP 和更新服务启动，不修改用户偏好，也不需要屏幕录制权限：
+
+```zsh
+Scripts/make_app.sh debug
+python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --appearance both
+python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --pages general appearance tools --language en
+```
+
+PNG 和窗口尺寸记录默认保存在 `build_app/preferences-review/`。此流程验证原生窗口可渲染，像素与交互仍需对照参考图检查。网络扩展激活另需前述签名构建。
+
+### 核心与代理回归
 
 核心单测由 XCTest 和 CLT 自测入口共用。HTTP 回环、CLI 和并发套件使用本地夹具及独立数据目录。打包检查核对签名、架构、脚本 worker 和 CLI 入口。
 

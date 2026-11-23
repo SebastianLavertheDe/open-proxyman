@@ -107,22 +107,30 @@ struct GRPCInspectorView: View {
         let key = DecodeKey(message: selected, bodyGeneration: bodyGeneration, encoding: encoding, mediaType: mediaType,
                             type: messageType, descriptor: descriptors.revision, raw: raw)
         let rendered = output?.key == key ? output?.value : nil
-        ScrollView {
+        GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 8) {
-                if !isRequest { responseStatus(metadata) }
-                schemaControls
-                if let selected {
-                    messageControls(scan.messages, selected: selected)
-                } else {
-                    Text(complete ? "无 gRPC 消息" : "等待 gRPC 消息…").foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !isRequest { responseStatus(metadata) }
+                        schemaControls
+                        if let selected {
+                            messageControls(scan.messages, selected: selected)
+                        } else {
+                            Text(complete ? Strings.Detail.noGrpcMessages : Strings.Detail.waitingForGrpcMessages).foregroundStyle(.secondary)
+                        }
+                        if let issue = scan.issue { Text(issue).foregroundStyle(.orange) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if let issue = scan.issue {
-                    Text(issue).foregroundStyle(.orange)
-                }
+                .frame(maxHeight: selected == nil ? .infinity : min(176, max(0, geometry.size.height - 18) * 0.35))
                 if let selected {
                     messageContent(selected, output: rendered)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                if metadata.count > 0 { trailingMetadata(metadata) }
+                if metadata.count > 0 {
+                    ScrollView { trailingMetadata(metadata).frame(maxWidth: .infinity, alignment: .leading) }
+                        .frame(maxHeight: min(100, max(0, geometry.size.height - 18) * 0.2))
+                }
             }
             .font(.caption)
             .padding(9)
@@ -131,7 +139,7 @@ struct GRPCInspectorView: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
             switch result {
             case .success(let url): descriptors.importSchema(url)
-            case .failure(let error): descriptors.error = error.localizedDescription
+            case .failure(let error): descriptors.error = LocalizedErrorPresentation.message(for: error)
             }
         }
         .task(id: scanKey) {
@@ -156,8 +164,8 @@ struct GRPCInspectorView: View {
             return nil
         }
         if key.raw { return .raw(payload, notice: nil) }
-        if oversized { return .raw(payload, notice: "消息超过 1 MiB 解码上限。") }
-        if !supportsFormat { return .raw(payload, notice: "自定义消息格式 · \(key.mediaType.rawValue)") }
+        if oversized { return .raw(payload, notice: Strings.Detail.theMessageExceedsThe1MibDecodingLimit) }
+        if !supportsFormat { return .raw(payload, notice: Strings.Detail.customMessageFormat(String(describing: key.mediaType.rawValue))) }
 
         let schema = descriptors.resolution(for: target.isEmpty ? path : target, isRequest: isRequest)?.schema
             ?? descriptors.schema(containing: key.type)
@@ -171,7 +179,7 @@ struct GRPCInspectorView: View {
                 worker.cancel()
             }
         } catch {
-            return .raw(Data(payload.prefix(Output.rawLimit)), notice: error.localizedDescription)
+            return .raw(Data(payload.prefix(Output.rawLimit)), notice: LocalizedErrorPresentation.message(for: error))
         }
     }
 
@@ -179,10 +187,10 @@ struct GRPCInspectorView: View {
         let grpcStatus = GRPCFrames.status(headers: headers, trailers: metadata)
         return VStack(alignment: .leading, spacing: 4) {
             if let label = grpcStatus.label {
-                Text("\(mediaType.transport.label) 状态 · \(label)").fontWeight(.semibold)
+                Text(Strings.Detail.status2(String(describing: mediaType.transport.label), String(describing: label))).fontWeight(.semibold)
                     .foregroundStyle(grpcStatus.code == "0" ? Color.green : Color.orange)
             } else {
-                Text(complete ? "未捕获 grpc-status" : "等待 gRPC 状态…").foregroundStyle(.secondary)
+                Text(complete ? Strings.Detail.grpcStatusNotCaptured : Strings.Detail.waitingForGrpcStatus).foregroundStyle(.secondary)
             }
             if let message = grpcStatus.message, !message.isEmpty {
                 Text(message).textSelection(.enabled)
@@ -198,15 +206,15 @@ struct GRPCInspectorView: View {
     private var schemaControls: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Button("导入描述符…") { importing = true }.disabled(descriptors.loading)
-                    .help("导入 protoc 生成的 FileDescriptorSet (.pb / .desc)，并保存到全局 Schema 列表")
-                Button("全局映射…") { showRules = true }
+                Button(Strings.Detail.importDescriptor) { importing = true }.disabled(descriptors.loading)
+                    .help(Strings.Detail.importAFiledescriptorsetPbDescGeneratedByProtocAndSaveIt)
+                Button(Strings.Detail.globalMappings) { showRules = true }
                 if descriptors.loading { ProgressView().controlSize(.small) }
                 Spacer()
-                Text("\(descriptors.configuration.schemas.count) 个 Schema").foregroundStyle(.secondary)
+                Text(Strings.Detail.schemas(descriptors.configuration.schemas.count)).foregroundStyle(.secondary)
             }.controlSize(.small)
-            TextField("完整消息类型（默认按全局规则/RPC 路径匹配）", text: $typeOverride)
-                .textFieldStyle(.roundedBorder).accessibilityLabel("Protobuf 消息类型")
+            TextField(Strings.Detail.fullyQualifiedMessageTypeDefaultsToGlobalRulesRpcPathMatching, text: $typeOverride)
+                .textFieldStyle(.roundedBorder).accessibilityLabel(Strings.Detail.protobufMessageType)
             if let type = messageType {
                 Text(type).font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary).textSelection(.enabled)
@@ -219,50 +227,51 @@ struct GRPCInspectorView: View {
     private func messageControls(_ messages: [GRPCFrames.Message], selected: GRPCFrames.Message) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Picker("gRPC 消息", selection: Binding(get: { selected.id }, set: { selectedID = $0 })) {
+                Picker(Strings.Detail.grpcMessages, selection: Binding(get: { selected.id }, set: { selectedID = $0 })) {
                     ForEach(messages.indices, id: \.self) { index in
                         let message = messages[index]
-                        Text("#\(index + 1) · \(message.byteCount) 字节").tag(message.id)
+                        Text(Strings.Detail.bytes(index + 1, message.byteCount)).tag(message.id)
                     }
                 }
                 .labelsHidden()
-                .accessibilityLabel("gRPC 消息")
-                Toggle("原始字节", isOn: $raw).toggleStyle(.checkbox)
+                .accessibilityLabel(Strings.Detail.grpcMessages)
+                Toggle(Strings.Detail.rawBytes, isOn: $raw).toggleStyle(.checkbox)
             }
             .controlSize(.small)
-            Text(selected.compressed ? "已压缩 · \(encoding ?? "未知编码")" : "未压缩")
+            Text(selected.compressed ? Strings.Detail.compressed(String(describing: encoding ?? Strings.Detail.unknownEncoding)) : Strings.Detail.uncompressed)
                 .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private func messageContent(_ message: GRPCFrames.Message, output: Output?) -> some View {
-        switch output {
-        case .raw(let bytes, let notice):
-            if let notice { Text(notice).foregroundStyle(.secondary) }
-            if bytes.isEmpty {
-                Text("空消息").foregroundStyle(.secondary)
-            } else {
-                if bytes.count < message.byteCount {
-                    Text("原始字节仅显示前 64 KiB。").foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            switch output {
+            case .raw(let bytes, let notice):
+                if let notice { Text(notice).foregroundStyle(.secondary) }
+                if bytes.isEmpty {
+                    Text(Strings.Detail.emptyMessage).foregroundStyle(.secondary)
+                } else {
+                    if bytes.count < message.byteCount {
+                        Text(Strings.Detail.onlyTheFirst64KibOfRawBytesAreShown).foregroundStyle(.secondary)
+                    }
+                    HexView(data: bytes, generation: bodyGeneration).id(message.id)
                 }
-                HexView(data: bytes, generation: bodyGeneration).text.id(message.id)
+            case .decoded(let text, let notice):
+                if let notice { Text(notice).foregroundStyle(.secondary) }
+                CodeDocument(text: text.isEmpty ? Strings.Detail.emptyMessage : text)
+                    .id(message.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case nil:
+                ProgressView(Strings.Detail.decoding).controlSize(.small)
             }
-        case .decoded(let text, let notice):
-            if let notice { Text(notice).foregroundStyle(.secondary) }
-            Text(text.isEmpty ? "空消息" : text)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case nil:
-            ProgressView("正在解码…").controlSize(.small)
         }
     }
 
     private func trailingMetadata(_ trailers: HTTPHeaders) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
-            Text("Trailers").fontWeight(.semibold)
+            Text(Strings.Detail.trailers).fontWeight(.semibold)
             ForEach(trailers.pairs.indices, id: \.self) { index in
                 let field = trailers.pairs[index]
                 Text("\(field.name): \(field.value)")
@@ -280,16 +289,16 @@ struct GRPCInspectorView: View {
             let bytes = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed])
             let count = 512 * 1024
             return .decoded(String(decoding: bytes.prefix(count), as: UTF8.self),
-                            notice: bytes.count > count ? "JSON 仅显示前 512 KiB。" : nil)
+                            notice: bytes.count > count ? Strings.Detail.jsonPreviewIsLimitedToTheFirst512Kib : nil)
         }
         let type = key.type.flatMap { schema?.contains($0) == true ? $0 : nil }
         let notice: String?
         if let type {
             notice = "Protobuf · \(type)"
         } else if let requested = key.type {
-            notice = "描述符未包含 \(requested) · 按 Protobuf 字段编号显示。"
+            notice = Strings.Detail.theDescriptorDoesNotContainShowingProtobufFieldNumbers(String(describing: requested))
         } else {
-            notice = "Protobuf · 按字段编号显示"
+            notice = Strings.Detail.protobufFieldNumbers
         }
         return .decoded(try GRPCProtobuf.describe(payload, type: type, schema: schema), notice: notice)
     }

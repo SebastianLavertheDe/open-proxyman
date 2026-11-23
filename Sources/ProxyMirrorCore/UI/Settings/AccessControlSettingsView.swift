@@ -11,39 +11,39 @@ struct AccessControlSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("代理访问控制").font(.headline)
-            Toggle("允许白名单设备连接局域网代理", isOn: $enabled)
+            Text(Strings.Settings.proxyAccessControl).font(.headline)
+            Toggle(Strings.Settings.allowApprovedDevicesToConnectToTheLan, isOn: $enabled)
             if enabled {
-                Picker("本机监听地址", selection: $address) {
-                    Text("选择本机地址").tag("")
+                Picker(Strings.Settings.localListenAddress, selection: $address) {
+                    Text(Strings.Settings.chooseLocalAddress).tag("")
                     ForEach(LANAccess.addresses, id: \.self) { Text($0).tag($0) }
                     if !address.isEmpty, !LANAccess.addresses.contains(address) {
-                        Text("\(address)（当前不可用）").tag(address)
+                        Text(Strings.Settings.currentlyUnavailable(address)).tag(address)
                     }
                 }
-                Text("允许的设备 IP 或 CIDR（每行一项）").font(.callout)
+                Text(Strings.Settings.allowedDeviceIpsOrCidrsOnePerLine).font(.callout)
                 TextEditor(text: $rangesText)
                     .font(.system(.body, design: .monospaced))
                     .frame(height: 96)
                     .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary))
-                    .accessibilityLabel("设备 IP 与 CIDR 白名单")
-                Text("例如 192.168.1.20、192.168.10.0/24、2001:db8::5 或 fd00::/64。最多 256 项，仅接受数值地址。CIDR 会授权该范围内的所有设备。")
+                    .accessibilityLabel(Strings.Settings.deviceIpCidrAllowlist)
+                Text(Strings.Settings.forExample192168120192168)
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    TextField("检查某个设备 IP", text: $checkAddress)
+                    TextField(Strings.Settings.checkADeviceIp, text: $checkAddress)
                     if !checkAddress.trimmingCharacters(in: .whitespaces).isEmpty {
                         let allowed = (try? NetworkAccessPolicy(ranges: ranges))?.allows(checkAddress) == true
-                        Label(allowed ? "允许" : "拒绝", systemImage: allowed ? "checkmark.shield" : "xmark.shield")
+                        Label(allowed ? Strings.Settings.allowed : Strings.Settings.denied, systemImage: allowed ? "checkmark.shield" : "xmark.shield")
                             .foregroundStyle(allowed ? Color.green : Color.secondary)
                     }
                 }
-                Text("设备代理填写所选地址及端口 \(settings.port)。只在该明确地址增加监听，本机 127.0.0.1 代理继续可用。")
+                Text(Strings.Settings.useTheSelectedAddressAndPortOnYour(Int(settings.port)))
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let issue = validation ?? feedback {
                 Text(issue).font(.caption).foregroundStyle(validation == nil ? Color.secondary : Color.red)
             }
-            Button("应用访问控制与监听设置", action: save)
+            Button(Strings.Settings.applyAccessControlListenerSettings, action: save)
                 .disabled(validation != nil || appState.systemProxyBusy || appState.proxyRestarting)
         }
         .onAppear(perform: load)
@@ -60,9 +60,9 @@ struct AccessControlSettingsView: View {
 
     private var validation: String? {
         guard enabled else { return nil }
-        if !LANAccess.addresses.contains(address) { return "请选择当前可用的本机局域网地址。" }
-        if ranges.isEmpty { return "启用局域网监听前，请至少填写一个允许的 IP 或 CIDR。" }
-        return NetworkAccessPolicy.validationError(for: ranges)
+        if !LANAccess.addresses.contains(address) { return Strings.Settings.chooseAnAvailableLocalLanAddress }
+        if ranges.isEmpty { return Strings.Settings.addAtLeastOneAllowedIpOrCidr }
+        return NetworkAccessPolicy.localizedValidationError(for: ranges)
     }
 
     private func load() {
@@ -79,7 +79,7 @@ struct AccessControlSettingsView: View {
             if !enabled {
                 settings.lanEnabled = false
                 appState.applyAndRestartIfNeeded()
-                feedback = "已保存为仅本机访问。"
+                feedback = Strings.Settings.savedForLocalAccessOnly
                 if !appState.proxyRestarting { load() }
                 return
             }
@@ -93,8 +93,8 @@ struct AccessControlSettingsView: View {
                 settings.deviceAddress = policy.ranges[0]
             }
             appState.applyAndRestartIfNeeded()
-            feedback = appState.proxyRunning ? "已应用；监听重启会关闭旧设备连接。" : "访问控制已保存，启动监听后生效。"
+            feedback = appState.proxyRunning ? Strings.Settings.appliedRestartingTheListenerClosesExistingDeviceConnections : Strings.Settings.accessControlSavedItTakesEffectWhenListening
             if !appState.proxyRestarting { load() }
-        } catch { feedback = error.localizedDescription }
+        } catch { feedback = LocalizedErrorPresentation.message(for: error) }
     }
 }

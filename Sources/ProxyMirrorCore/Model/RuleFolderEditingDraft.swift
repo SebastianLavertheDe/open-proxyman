@@ -37,7 +37,7 @@ struct RuleFolderEditingDraft: Equatable {
         let folder = RuleFolder(tool: tool, name: name.trimmingCharacters(in: .whitespacesAndNewlines), parentID: parentID, enabled: true)
         var candidate = organization
         candidate.folders.append(folder)
-        if let issue = candidate.validationError { throw RuleOrganizationStore.OrganizationError(issue) }
+        if let issue = candidate.validationIssue { throw RuleOrganizationStore.OrganizationError(issue) }
         organization = candidate
         return folder
     }
@@ -58,7 +58,7 @@ struct RuleFolderEditingDraft: Equatable {
         for key in keys where key.hasPrefix(prefix) && ruleIDs.contains(String(key.dropFirst(prefix.count))) {
             if base.assignments[key] != organization.assignments[key] { result.assignments[key] = organization.assignments[key] }
         }
-        if let issue = result.validationError { throw RuleOrganizationStore.OrganizationError(issue) }
+        if let issue = result.validationIssue { throw RuleOrganizationStore.OrganizationError(issue) }
         return result
     }
 }

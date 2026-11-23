@@ -32,9 +32,11 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     private let client: SocketAddress?
     private let clientApplication: ProcessAppInfo?
     private let transparentFlow: TransparentProxyFlow?
+    private let requestRules: () -> RulesSnapshot
     private var downstream: Channel?
     private var upstream: HTTP2UpstreamPool.Exchange?
     private var transaction: Transaction?
+    private var diagnosticHeaders = DiagnosticHeaders()
     private var capture = false
     private var bodyCapture: TransactionCapture?
     private var mapLocalSender: MapLocalSender?
@@ -92,7 +94,8 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     }
 
     init(engine: ProxyEngine, pool: HTTP2UpstreamPool, authorityHost: String, authorityPort: Int, client: SocketAddress?,
-         clientApplication: ProcessAppInfo?, transparentFlow: TransparentProxyFlow? = nil) {
+         clientApplication: ProcessAppInfo?, transparentFlow: TransparentProxyFlow? = nil,
+         requestRules: @escaping () -> RulesSnapshot = { RulesStore.shared.snapshot() }) {
         self.engine = engine
         self.pool = pool
         self.authorityHost = authorityHost
@@ -100,6 +103,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         self.client = client
         self.clientApplication = clientApplication
         self.transparentFlow = transparentFlow
+        self.requestRules = requestRules
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
@@ -180,6 +184,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             bodyCapture = TransactionCapture(transaction: tx, on: loop, sink: engine.sink)
         }
         transaction = tx
+        diagnosticHeaders = DiagnosticHeaders(requestID: tx.id)
         let target = ScriptingTarget(method: tx.method, scheme: tx.scheme, host: tx.host, path: tx.path,
                                      query: tx.query, url: tx.fullURL)
         originalTarget = target
@@ -197,12 +202,13 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
 
     private func routeRequest(_ head: NIOHTTP1.HTTPRequestHead, tx: Transaction) {
         guard let downstream, downstream.isActive, !responseEnded else { return }
-        let rules = RulesStore.shared.snapshot()
+        let rules = requestRules()
         let original = tx.fullURL
         let headers = Self.endToEndHeaders(head.headers)
         tx.requestHeaders = Self.capturedHeaders(headers)
         if rules.isBlocked(url: original) || !rules.isAllowed(url: original) {
             tx.matchedByBlock = true
+            diagnosticHeaders.record(.block)
             publish(tx)
             sendLocal(status: 403, type: "text/plain", data: Data("ProxyMirror: blocked by rules".utf8))
             return
@@ -216,6 +222,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                 switch result {
                 case .success(let local?):
                     tx.matchedByMapLocal = true
+                    self.diagnosticHeaders.record(.mapLocal)
                     self.publish(tx)
                     self.sendLocal(status: local.status, type: local.contentType, body: ByteBuffer(),
                                    contentLength: local.contentLength, headers: local.headers, file: local.body)
@@ -238,6 +245,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         var path = head.uri
         if let target = rules.mapRemoteTarget(for: original) {
             tx.matchedByMapRemote = true
+            diagnosticHeaders.record(.mapRemote)
             tx.originalURL = original
             tx.host = target.host
             tx.port = target.port
@@ -250,10 +258,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             for name in ["if-none-match", "if-modified-since", "if-unmodified-since"] { headers.remove(name: name) }
         }
         removeResponseCacheHeaders = rules.noCaching
-        if UserDefaults.standard.bool(forKey: "proxy.appendDiagnosticHeaders") {
-            headers.replaceOrAdd(name: "x-proxymirror-request-id", value: tx.id.uuidString)
-            headers.replaceOrAdd(name: "x-proxymirror-version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development")
-        }
+        headers = annotatedHeaders(headers)
         tx.requestHeaders = Self.capturedHeaders(headers)
         tx.resolvedAddress = InterceptionConfig.shared.mappedIP(for: tx.host)
         simulation = LatencyConditions.snapshot().sample(for: tx.host)
@@ -435,6 +440,8 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                                          mock: ScriptingMockResponse, logs: [String]) {
         guard gate?.id == id, let tx = transaction, let stage = takeInterception(), !responseEnded,
               case .request(let edited) = head else { return }
+        if stage.script != nil { diagnosticHeaders.record(.scripting) }
+        if stage.rule != nil { diagnosticHeaders.record(.breakpoint) }
         if let label = stage.label { tx.breakpointRules.append(label) }
         if !logs.isEmpty { tx.appendScriptingLogs(logs) }
         tx.requestHeaders = edited.headers
@@ -453,6 +460,8 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
 
     private func releaseInterception(_ id: UUID, head: BreakpointHead, body: Data?, logs: [String]) {
         guard gate?.id == id, let tx = transaction, let stage = takeInterception(), !responseEnded else { return }
+        if stage.script != nil { diagnosticHeaders.record(.scripting) }
+        if stage.rule != nil { diagnosticHeaders.record(.breakpoint) }
         switch head {
         case .request(let edited):
             if let label = stage.label { tx.breakpointRules.append(label) }
@@ -639,6 +648,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             let code = Int(head.status.code)
             var forwarded = head
             forwarded.headers = Self.endToEndHeaders(head.headers)
+            if code >= 200 { forwarded.headers = annotatedHeaders(forwarded.headers) }
             if code >= 200 {
                 responseStarted = true
                 responseWait?.cancel()
@@ -744,6 +754,10 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         fields.remove(name: "content-length")
         if ![204, 304].contains(status) {
             fields.add(name: "content-length", value: String(status == 205 ? 0 : contentLength))
+        }
+        fields = annotatedHeaders(fields)
+        if let tx = transaction {
+            tx.requestHeaders = diagnosticHeaders.appending(to: tx.requestHeaders)
         }
         let head = NIOHTTP1.HTTPResponseHead(version: .init(major: 2, minor: 0),
                                              status: HTTPResponseStatus(statusCode: status), headers: fields)
@@ -895,6 +909,11 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                 }
             }
         }
+    }
+
+    private func annotatedHeaders(_ headers: NIOHTTP1.HTTPHeaders) -> NIOHTTP1.HTTPHeaders {
+        let annotated = diagnosticHeaders.appending(to: Self.capturedHeaders(headers))
+        return NIOHTTP1.HTTPHeaders(annotated.pairs.map { ($0.name.lowercased(), $0.value) })
     }
 
     static func endToEndHeaders(_ headers: NIOHTTP1.HTTPHeaders) -> NIOHTTP1.HTTPHeaders {

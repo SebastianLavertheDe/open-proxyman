@@ -1,0 +1,10 @@
+# Use SwiftGen 6.6.3 through Scripts/generate_localization.sh for provenance.
+strings:
+  inputs:
+    - Sources/ProxyMirrorCore/Resources/en.lproj
+  outputs:
+    - templatePath: Scripts/Templates/localization-swift5.stencil
+      output: Sources/ProxyMirrorCore/Localization/Generated/Strings.swift
+      params:
+        enumName: Strings
+        forceFileNameEnum: true

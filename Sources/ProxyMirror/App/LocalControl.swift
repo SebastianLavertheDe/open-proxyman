@@ -9,6 +9,7 @@ enum ProxyMirrorEntryPoint {
     @MainActor
     static func main() {
         let args = Array(CommandLine.arguments.dropFirst())
+        if let result = LocalizationDiagnostics.runIfRequested(args) { exit(result) }
         if let first = args.first, !first.hasPrefix("-") || first.hasPrefix("--") || first == "-h" {
             exit(LocalControl.run(args))
         }
@@ -69,7 +70,7 @@ enum LocalControl {
       ProxyMirror proxy-address
       ProxyMirror factory-reset --confirm-reset [--delete-rules]
       ProxyMirror install-path
-      ProxyMirror mcp config|stdio
+      ProxyMirror mcp config|stdio|enable|disable|status
 
     筛选选项
       --selected       只查当前视图选中的流量
@@ -105,6 +106,7 @@ enum LocalControl {
         var ruleData: Data?
         var previewToken: String?
         var automationData: Data?
+        var automationIsMCP: Bool?
         var afterID: UUID?
 
         func validate() throws {
@@ -260,18 +262,39 @@ enum LocalControl {
 
     private static var mcpServer: MCPServer?
 
+    @MainActor
     static func start() throws -> DispatchSourceRead {
         let source = try LocalControlSocket.start(handler: handle)
-        if UserDefaults.standard.object(forKey: "automation.mcpEnabled") as? Bool != false {
-            do { mcpServer = try MCPServer.start() }
-            catch { NSLog("[ProxyMirror] MCP 服务启动失败：%@", error.localizedDescription) }
-        }
+        MCPPreferencesController.shared.register(applyEnabled: { setMCPEnabled($0) }, configuration: { client, transport in
+            if transport == .http && mcpServer == nil { return nil }
+            return MCPServer.clientConfiguration(client: client, transport: transport)
+        })
         return source
     }
 
+    @MainActor
+    private static func setMCPEnabled(_ enabled: Bool) {
+        if !enabled {
+            mcpServer?.stop()
+            mcpServer = nil
+            MCPPreferencesController.shared.update(isRunning: false)
+            return
+        }
+        do {
+            if mcpServer == nil { mcpServer = try MCPServer.start() }
+            MCPPreferencesController.shared.update(isRunning: true, endpoint: MCPServer.configuration?["url"] as? String)
+        } catch {
+            MCPPreferencesController.shared.update(isRunning: false,
+                error: Strings.Integration.mcpStartFailed(LocalizedErrorPresentation.message(for: error)))
+            NSLog("[ProxyMirror] MCP 服务启动失败：%@", error.localizedDescription)
+        }
+    }
+
+    @MainActor
     static func stopAutomation() {
         mcpServer?.stop()
         mcpServer = nil
+        MCPPreferencesController.shared.update(isRunning: false)
     }
 
     /// Shared dispatch path for the Unix CLI and authenticated HTTP MCP tools.
@@ -302,26 +325,27 @@ enum LocalControl {
         }
     }
 
-    static func automationRequest(_ object: [String: Any]) throws -> Data {
+    static func automationRequest(_ object: [String: Any], isMCP: Bool = false) throws -> Data {
         var request = Request(version: 1, command: .automation)
         request.automationData = try JSONSerialization.data(withJSONObject: object)
+        request.automationIsMCP = isMCP
         return try JSONEncoder().encode(request)
     }
 
     @MainActor
     static func installCLI() {
-        do { AppState.shared.systemProxyMessage = "命令行已安装：\(try AutomationControl.installCLI().path)；重新打开终端后可使用 proxymirror-cli。" }
-        catch { AppState.shared.systemProxyMessage = error.localizedDescription }
+        do { AppState.shared.systemProxyMessage = Strings.Integration.cliInstalled(try AutomationControl.installCLI().path) }
+        catch { AppState.shared.systemProxyMessage = LocalizedErrorPresentation.message(for: error) }
     }
 
     @MainActor
     static func showMCPConfiguration() {
         let alert = NSAlert()
         alert.messageText = "ProxyMirror MCP"
-        if let configuration = MCPServer.configuration,
+        if mcpServer != nil, let configuration = MCPServer.configuration,
            let data = try? AutomationControl.json(configuration) {
             let text = String(decoding: data, as: UTF8.self)
-            alert.informativeText = "HTTP MCP 仅监听本机，连接令牌每次启动更新。也可使用 proxymirror-cli mcp stdio，无需保存令牌。"
+            alert.informativeText = Strings.Integration.httpMcpDetails
             let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 220))
             let content = NSTextView(frame: scroll.bounds)
             content.string = text
@@ -330,11 +354,12 @@ enum LocalControl {
             scroll.documentView = content
             scroll.hasVerticalScroller = true
             alert.accessoryView = scroll
-            alert.addButton(withTitle: "复制配置")
-            alert.addButton(withTitle: "关闭")
+            alert.addButton(withTitle: Strings.Integration.copyConfiguration)
+            alert.addButton(withTitle: Strings.Integration.close)
             if alert.runModal() == .alertFirstButtonReturn { CopyPaste.copy(text) }
         } else {
-            alert.informativeText = "MCP 服务未启动。检查 automation.mcpEnabled 设置后重新启动应用。"
+            alert.informativeText = MCPPreferencesController.shared.errorMessage ?? Strings.Integration.mcpNotRunning
+            alert.addButton(withTitle: Strings.Integration.close)
             alert.runModal()
         }
     }
@@ -348,7 +373,7 @@ enum LocalControl {
                   let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw LocalControlError.usage("无效的自动化命令。")
             }
-            return .raw(try AutomationControl.execute(object, app: app))
+            return .raw(try AutomationControl.execute(object, app: app, isMCP: request.automationIsMCP == true))
         case .status: return .status(Status(app))
         case .ruleExport: return .ruleBackup(RuleBackup.snapshot(settings: app.settings).subset(request.ruleTool))
         case .rulePreview, .ruleApply:

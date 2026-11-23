@@ -2,6 +2,7 @@ import Foundation
 @testable import ProxyMirrorCore
 
 func checkComposeExportFeatures(_ test: CoreAssertions) throws {
+    try checkMCPPrivacy(test)
     let parsed = ComposeService.parseCurl("curl -L --max-time 15 -X QUERY 'https://example.test/search' --data-raw '{}'")
     test.equal(parsed?.timeoutSeconds, 15, "cURL import retains the overall deadline")
     test.equal(parsed?.followRedirects, true, "cURL import retains redirect behavior")

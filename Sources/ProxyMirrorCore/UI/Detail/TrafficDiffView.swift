@@ -14,33 +14,33 @@ struct TrafficDiffWorkspaceView: View {
         HSplitView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("对比池（\(pool.count)）").font(.headline)
+                    Text(Strings.Detail.comparisonPool(pool.count)).font(.headline)
                     Spacer()
                     Button { addSelection() } label: { Image(systemName: "plus") }
-                        .help("将主窗口选中的请求加入对比池")
+                        .help(Strings.Detail.addRequestsSelectedInTheMainWindowToTheComparisonPool)
                 }.padding(.horizontal, 10)
                 List(pool) { transaction in
                     VStack(alignment: .leading, spacing: 5) {
                         Text("#\(transaction.seq) \(transaction.method)").font(.caption).foregroundStyle(.secondary)
                         Text(transaction.fullURL).lineLimit(2).help(transaction.fullURL)
                         HStack {
-                            Button("左侧") { leftID = transaction.id }.tint(leftID == transaction.id ? .accentColor : .secondary)
-                            Button("右侧") { rightID = transaction.id }.tint(rightID == transaction.id ? .accentColor : .secondary)
+                            Button(Strings.Detail.left) { leftID = transaction.id }.tint(leftID == transaction.id ? .accentColor : .secondary)
+                            Button(Strings.Detail.right) { rightID = transaction.id }.tint(rightID == transaction.id ? .accentColor : .secondary)
                             Spacer()
                             if appState.diffPool.contains(where: { $0.id == transaction.id }) {
                                 Button { appState.toggleDiffCandidate(transaction) } label: { Image(systemName: "minus.circle") }
-                                    .buttonStyle(.borderless).help("从对比池移除")
+                                    .buttonStyle(.borderless).help(Strings.Detail.removeFromComparisonPool)
                             }
                         }
                     }.padding(.vertical, 3)
                 }
-                Button("清空对比池") { appState.clearDiffPool() }.padding(.horizontal, 10)
+                Button(Strings.Detail.clearComparisonPool) { appState.clearDiffPool() }.padding(.horizontal, 10)
             }.padding(.vertical, 10).frame(minWidth: 210, idealWidth: 250, maxWidth: 360)
             VStack(spacing: 0) {
                 HStack {
-                    selector("左侧", selection: $leftID)
+                    selector(Strings.Detail.left, selection: $leftID)
                     Button { swap(&leftID, &rightID) } label: { Image(systemName: "arrow.left.arrow.right") }
-                    selector("右侧", selection: $rightID)
+                    selector(Strings.Detail.right, selection: $rightID)
                 }.padding(10)
                 Divider()
                 if let left = pool.first(where: { $0.id == leftID }), let right = pool.first(where: { $0.id == rightID }) {
@@ -48,8 +48,8 @@ struct TrafficDiffWorkspaceView: View {
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "doc.on.doc").font(.largeTitle)
-                        Text("将请求加入对比池，并分别指定左侧和右侧。")
-                        Button("加入主窗口选择") { addSelection(); seedSelection() }
+                        Text(Strings.Detail.addRequestsToTheComparisonPoolAndAssignTheLeftAnd)
+                        Button(Strings.Detail.addMainWindowSelection) { addSelection(); seedSelection() }
                     }.foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }.frame(minWidth: 620)
@@ -61,7 +61,7 @@ struct TrafficDiffWorkspaceView: View {
 
     private func selector(_ title: String, selection: Binding<UUID?>) -> some View {
         Picker(title, selection: selection) {
-            Text("选择请求").tag(nil as UUID?)
+            Text(Strings.Detail.selectRequest).tag(nil as UUID?)
             ForEach(pool) { transaction in
                 Text("#\(transaction.seq) \(transaction.method) \(transaction.fullURL)").tag(Optional(transaction.id))
             }
@@ -113,24 +113,24 @@ struct TrafficDiffView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Picker("内容", selection: $component) {
-                    ForEach(TrafficDiffDocument.Component.allCases) { Text($0.rawValue).tag($0) }
+                Picker(Strings.Detail.content, selection: $component) {
+                    ForEach(TrafficDiffDocument.Component.allCases) { Text($0.localizedTitle).tag($0) }
                 }.frame(width: 180)
-                Picker("显示", selection: $unified) {
-                    Text("并排").tag(false)
-                    Text("统一").tag(true)
+                Picker(Strings.Detail.display, selection: $unified) {
+                    Text(Strings.Detail.sideBySide).tag(false)
+                    Text(Strings.Detail.unified).tag(true)
                 }.pickerStyle(.segmented).frame(width: 140)
                 Spacer()
-                Menu("外部对比") {
+                Menu(Strings.Detail.externalDiff) {
                     Button("FileMerge") { openExternal("FileMerge") }
                     Button("Kaleidoscope") { openExternal("Kaleidoscope") }
                 }
-                if showsClose { Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction) }
+                if showsClose { Button(Strings.Detail.close) { dismiss() }.keyboardShortcut(.cancelAction) }
             }
             HStack {
-                Toggle("JSON 键排序", isOn: $sortJSON)
-                Toggle("Header 排序", isOn: $sortHeaders)
-                Toggle("词级差异", isOn: $wordChanges)
+                Toggle(Strings.Detail.sortJsonKeys, isOn: $sortJSON)
+                Toggle(Strings.Detail.sortHeaders, isOn: $sortHeaders)
+                Toggle(Strings.Detail.wordLevelDifferences, isOn: $wordChanges)
                 Spacer()
                 if let comparison {
                     Text("+\(comparison.inserted) / −\(comparison.removed)").foregroundStyle(.secondary)
@@ -166,9 +166,9 @@ struct TrafficDiffView: View {
                     }
                 }.textSelection(.enabled)
             } else {
-                ProgressView("正在比较…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView(Strings.Detail.comparing).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Text("正文最多 256 KiB / 1200 行；压缩正文使用解码后的内容，二进制使用十六进制。")
+            Text(Strings.Detail.bodiesAreLimitedTo256Kib1200LinesCompressedBodies)
                 .font(.caption).foregroundStyle(.secondary)
         }
         .font(.system(size: 12, design: .monospaced))
@@ -181,8 +181,8 @@ struct TrafficDiffView: View {
             }.value
             if !Task.isCancelled { comparison = result }
         }
-        .alert("外部对比失败", isPresented: Binding(get: { externalError != nil }, set: { if !$0 { externalError = nil } })) {
-            Button("好") { externalError = nil }
+        .alert(Strings.Detail.externalComparisonFailed, isPresented: Binding(get: { externalError != nil }, set: { if !$0 { externalError = nil } })) {
+            Button(Strings.Detail.ok) { externalError = nil }
         } message: { Text(externalError ?? "") }
     }
 
@@ -223,7 +223,7 @@ struct TrafficDiffView: View {
             var information = stat()
             guard lstat(directory.path, &information) == 0, information.st_mode & S_IFMT == S_IFDIR,
                   information.st_uid == geteuid() else {
-                throw NSError(domain: "TrafficDiff", code: 2, userInfo: [NSLocalizedDescriptionKey: "外部对比临时目录必须由当前用户拥有，且不能是符号链接。"])
+                throw NSError(domain: "TrafficDiff", code: 2, userInfo: [NSLocalizedDescriptionKey: Strings.Detail.theExternalComparisonTemporaryDirectoryMustBelongToTheCurrentUser])
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
             // open(1) returns before the target application reads the files. Keep them until the next day's cleanup.
@@ -243,18 +243,18 @@ struct TrafficDiffView: View {
                 process.arguments = [before.path, after.path]
             } else {
                 guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.blackpixel.kaleidoscope") != nil else {
-                    throw NSError(domain: "TrafficDiff", code: 1, userInfo: [NSLocalizedDescriptionKey: "请先安装 Kaleidoscope。"])
+                    throw NSError(domain: "TrafficDiff", code: 1, userInfo: [NSLocalizedDescriptionKey: Strings.Detail.installKaleidoscopeFirst])
                 }
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
                 process.arguments = ["-a", application, before.path, after.path]
             }
             process.terminationHandler = { task in
                 if task.terminationStatus != 0 {
-                    Task { @MainActor in externalError = "\(application) 退出码 \(task.terminationStatus)。FileMerge 需要安装 Xcode Command Line Tools。" }
+                    Task { @MainActor in externalError = Strings.Detail.exitedWithCodeFilemergeRequiresXcodeCommandLineTools(String(describing: application), String(describing: task.terminationStatus)) }
                 }
             }
             try process.run()
-        } catch { externalError = error.localizedDescription }
+        } catch { externalError = LocalizedErrorPresentation.message(for: error) }
     }
 
     private struct DiffInput: Hashable, Sendable { let before: [String]; let after: [String] }

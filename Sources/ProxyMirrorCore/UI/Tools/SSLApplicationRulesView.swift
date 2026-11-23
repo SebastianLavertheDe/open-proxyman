@@ -12,14 +12,14 @@ struct SSLApplicationRulesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("按应用配置 SSL").font(.headline)
-            Text("匹配的应用按下表解密或透传。其他来源继续使用域名规则。全局 SSL 开关和排除主机优先。规则应用于新连接。")
+            Text(Strings.Tools.sslByApplication).font(.headline)
+            Text(Strings.Tools.matchingApplicationsUseTheDecryptionOrPassthroughRulesBelow)
                 .font(.callout).foregroundStyle(.secondary)
 
             List(selection: $selection) {
                 ForEach($rules) { $rule in
                     HStack(spacing: 12) {
-                        Toggle("启用 \(rule.bundleID)", isOn: $rule.enabled)
+                        Toggle(Strings.Tools.enable1(String(describing: rule.bundleID)), isOn: $rule.enabled)
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.small)
@@ -30,7 +30,7 @@ struct SSLApplicationRulesView: View {
                             }
                         }
                         Spacer()
-                        Picker("SSL 行为", selection: $rule.action) {
+                        Picker(Strings.Tools.sslBehavior, selection: $rule.action) {
                             ForEach(SSLApplicationRule.Action.allCases, id: \.self) { action in
                                 Text(action.title).tag(action)
                             }
@@ -44,17 +44,17 @@ struct SSLApplicationRulesView: View {
             }
             .overlay {
                 if rules.isEmpty {
-                    Text("选择本机应用，或输入它的 Bundle ID。").foregroundStyle(.secondary).allowsHitTesting(false)
+                    Text(Strings.Tools.chooseALocalApplicationOrEnterItsBundleIdentifier).foregroundStyle(.secondary).allowsHitTesting(false)
                 }
             }
 
             HStack {
-                Button("选择应用…", action: chooseApplication)
+                Button(Strings.Tools.chooseApplication, action: chooseApplication)
                 TextField("Bundle ID", text: $bundleID)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(addTypedApplication)
-                Button("添加", action: addTypedApplication).disabled(bundleID.isEmpty)
-                Button("移除所选") {
+                Button(Strings.Tools.add, action: addTypedApplication).disabled(bundleID.isEmpty)
+                Button(Strings.Tools.removeSelected) {
                     rules.removeAll { $0.id == selection }
                     selection = nil
                 }
@@ -63,8 +63,8 @@ struct SSLApplicationRulesView: View {
             if let error { Text(error).foregroundStyle(.red).font(.caption) }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存", action: save).keyboardShortcut(.return, modifiers: .command)
+                Button(Strings.Tools.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.save, action: save).keyboardShortcut(.return, modifiers: .command)
             }
         }
         .padding(16)
@@ -83,7 +83,7 @@ struct SSLApplicationRulesView: View {
         panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let bundle = Bundle(url: url), let identifier = bundle.bundleIdentifier else {
-            error = "所选应用没有可用的 Bundle ID。"
+            error = Strings.Tools.theSelectedApplicationHasNoUsableBundleId
             return
         }
         let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -96,7 +96,7 @@ struct SSLApplicationRulesView: View {
 
     private func addApplication(_ identifier: String, name: String) {
         let id = SSLApplicationRule.normalize(identifier)
-        guard SSLApplicationRule.isValid(id) else { error = "请输入有效的 Bundle ID。"; return }
+        guard SSLApplicationRule.isValid(id) else { error = Strings.Tools.enterAValidBundleId; return }
         if !rules.contains(where: { $0.id == id }) {
             rules.append(SSLApplicationRule(bundleID: id, name: name))
         }
@@ -114,6 +114,6 @@ struct SSLApplicationRulesView: View {
         var backup = store.backup()
         backup.sslApplications = rules
         do { try store.install(backup); dismiss() }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = LocalizedErrorPresentation.message(for: error) }
     }
 }

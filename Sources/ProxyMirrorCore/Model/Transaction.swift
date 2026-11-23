@@ -3,11 +3,28 @@ import AppKit
 
 /// Proxyman 顶部筛选 chips（实测: 全部|HTTP|HTTPS|WebSocket|JSON|表单|XML|JS|CSS|GraphQL|文档|媒体|其他）
 enum FilterChip: String, CaseIterable, Identifiable {
-    case all = "全部", http = "HTTP", https = "HTTPS", websocket = "WebSocket", json = "JSON",
-         form = "表单", xml = "XML", js = "JS", css = "CSS", graphql = "GraphQL",
-         document = "文档", media = "媒体", other = "其他"
+    case all, http, https, websocket, json,
+         form, xml, js, css, graphql,
+         document, media, other
     var id: String { rawValue }
-}
+        var localizedTitle: String {
+            switch self {
+            case .all: return Strings.Models.filterAll
+            case .http: return Strings.Models.filterHttp
+            case .https: return Strings.Models.filterHttps
+            case .websocket: return Strings.Models.filterWebsocket
+            case .json: return Strings.Models.filterJson
+            case .form: return Strings.Models.filterForm
+            case .xml: return Strings.Models.filterXml
+            case .js: return Strings.Models.filterJs
+            case .css: return Strings.Models.filterCss
+            case .graphql: return Strings.Models.filterGraphql
+            case .document: return Strings.Models.filterDocument
+            case .media: return Strings.Models.filterMedia
+            case .other: return Strings.Models.filterOther
+            }
+        }
+    }
 
 extension Transaction {
     func matches(chip: FilterChip) -> Bool {
@@ -46,18 +63,18 @@ enum TxState: String, Codable {
 }
 
 enum BodyKind: String, CaseIterable {
-    case json = "JSON"
-    case html = "HTML"
-    case xml = "XML"
-    case javascript = "JS"
-    case css = "CSS"
-    case image = "Image"
-    case font = "Font"
-    case plain = "Text"
-    case stream = "Stream"
-    case binary = "Binary"
-    case tunnel = "Tunnel"
-    case unknown = "Other"
+    case json
+    case html
+    case xml
+    case javascript
+    case css
+    case image
+    case font
+    case plain
+    case stream
+    case binary
+    case tunnel
+    case unknown
 
     static func from(contentType: String?, scheme: String?) -> BodyKind {
         let ct = (contentType ?? "").lowercased()
@@ -73,7 +90,23 @@ enum BodyKind: String, CaseIterable {
         if ct.isEmpty { return scheme == "Tunnel" ? .tunnel : .unknown }
         return .binary
     }
-}
+        var localizedTitle: String {
+            switch self {
+            case .json: return Strings.Models.bodyKindJson
+            case .html: return Strings.Models.bodyKindHtml
+            case .xml: return Strings.Models.bodyKindXml
+            case .javascript: return Strings.Models.bodyKindJavascript
+            case .css: return Strings.Models.bodyKindCss
+            case .image: return Strings.Models.bodyKindImage
+            case .font: return Strings.Models.bodyKindFont
+            case .plain: return Strings.Models.bodyKindPlain
+            case .stream: return Strings.Models.bodyKindStream
+            case .binary: return Strings.Models.bodyKindBinary
+            case .tunnel: return Strings.Models.bodyKindTunnel
+            case .unknown: return Strings.Models.bodyKindUnknown
+            }
+        }
+    }
 
 // MARK: - Transaction（一条请求/响应记录）
 
@@ -227,13 +260,13 @@ final class Transaction: ObservableObject, Identifiable {
     @Published var scriptingLogs: [String] = []
     var ruleMatches: [String] {
         var result: [String] = []
-        if matchedByBlock { result.append("Block / Allow") }
-        if matchedByMapLocal { result.append("Map Local") }
-        if matchedByMapRemote { result.append("Map Remote") }
-        result.append(contentsOf: breakpointRules.map { "断点 · \($0)" })
-        if !scriptingLogs.isEmpty { result.append("脚本") }
-        if resolvedAddress != nil { result.append("DNS Mapping") }
-        if let simulatedLatencyMs { result.append("网络延迟 \(simulatedLatencyMs) ms") }
+        if matchedByBlock { result.append(Strings.Models.ruleMatchBlock) }
+        if matchedByMapLocal { result.append(Strings.Models.ruleMatchMapLocal) }
+        if matchedByMapRemote { result.append(Strings.Models.ruleMatchMapRemote) }
+        result.append(contentsOf: breakpointRules.map { Strings.Models.ruleMatchBreakpoint($0) })
+        if !scriptingLogs.isEmpty { result.append(Strings.Models.ruleMatchScript) }
+        if resolvedAddress != nil { result.append(Strings.Models.ruleMatchDns) }
+        if let simulatedLatencyMs { result.append(Strings.Models.ruleMatchLatency(simulatedLatencyMs)) }
         return result
     }
 
@@ -246,6 +279,7 @@ final class Transaction: ObservableObject, Identifiable {
     @Published var clientName: String?
     @Published var clientPID: Int32?
     @Published var clientBundle: String?
+    @Published var isIOSSimulator = false
     var clientAddress: String?
     private var clientBundleURL: URL?
 
@@ -259,6 +293,7 @@ final class Transaction: ObservableObject, Identifiable {
         clientName = info.name
         clientBundle = info.bundleID
         clientPID = Int32(info.pid)
+        isIOSSimulator = info.isIOSSimulator
     }
     /// 阶段时间戳（Chart 瀑布图用；主线程写入）
     var tConnected: Date?

@@ -70,4 +70,5 @@ func checkMemoryPressure(_ test: CoreAssertions) throws {
         guide.show(topic)
         test.equal(guide.topic, topic, "Troubleshooting opens its exact guide topic: \(topic.rawValue)")
     }
+    try checkAutomaticTrafficCleanup(test)
 }

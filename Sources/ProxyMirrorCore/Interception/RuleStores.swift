@@ -13,22 +13,30 @@ enum RewriteAction: Codable, Hashable, Identifiable {
     case script(phase: ScriptingPhase, source: String)
 
     enum HeaderOp: String, Codable, CaseIterable {
-        case set = "设置"
-        case add = "添加"
-        case remove = "删除"
-        case replaceExisting = "替换现有"
+        case set
+        case add
+        case remove
+        case replaceExisting
+        var localizedTitle: String {
+            switch self {
+            case .set: return Strings.Models.headerOperationSet
+            case .add: return Strings.Models.headerOperationAdd
+            case .remove: return Strings.Models.headerOperationRemove
+            case .replaceExisting: return Strings.Models.headerOperationReplaceExisting
+            }
+        }
     }
 
     var id: String { hashValue.description }
     var summary: String {
         switch self {
-        case .requestHeader(let op, let n, _): return "请求头 \(op.rawValue): \(n)"
-        case .responseHeader(let op, let n, _): return "响应头 \(op.rawValue): \(n)"
-        case .redirect(_, let h, let p): return "重定向 → \(h)\(p > 0 ? ":\(p)" : "")"
-        case .replaceRequestBody(let f, _, let re): return "替换请求 Body \(re ? "(regex)" : ""): \(f)"
-        case .replaceResponseBody(let f, _, let re): return "替换响应 Body \(re ? "(regex)" : ""): \(f)"
-        case .setStatus(let c): return "状态码 → \(c)"
-        case .script(let phase, _): return "\(phase.label)脚本"
+        case .requestHeader(let op, let n, _): return Strings.Models.rewriteRequestHeaderSummary(op.localizedTitle, n)
+        case .responseHeader(let op, let n, _): return Strings.Models.rewriteResponseHeaderSummary(op.localizedTitle, n)
+        case .redirect(_, let h, let p): return Strings.Models.rewriteRedirectSummary(h + (p > 0 ? ":\(p)" : ""))
+        case .replaceRequestBody(let f, _, let re): return Strings.Models.rewriteRequestBodySummary(re ? "(regex)" : "", f)
+        case .replaceResponseBody(let f, _, let re): return Strings.Models.rewriteResponseBodySummary(re ? "(regex)" : "", f)
+        case .setStatus(let c): return Strings.Models.rewriteStatusSummary(c)
+        case .script(let phase, _): return Strings.Models.rewriteScriptSummary(phase.label)
         }
     }
 }
@@ -44,7 +52,7 @@ struct RewriteRule: Codable, Hashable, Identifiable {
 /// Rewrite 规则集（Proxyman 的 Scripting 分组概念，简化为分组列表）
 struct RewriteRuleSet: Codable, Hashable, Identifiable {
     var id: UUID = UUID()
-    var name: String = "规则集"
+    var name: String = Strings.Models.ruleSetDefaultName
     var enabled: Bool = true
     var rules: [RewriteRule] = []
 }
@@ -59,6 +67,12 @@ struct BreakpointRule: Codable, Hashable, Identifiable {
     enum Phase: String, Codable, CaseIterable {
         case request = "Request"
         case response = "Response"
+        var localizedTitle: String {
+            switch self {
+            case .request: return Strings.Models.breakpointPhaseRequest
+            case .response: return Strings.Models.breakpointPhaseResponse
+            }
+        }
     }
 }
 
@@ -79,7 +93,7 @@ struct DNSSpoofRule: Codable, Hashable, Identifiable {
 struct ReverseProxyRule: Codable, Hashable, Identifiable {
     var id: UUID = UUID()
     var enabled: Bool = true
-    var name: String = "Reverse Proxy"
+    var name: String = Strings.Models.reverseProxyDefaultName
     var listenPort: UInt16 = 0          // 10000-65535
     var remoteHost: String = ""
     var remotePort: Int = 80
@@ -103,11 +117,12 @@ struct ExternalProxyConfig: Codable, Hashable {
 
     enum RoutingMode: String, Codable, CaseIterable {
         case all, bypass, inclusive
-        var title: String {
+        var title: String { localizedTitle }
+        var localizedTitle: String {
             switch self {
-            case .all: return "所有目标"
-            case .bypass: return "排除直连列表"
-            case .inclusive: return "仅包含列表"
+            case .all: return Strings.Models.externalRoutingAll
+            case .bypass: return Strings.Models.externalRoutingBypass
+            case .inclusive: return Strings.Models.externalRoutingInclusive
             }
         }
     }
@@ -118,6 +133,14 @@ struct ExternalProxyConfig: Codable, Hashable {
         case https = "HTTPS"
         case socks5 = "SOCKS5"
         case pac = "PAC"
+        var localizedTitle: String {
+            switch self {
+            case .http: return Strings.Models.externalModeHttp
+            case .https: return Strings.Models.externalModeHttps
+            case .socks5: return Strings.Models.externalModeSocks5
+            case .pac: return Strings.Models.externalModePac
+            }
+        }
     }
 }
 
@@ -145,7 +168,9 @@ enum RulesFileIO {
     static func load<T: Codable>(_ file: String) -> T? {
         let url = dir.appendingPathComponent(file)
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
+        guard let value = try? JSONDecoder().decode(T.self, from: data) else { return nil }
+        if let backup = value as? RuleBackup, backup.version != RuleBackup.currentVersion { return nil }
+        return value
     }
 
     @discardableResult
@@ -194,11 +219,11 @@ final class InterceptionConfig: @unchecked Sendable {
 
     func loadAll() {
         let consolidated: RuleBackup? = RulesFileIO.load("rules.json")
-        if let v = consolidated?.rewrite ?? RulesFileIO.load("rewrite.json") { rewrite.set(v) }
-        if let v = consolidated?.breakpoints ?? RulesFileIO.load("breakpoint.json") { breakpoints.set(v) }
-        if let v = consolidated?.dns ?? RulesFileIO.load("dns.json") { dnsSpoof.set(v) }
-        if let v = consolidated?.reverse ?? RulesFileIO.load("reverse.json") { reverse.set(v) }
-        if let v = consolidated?.external ?? RulesFileIO.load("external.json") { externalProxy.set(v) }
+        if let v = consolidated?.rewrite { rewrite.set(v) }
+        if let v = consolidated?.breakpoints { breakpoints.set(v) }
+        if let v = consolidated?.dns { dnsSpoof.set(v) }
+        if let v = consolidated?.reverse { reverse.set(v) }
+        if let v = consolidated?.external { externalProxy.set(v) }
         if let v = consolidated?.h2c ?? RulesFileIO.load("h2c.json") { h2cUpstream.set(v) }
     }
 

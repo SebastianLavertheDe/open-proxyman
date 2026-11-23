@@ -17,7 +17,7 @@ func checkSimulatorCertificateInstaller(_ test: CoreAssertions, certificate: URL
     test.expect(!recorder.commands[0].arguments.contains("--set"), "Standard listing does not guess a custom device-set path")
     let vision = standard.first { $0.id == "33333333-3333-3333-3333-333333333333" }!
     test.equal(vision.runtimeName, "visionOS 2.0", "Legacy xrOS runtime identifiers display as visionOS")
-    test.expect(vision.matches(platform: "visionOS") && vision.matches(platform: "全部") && !vision.matches(platform: "watchOS"),
+    test.expect(vision.matches(platform: "visionOS") && vision.matches(platform: "all") && !vision.matches(platform: "watchOS"),
                 "Installer platform filtering uses runtime metadata")
 
     let directory = try makeCheckDirectory()

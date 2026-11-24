@@ -6,7 +6,8 @@ import shutil
 import tempfile
 import unittest
 
-from test_localization_bundle import CORE_BUNDLE, LANGUAGES, ROOT, read_strings, verify_resources
+from prepare_app_resources import normalize_localizations, write_licenses
+from test_localization_bundle import CORE_BUNDLE, LANGUAGES, ROOT, read_strings, verify_resources, verify_selection_count
 
 
 class LocalizationPackagingChecks(unittest.TestCase):
@@ -30,6 +31,57 @@ class LocalizationPackagingChecks(unittest.TestCase):
 
     def test_complete_source_resources_pass(self):
         self.assertGreater(verify_resources(self.app), 0)
+
+    def test_lowercase_swiftpm_localization_is_normalized(self):
+        (self.core / "zh-Hans.lproj").rename(self.core / "zh-hans.lproj")
+        normalize_localizations(self.core)
+        self.assertIn("zh-Hans.lproj", [path.name for path in self.core.iterdir()])
+        self.assertGreater(verify_resources(self.app), 0)
+
+    def test_nested_macos_bundle_localization_is_normalized(self):
+        entries = list(self.core.iterdir())
+        resources = self.core / "Contents/Resources"
+        resources.mkdir(parents=True)
+        for path in entries:
+            path.rename(resources / path.name)
+        (resources / "zh-Hans.lproj").rename(resources / "zh-hans.lproj")
+        normalize_localizations(self.core)
+        self.assertIn("zh-Hans.lproj", [path.name for path in resources.iterdir()])
+        self.assertGreater(verify_resources(self.app), 0)
+
+    def test_ambiguous_language_directories_fail(self):
+        duplicate = self.core / "zh-hans.lproj"
+        if duplicate.exists():
+            self.skipTest("Filesystem does not allow case-distinct directories")
+        duplicate.mkdir()
+        with self.assertRaisesRegex(ValueError, "found 2"):
+            normalize_localizations(self.core)
+
+    def test_missing_language_is_not_silently_accepted(self):
+        shutil.rmtree(self.core / "zh-Hans.lproj")
+        with self.assertRaisesRegex(ValueError, "found 0"):
+            normalize_localizations(self.core)
+
+    def test_licenses_are_rewritten_as_plain_text(self):
+        destination = self.resources / "ThirdParty"
+        write_licenses(destination)
+        self.assertEqual((destination / "ScriptingLibraries-LICENSE").read_text(encoding="utf-8"),
+                         (ROOT / "ThirdParty/ScriptingLibraries.md").read_text(encoding="utf-8"))
+        self.assertEqual((destination / "Zstandard-LICENSE").read_text(encoding="utf-8"),
+                         (ROOT / "Sources/ProxyMirrorZstd/LICENSE").read_text(encoding="utf-8"))
+        self.assertFalse(list(destination.glob("*.md")))
+
+    def test_native_count_grouping_is_accepted_in_both_languages(self):
+        for number in ("1000", "1,000"):
+            verify_selection_count({"count": 1000, "text": f"{number} requests selected"}, "en")
+            verify_selection_count({"count": 1000, "text": f"已选择 {number} 条请求"}, "zh-Hans")
+        verify_selection_count({"count": 1, "text": "1 request selected"}, "en")
+
+    def test_native_count_validation_still_rejects_wrong_text(self):
+        for count, text in ((1000, "1,001 requests selected"), (1, "1 requests selected"),
+                            (1000, "1,000 request selected"), (0, "0 request selected")):
+            with self.assertRaises(ValueError):
+                verify_selection_count({"count": count, "text": text}, "en")
 
     def test_missing_bundle_fails(self):
         shutil.rmtree(self.core)

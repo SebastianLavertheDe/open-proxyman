@@ -26,7 +26,7 @@ struct SseEventsView: View {
                 Text(Strings.Detail.events(tx.sseEvents.count))
                 if tx.sseEventsTruncated { Text(Strings.Detail.truncated) }
                 if let first = tx.sseEvents.first?.at, let last = tx.sseEvents.last?.at {
-                    Text(Strings.Detail.span1fs(max(last.timeIntervalSince(first), 0)))
+                    Text(Strings.Detail.span1fs(Float(max(last.timeIntervalSince(first), 0))))
                 }
                 Spacer()
             }

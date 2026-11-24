@@ -48,6 +48,17 @@ enum ComposeService {
         case multipart = "POST Multipart", query = "QUERY with Body", websocket = "WebSocket"
         var id: String { rawValue }
 
+        var localizedTitle: String {
+            switch self {
+            case .get: return Strings.Tools.templateGetWithQuery
+            case .json: return Strings.Tools.templatePostJson
+            case .form: return Strings.Tools.templatePostForm
+            case .multipart: return Strings.Tools.templatePostMultipart
+            case .query: return Strings.Tools.templateQueryWithBody
+            case .websocket: return Strings.Tools.templateWebsocket
+            }
+        }
+
         func request(url: String = "") -> ParsedRequest {
             let target = url.isEmpty ? "https://example.com/" : url
             switch self {

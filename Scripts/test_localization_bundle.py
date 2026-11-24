@@ -115,6 +115,16 @@ def verify_resources(app, expect_transparent=False):
     return len(tables["en"])
 
 
+def verify_selection_count(item, language):
+    count = item["count"]
+    # Foundation can apply locale grouping even to the same native plural rule.
+    numbers = {str(count), f"{count:,}"}
+    expected = {(f"{number} request{'s' if count != 1 else ''} selected"
+                 if language == "en" else f"已选择 {number} 条请求") for number in numbers}
+    if item["text"] not in expected:
+        raise ValueError(f"Incorrect native plural result: {item!r}, expected one of {sorted(expected)!r}")
+
+
 def verify_runtime(app):
     if sys.platform != "darwin":
         raise RuntimeError("The packaged App runtime probe requires macOS")
@@ -142,11 +152,7 @@ def verify_runtime(app):
             if [item["count"] for item in record["counts"]] != [0, 1, 2, 101, 1000]:
                 raise ValueError("The native probe did not exercise the complete plural matrix")
             for item in record["counts"]:
-                count = item["count"]
-                expected = (f"{count} request{'s' if count != 1 else ''} selected"
-                            if language == "en" else f"已选择 {count} 条请求")
-                if item["text"] != expected:
-                    raise ValueError(f"Incorrect native plural result: {item!r}, expected {expected!r}")
+                verify_selection_count(item, language)
             records.append(record)
         # 移除复制品的资源，证明不会借用原 App 或构建目录。
         shutil.rmtree(moved / "Contents/Resources" / CORE_BUNDLE)

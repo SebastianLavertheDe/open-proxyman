@@ -460,6 +460,12 @@
 "target_host_or_example_com" = "Target host or *.example.com";
 "target_https_newhost_base" = "target (https://newhost/base)";
 "template" = "Template";
+"template_get_with_query" = "GET with Query";
+"template_post_form" = "POST Form";
+"template_post_json" = "POST JSON";
+"template_post_multipart" = "POST Multipart";
+"template_query_with_body" = "QUERY with Body";
+"template_websocket" = "WebSocket";
 "text" = "Text";
 "the_base64_input_is_invalid" = "The Base64 input is invalid.";
 "the_ca_private_key_is_missing" = "The CA private key is missing.";

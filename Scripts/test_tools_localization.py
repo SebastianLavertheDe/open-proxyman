@@ -14,6 +14,8 @@ SWIFT_SOURCES = [
     "Sources/ProxyMirrorCore/Localization/LocalizationResources.swift",
     "Sources/ProxyMirrorCore/Localization/LocalizationContext.swift",
     "Sources/ProxyMirrorCore/UI/PresentationLocalization.swift",
+    "Sources/ProxyMirrorCore/System/LocalizedErrorPresentation.swift",
+    "Sources/ProxyMirrorCore/System/GeneratedOperationIssues.swift",
 ]
 
 
@@ -40,6 +42,22 @@ def main():
         help_source = (ROOT / "Sources/ProxyMirrorCore/UI/Tools/TroubleshootingMenu.swift").read_text()
         help_enum = help_source[help_source.index("enum HelpGuideTopic:"):help_source.index("@MainActor")]
         (directory / "ToolModels.swift").write_text("import Foundation\n" + tool_enum + help_enum)
+        compose = (ROOT / "Sources/ProxyMirrorCore/Export/ComposeService.swift").read_text()
+        (directory / "ComposeModels.swift").write_text(compose[:compose.index("    private static let historyKey")] + "\n}\n")
+        # Type-check the actual UI call expressions against production models and
+        # generated accessors; a syntax-only pass cannot detect these mismatches.
+        transparent = (ROOT / "Sources/ProxyMirrorCore/System/TransparentProxyController.swift").read_text()
+        state = transparent[transparent.index("    enum State:"):transparent.index("    @Published")]
+        failure_line = next(line for line in transparent.splitlines() if "self.stopCapture(endingIn:" in line)
+        failure = failure_line.split("endingIn: ", 1)[1].strip()[:-1]
+        sse = (ROOT / "Sources/ProxyMirrorCore/UI/Detail/SseEventsView.swift").read_text()
+        span_line = next(line.strip() for line in sse.splitlines() if "Strings.Detail.span1fs(" in line)
+        span = span_line[len("Text("):-1]
+        (directory / "PlatformCallChecks.swift").write_text(
+            "import Foundation\n" + state + "\nfunc checkPlatformCallTypes() {\n"
+            "let first = Date(timeIntervalSince1970: 0), last = Date(timeIntervalSince1970: 1.25)\n"
+            f"_ = {span}\nlet state: State = {failure}\n"
+            "guard case .failed(let message) = state, !message.isEmpty else { fatalError(\"Missing failure presentation\") }\n}\n")
         checks = (ROOT / "Tests/ProxyMirrorCoreChecks/ToolLocalizationChecks.swift").read_text()
         checks = checks.replace("@testable import ProxyMirrorCore", "")
         (directory / "ToolChecks.swift").write_text(checks)
@@ -57,6 +75,7 @@ final class CoreAssertions {
         (directory / "main.swift").write_text('''import Foundation
 let test = CoreAssertions()
 checkToolLocalization(test)
+checkPlatformCallTypes()
 print("PASS: \\(test.passed) real tool localization assertions")
 #if !os(macOS)
 print("Native stringsdict plural assertions require the macOS test lane.")
@@ -65,12 +84,14 @@ print("Native stringsdict plural assertions require the macOS test lane.")
         executable = directory / "tools-localization-test"
         sources = [str(ROOT / path) for path in SWIFT_SOURCES]
         sources += [str(path) for path in generated]
-        sources += [str(directory / name) for name in ("ToolModels.swift", "ToolChecks.swift", "Assertions.swift", "main.swift")]
+        sources += [str(directory / name) for name in ("ToolModels.swift", "ComposeModels.swift", "PlatformCallChecks.swift",
+                                                     "ToolChecks.swift", "Assertions.swift", "main.swift")]
         subprocess.run([args.swiftc, "-swift-version", "5", *sources, "-o", str(executable)], check=True)
         environment = os.environ.copy()
         environment["PM_LOCALIZATION_RESOURCE_DIR"] = str(resources)
-        environment["PM_SETTINGS_LANGUAGE"] = "en"
-        subprocess.run([str(executable)], cwd=directory, env=environment, check=True)
+        for language in ("en", "zh-Hans"):
+            environment["PM_SETTINGS_LANGUAGE"] = language
+            subprocess.run([str(executable)], cwd=directory, env=environment, check=True)
 
 
 if __name__ == "__main__":

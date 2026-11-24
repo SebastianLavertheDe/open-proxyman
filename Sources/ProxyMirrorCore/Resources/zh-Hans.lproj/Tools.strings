@@ -460,6 +460,12 @@
 "target_host_or_example_com" = "目标主机或 *.example.com";
 "target_https_newhost_base" = "目标（https://newhost/base）";
 "template" = "模板";
+"template_get_with_query" = "GET 查询参数";
+"template_post_form" = "POST 表单";
+"template_post_json" = "POST JSON";
+"template_post_multipart" = "POST 多部分表单";
+"template_query_with_body" = "QUERY 请求正文";
+"template_websocket" = "WebSocket";
 "text" = "文本";
 "the_base64_input_is_invalid" = "Base64 输入无效。";
 "the_ca_private_key_is_missing" = "缺少 CA 私钥。";

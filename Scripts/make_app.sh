@@ -182,8 +182,8 @@ for language in en zh-Hans; do
   mkdir -p "$APP/Contents/Resources/$language.lproj"
   cp "$localization/InfoPlist.strings" "$APP/Contents/Resources/$language.lproj/InfoPlist.strings"
 done
-cp "ThirdParty/ScriptingLibraries.md" "$APP/Contents/Resources/ThirdParty/ScriptingLibraries.md"
-cp "Sources/ProxyMirrorZstd/LICENSE" "$APP/Contents/Resources/ThirdParty/Zstandard-LICENSE"
+python3 Scripts/prepare_app_resources.py \
+  "$APP/Contents/Resources/$LOCALIZATION_BUNDLE" "$APP/Contents/Resources/ThirdParty"
 
 if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 ]]; then
   sparkle_framework=$(python3 - <<'PY'
@@ -232,6 +232,9 @@ signature_args+=(--entitlements "$STAGING/app.entitlements")
 codesign "${signature_args[@]}" --options runtime "$APP"
 codesign --verify --deep --strict "$APP"
 plutil -lint "$APP/Contents/Info.plist"
+bundle_check_flags=()
+if (( TRANSPARENT )); then bundle_check_flags=(--expect-transparent); fi
+python3 Scripts/test_app_bundle.py --app "$APP" "${bundle_check_flags[@]}"
 if [[ -e "$DESTINATION" ]]; then mv "$DESTINATION" "$PREVIOUS"; fi
 mv "$APP" "$DESTINATION"
 

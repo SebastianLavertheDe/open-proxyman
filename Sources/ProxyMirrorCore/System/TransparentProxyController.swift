@@ -234,7 +234,7 @@ final class TransparentProxyController: NSObject, ObservableObject, @preconcurre
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.state == .running, self.isConnectionStopping else { return }
-                try? await self.stopCapture(endingIn: .failed(OperationIssue.transparentProxyControllerTheTransparentProxyConnectionWasDisconnected))
+                try? await self.stopCapture(endingIn: .failed(OperationIssue.transparentProxyControllerTheTransparentProxyConnectionWasDisconnected.localizedPresentation))
             }
         }
     }

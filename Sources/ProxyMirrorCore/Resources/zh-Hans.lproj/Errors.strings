@@ -986,3 +986,31 @@
 "network_http_incomplete" = "HTTP 报文不完整。";
 
 "network_http_malformed" = "HTTP 报文无效：%@";
+
+"sse_decoding_deferred" = "SSE 的 %@ 正文将在接收完成后解析。";
+
+"sse_encoding_unsupported" = "暂不支持 SSE Content-Encoding: %@。可在原文查看捕获字节。";
+
+"sse_body_output_limit" = "SSE 正文超过 32 MiB 解析上限，后续事件未解析。";
+
+"sse_body_incomplete" = "连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。可在原文查看捕获字节。";
+
+"sse_compressed_body_incomplete" = "SSE 压缩正文不完整，已显示可恢复的事件。";
+
+"sse_decoder_initialization_failed" = "无法初始化 SSE 压缩解码。";
+
+"sse_compressed_body_extra_data" = "SSE 压缩正文包含多余数据。";
+
+"sse_compressed_body_invalid" = "SSE 压缩正文损坏，已显示可恢复的事件。";
+
+"sse_compressed_body_truncated" = "SSE 压缩正文已截断，无法完整解码。";
+
+"sse_compressed_body_output_limit" = "SSE 解压正文超过 32 MiB。";
+
+"sse_decode_failed" = "无法解码 SSE 压缩正文。可在原文查看捕获字节。";
+
+"sse_no_decodable_body" = "没有可解码的 SSE 正文。";
+
+"network_pacing_capacity_exceeded" = "弱网限速缓冲已满。";
+
+"session_invalid_metrics" = "会话包含无效的字节数或耗时。";

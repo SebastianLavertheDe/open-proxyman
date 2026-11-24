@@ -45,8 +45,8 @@ struct MainWindow: View {
         .onChange(of: appState.showDiff) { showing in
             if showing { openWindow(id: "traffic-diff"); appState.showDiff = false }
         }
-        .onAppear { if let text = store.savedError { message = text } }
-        .onChange(of: store.savedError) { if let text = $0 { message = text } }
+        .onAppear { if appState.shouldPresentSavedError(store.savedError) { message = store.savedError } }
+        .onChange(of: store.savedError) { if appState.shouldPresentSavedError($0) { message = $0 } }
         .alert("ProxyMirror", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button(Strings.Traffic.ok) { message = nil }
         } message: {

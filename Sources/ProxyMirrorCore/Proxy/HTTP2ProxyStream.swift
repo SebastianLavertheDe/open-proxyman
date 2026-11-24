@@ -48,7 +48,6 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     private var requestEnded = false
     private var responseStarted = false
     private var responseEnded = false
-    private var completedNormally = false
     private var upstreamResponseEnded = false
     private var waitingForUpstream = false
     private var queuedRequest: [HTTPClientRequestPart] = []
@@ -592,6 +591,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     }
 
     private func enqueue(_ part: HTTPClientRequestPart, bytes: Int) {
+        guard !upstreamResponseEnded else { return }
         if upstream != nil {
             sendUpstream(part)
         } else if waitingForUpstream {
@@ -604,7 +604,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     }
 
     private func sendUpstream(_ part: HTTPClientRequestPart) {
-        guard let exchange = upstream else { return }
+        guard !upstreamResponseEnded, let exchange = upstream else { return }
         if let uploadPacer {
             switch part {
             case .body(.byteBuffer(let buffer)):
@@ -636,7 +636,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         default: data = part
         }
         exchange.channel.writeAndFlush(data).whenFailure { [weak self] error in
-            guard let self, !self.responseEnded else { return }
+            guard let self, !self.responseEnded, !self.upstreamResponseEnded else { return }
             self.fail(error)
         }
         if case .end = part { armResponseWait() }
@@ -726,6 +726,14 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             guard responseStarted else { return } // HTTP/1.1 can delimit a 1xx with its own .end.
             let safe = trailers.map(Self.endToEndHeaders)
             upstreamResponseEnded = true
+            // A final response may precede the client's END_STREAM (401/413,
+            // for example). We no longer forward that upload, so its upstream
+            // half must be cancelled explicitly. For HTTP/2 this closes only
+            // the child, retaining its parent and releasing the pool's slot.
+            uploadPacer?.cancel()
+            queuedRequest.removeAll()
+            queuedBytes = 0
+            upstream?.channel.close(promise: nil)
             if let downloadPacer {
                 downloadPacer.afterWrites { [weak self] in self?.finishResponse(safe) }
             } else {
@@ -739,7 +747,6 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         let recorded = Self.capturedHeaders(trailers ?? .init())
         bodyCapture?.finishSSE()
         responseEnded = true
-        completedNormally = true
         if capture {
             onMain {
                 tx.responseTrailers = recorded
@@ -899,7 +906,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         queuedRequest.removeAll()
         uploadPacer?.cancel()
         downloadPacer?.cancel()
-        if !completedNormally || !requestEnded { upstream?.channel.close(promise: nil) }
+        upstream?.channel.close(promise: nil)
         downstream = nil
         context.fireChannelInactive()
     }

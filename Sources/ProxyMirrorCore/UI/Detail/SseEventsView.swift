@@ -39,7 +39,7 @@ struct SseEventsView: View {
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
             }
             if let issue = tx.sseParseIssue {
-                Text(issue).font(.caption).foregroundStyle(tx.sseDecodingDeferred ? Color.secondary : Color.orange)
+                Text(issue.localizedPresentation).font(.caption).foregroundStyle(tx.sseDecodingDeferred ? Color.secondary : Color.orange)
                     .textSelection(.enabled).padding(.horizontal, 10)
             }
             if tx.sseEvents.isEmpty {

@@ -2,6 +2,7 @@ import Darwin
 import Dispatch
 import Foundation
 import ProxyMirrorSystemProxy
+import ProxyMirrorFoundation
 
 private final class Service: NSObject, NSXPCListenerDelegate {
     private struct Lease {
@@ -211,6 +212,13 @@ private func run() throws {
         throw SystemProxyError(.installationFailed)
     }
     umask(0o077)
+    if arguments.count >= 2, arguments[1] == "--install-ca" {
+        guard let plan = CertificateTrustInstallPlan(helperArguments: Array(arguments.dropFirst())) else {
+            throw SystemProxyError(.invalidArguments)
+        }
+        try Installer.installCertificate(plan)
+        return
+    }
     if arguments.count == 2, arguments[1] == "--uninstall" {
         try Installer.uninstall()
         return

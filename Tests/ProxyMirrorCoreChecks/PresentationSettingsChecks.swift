@@ -187,14 +187,18 @@ private func checkTrafficLocalization(_ test: CoreAssertions) {
     test.equal(custom.localizedTitle(language: "en"), "用户列", "A custom column title remains user content in English")
     test.equal(custom.localizedTitle(language: "zh-Hans"), "用户列", "A custom column title remains user content in Chinese")
 
+    let resources = LocalizationResources.resolve().bundle
+    let englishContext = LocalizationContext(language: .english, resources: resources, regionLocale: Locale(identifier: "en_US"))
+    let chineseContext = LocalizationContext(language: .simplifiedChinese, resources: resources, regionLocale: Locale(identifier: "en_US"))
     for count in [0, 1, 2, 101, 1000] {
-        let english = L10n.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches", language: "en")
-        test.equal(english, count == 1 ? "1 Match" : "\(count) Matches", "English query match counts use the appropriate plural for \(count)")
-        let chinese = L10n.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches", language: "zh-Hans")
-        test.equal(chinese, "匹配 \(count) 项", "Chinese query match counts use the Chinese quantity template")
-        let requestLabel = L10n.render(table: "Traffic", key: "requests", arguments: ["api.example.test", count],
-            englishFallback: "%1$@ · %2$ld requests", language: "en")
-        test.equal(requestLabel, "api.example.test · \(count) " + (count == 1 ? "request" : "requests"),
+        let formatted = count == 1000 ? "1,000" : String(count)
+        let english = englishContext.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches")
+        test.equal(english, count == 1 ? "1 Match" : "\(formatted) Matches", "English query match counts use the appropriate plural and explicit region for \(count)")
+        let chinese = chineseContext.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches")
+        test.equal(chinese, "匹配 \(formatted) 项", "Chinese query match counts use the Chinese quantity template and explicit region")
+        let requestLabel = englishContext.render(table: "Traffic", key: "requests", arguments: ["api.example.test", count],
+            englishFallback: "%1$@ · %2$ld requests")
+        test.equal(requestLabel, "api.example.test · \(formatted) " + (count == 1 ? "request" : "requests"),
                    "A user-owned domain and positional plural count render together without changing the domain")
     }
 }

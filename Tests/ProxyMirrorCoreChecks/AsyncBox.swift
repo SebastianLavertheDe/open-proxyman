@@ -1,19 +1,32 @@
 import Foundation
 
-/// 单线程测试里等待异步脚本结果的轻量信箱
-final class NSBox<T: Sendable> {
-    private let lock = NSLock()
+/// A bounded mailbox for callbacks running on a different thread.
+final class NSBox<T: Sendable>: @unchecked Sendable {
+    struct Timeout: Error, CustomStringConvertible {
+        let seconds: TimeInterval
+        var description: String { "Async check did not complete within \(seconds) seconds" }
+    }
+
+    private let condition = NSCondition()
     private var value: T?
     private var done = false
 
     func store(_ newValue: T) {
-        lock.lock(); self.value = newValue; done = true; lock.unlock()
+        condition.lock()
+        guard !done else { condition.unlock(); return }
+        self.value = newValue
+        done = true
+        condition.broadcast()
+        condition.unlock()
     }
 
-    func wait(timeout: TimeInterval = 8) -> T {
+    func wait(timeout: TimeInterval = 8) throws -> T {
         let deadline = Date().addingTimeInterval(timeout)
-        while !done && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
-        lock.lock(); defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
+        while !done {
+            guard condition.wait(until: deadline) || done else { throw Timeout(seconds: timeout) }
+        }
         return value!
     }
 }

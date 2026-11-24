@@ -289,3 +289,5 @@
 "summary_bucket_unanswered" = "Incomplete / Unanswered";
 "summary_no_host" = "(No Host)";
 "validation_rule_context" = "%@: %@";
+
+"diff_output_limit" = "Comparison output is limited to 1 MiB.";

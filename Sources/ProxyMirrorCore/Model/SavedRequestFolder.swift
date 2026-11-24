@@ -98,6 +98,10 @@ struct SavedRequestFolderArchive: Codable, Sendable {
         }
         for records in [unfiled] + Array(requestsByFolder.values) {
             guard Set(records.map(\.id)).count == records.count else { throw Failure(OperationIssue.modelSavedFolderDuplicateRequest) }
+            for record in records {
+                do { _ = try record.validatedMetrics() }
+                catch { throw Failure(OperationIssue.sessionInvalidMetrics) }
+            }
         }
         let allIDs = unfiled.map(\.id) + requestsByFolder.values.flatMap { $0.map(\.id) }
         guard Set(allIDs).count == allIDs.count else { throw Failure(OperationIssue.modelSavedDuplicateSnapshot) }

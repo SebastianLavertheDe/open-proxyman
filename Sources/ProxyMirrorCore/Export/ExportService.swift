@@ -44,7 +44,7 @@ enum ExportService {
         DispatchQueue.main.async { AppState.shared.systemProxyMessage = message }
     }
 
-    static func buildHAR(_ transactions: [Transaction]) -> [String: Any] {
+    static func buildHAR(_ transactions: [Transaction], redactSensitiveHeaders: Bool? = nil) -> [String: Any] {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let entries: [[String: Any]] = transactions.map { tx in
@@ -98,6 +98,12 @@ enum ExportService {
                 resp["_proxyMirrorFailure"] = ["code": failure.code, "arguments": failure.arguments,
                                                "diagnostic": failure.diagnostic] as [String: Any]
             }
+            if tx.isSSE {
+                let encoded = try? JSONEncoder().encode(SSEInspectionSnapshot(transaction: tx))
+                if let encoded, let snapshot = try? JSONSerialization.jsonObject(with: encoded) {
+                    resp["_proxyMirrorSSE"] = snapshot
+                }
+            }
             resp["_truncated"] = tx.responseTruncated
             if let original = tx.originalURL { entry["_originalURL"] = original }
             if let protocolName = tx.upstreamProtocol { entry["_upstreamProtocol"] = protocolName }
@@ -125,7 +131,7 @@ enum ExportService {
                 "entries": entries,
             ]
         ]
-        return AppSettings.shared.redactSensitiveHeaders ? ExportRedaction.har(har) : har
+        return (redactSensitiveHeaders ?? AppSettings.shared.redactSensitiveHeaders) ? ExportRedaction.har(har) : har
     }
 
     private static func harHeaders(_ headers: HTTPHeaders) -> [[String: String]] {
@@ -158,13 +164,16 @@ enum ExportService {
 
     /// 生成可复用的 cURL 命令
     static func curlCommand(_ tx: Transaction) -> String {
-        let proxyPort = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
+        curlCommand(tx, runtime: .shared)
+    }
+
+    static func curlCommand(_ tx: Transaction, runtime: ProxyRuntimeContext) -> String {
         let request = HTTPRequest(method: tx.method, url: tx.fullURL,
             headers: tx.requestHeaders.pairs.map { ($0.name, $0.value) }, body: tx.requestBody)
         return CurlCommandGenerator.command(request, isTunnel: tx.isTunnel,
-            proxyURL: AppSettings.shared.appendProxyToCommands ? "http://127.0.0.1:\(proxyPort)" : nil,
-            preserveOriginalHeaders: AppSettings.shared.preserveOriginalHeaders,
-            redactSensitiveHeaders: AppSettings.shared.redactSensitiveHeaders)
+            proxyURL: runtime.appendProxyToCommands ? "http://127.0.0.1:\(runtime.listenerPort)" : nil,
+            preserveOriginalHeaders: runtime.preserveOriginalHeaders,
+            redactSensitiveHeaders: runtime.redactSensitiveHeaders)
     }
 
     private static func _escape(_ s: String) -> String {
@@ -172,16 +181,19 @@ enum ExportService {
     }
 
     static func httpieCommand(_ tx: Transaction) -> String {
+        httpieCommand(tx, runtime: .shared)
+    }
+
+    static func httpieCommand(_ tx: Transaction, runtime: ProxyRuntimeContext) -> String {
         let request = ComposeService.request(from: tx)
         var args = ["http"]
-        if AppSettings.shared.appendProxyToCommands {
-            let port = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
-            let proxy = "http://127.0.0.1:\(port)"
+        if runtime.appendProxyToCommands {
+            let proxy = "http://127.0.0.1:\(runtime.listenerPort)"
             args += ["--proxy=http:'\(_escape(proxy))'", "--proxy=https:'\(_escape(proxy))'"]
         }
         args += ["'\(_escape(request.method))'", "'\(_escape(request.url))'"]
-        args += ExportRedaction.commandHeaders(ExportRedaction.headers(request.headers, redact: AppSettings.shared.redactSensitiveHeaders),
-                                                preserveOriginal: AppSettings.shared.preserveOriginalHeaders)
+        args += ExportRedaction.commandHeaders(ExportRedaction.headers(request.headers, redact: runtime.redactSensitiveHeaders),
+                                                preserveOriginal: runtime.preserveOriginalHeaders)
             .map { "'\(_escape($0.0 + ": " + $0.1))'" }
         let command = args.joined(separator: " ")
         if let body = request.body, !body.isEmpty {
@@ -195,6 +207,7 @@ enum ExportService {
 enum RepeatService {
     private struct Request {
         let parsed: ComposeService.ParsedRequest
+        let runtime: ProxyRuntimeContext
         let proxyPort: UInt16?
         let onResult: (Transaction) -> Void
     }
@@ -204,13 +217,14 @@ enum RepeatService {
     private static var pending: [Request] = []
     private static var ready: [Request] = []
 
-    static func resend(_ tx: Transaction, proxyPort: UInt16? = nil, onResult: @escaping (Transaction) -> Void) {
+    static func resend(_ tx: Transaction, runtime: ProxyRuntimeContext, proxyPort: UInt16? = nil,
+                       onResult: @escaping (Transaction) -> Void) {
         guard var request = ComposeService.replayRequest(from: tx) else { return }
-        if AppSettings.shared.noCacheOnRepeat {
+        if runtime.noCacheOnRepeat {
             request.headers.removeAll { ["cache-control", "pragma", "if-none-match", "if-modified-since"].contains($0.0.lowercased()) }
             request.headers += [("Cache-Control", "no-cache, no-store"), ("Pragma", "no-cache")]
         }
-        pending.append(Request(parsed: request, proxyPort: proxyPort, onResult: onResult))
+        pending.append(Request(parsed: request, runtime: runtime, proxyPort: proxyPort, onResult: onResult))
         startPending()
     }
 
@@ -222,7 +236,7 @@ enum RepeatService {
             }
             guard let request = ready.popLast() else { return }
             active += 1
-            let task = ComposeService.execute(request.parsed, proxyPort: request.proxyPort) { result in
+            let task = ComposeService.execute(request.parsed, runtime: request.runtime, proxyPort: request.proxyPort) { result in
                 active -= 1
                 request.onResult(result)
                 startPending()

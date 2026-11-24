@@ -11,7 +11,8 @@ var products: [Product] = [
 ]
 var dependencies: [Package.Dependency] = []
 var targets: [Target] = [
-    .target(name: "ProxyMirrorFoundation"),
+    .target(name: "ProxyMirrorProcessSupport"),
+    .target(name: "ProxyMirrorFoundation", dependencies: ["ProxyMirrorProcessSupport"]),
     .testTarget(name: "ProxyMirrorFoundationTests", dependencies: ["ProxyMirrorFoundation"]),
     .executableTarget(name: "ProxyMirrorTransportFixture", dependencies: ["ProxyMirrorFoundation"],
                       path: "Tests/Fixtures/ComposeTransport"),
@@ -77,7 +78,7 @@ targets += [
         .target(name: "ProxyMirrorProtocolSupport"),
         .target(name: "ProxyMirrorAuthorizedInstaller"),
         .target(name: "ProxyMirrorSystemProxy", dependencies: ["ProxyMirrorFoundation"]),
-        .executableTarget(name: "ProxyMirrorSystemProxyHelper", dependencies: ["ProxyMirrorSystemProxy"]),
+        .executableTarget(name: "ProxyMirrorSystemProxyHelper", dependencies: ["ProxyMirrorSystemProxy", "ProxyMirrorFoundation"]),
         .executableTarget(name: "ProxyMirrorTransparentExtension"),
         .target(
             name: "ProxyMirrorCoreChecks",

@@ -138,7 +138,7 @@ final class Transaction: ObservableObject, Identifiable {
                 if data.isEmpty { data = captured } else { data.append(captured) }
                 revision &+= 1
             }
-            bytes += byteCount
+            bytes = ImportedTrafficMetrics.saturatingTotal(bytes, byteCount)
             truncated = bytes > data.count
         }
     }
@@ -186,7 +186,7 @@ final class Transaction: ObservableObject, Identifiable {
     @Published var suspectedPinning = false     // 疑似证书锁定（客户端拒绝代理证书）
     @Published var sseEvents: [SSEEvent] = []   // text/event-stream 事件级解析结果
     @Published var sseEventsTruncated = false
-    @Published var sseParseIssue: String?
+    @Published var sseParseIssue: CapturedFailure?
     @Published var sseDecodingDeferred = false
     var isSSE: Bool { SSEStreamState.matches(contentType) }
     @Published var isTunnel = false             // 未解密的 CONNECT 隧道
@@ -351,7 +351,10 @@ final class Transaction: ObservableObject, Identifiable {
     }
 
     var totalSize: Int {
-        max(requestBytes, requestBody.count) + max(responseBytes, responseBody.count)
+        captureLock.withLock {
+            ImportedTrafficMetrics.saturatingTotal(max(requestCapture.bytes, requestCapture.data.count),
+                                                  max(responseCapture.bytes, responseCapture.data.count))
+        }
     }
 
     var statusText: String {

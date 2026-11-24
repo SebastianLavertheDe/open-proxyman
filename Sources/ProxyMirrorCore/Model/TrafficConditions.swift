@@ -1,4 +1,6 @@
 import Foundation
+import Combine
+import ProxyMirrorFoundation
 
 struct TrafficCondition: Codable, Equatable, Identifiable {
     private static let bodyLimit = 1_048_576
@@ -202,6 +204,42 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
         }
     }
 
+    /// List predicates defer only GraphQL-derived metadata. Pending is a third
+    /// state, so negative comparisons and nested AND/OR cannot lose rows.
+    @MainActor
+    func compileForPresentation() -> (Transaction) -> PresentationPredicateResult {
+        guard isValid else { return { _ in .notMatched } }
+        guard field == .graphql || field == .scheme else {
+            let test = compile()
+            return { test($0) ? .matched : .notMatched }
+        }
+        let matcher = compileStrings()
+        let condition = PresentedGraphQLCondition(scheme: field == .scheme, matches: matcher)
+        return { condition.evaluate($0) }
+    }
+
+    private func compileStrings() -> ([String]) -> Bool {
+        let options: NSRegularExpression.Options = comparison == .wildcard || comparison == .notWildcard
+            ? [.caseInsensitive, .dotMatchesLineSeparators] : [.caseInsensitive]
+        let pattern = comparison.usesRegex ? try? BoundedTrafficRegex(pattern: expression, options: options) : nil
+        return { values in
+            if comparison.usesRegex {
+                guard let matched = pattern?.matchesAny(in: values) else { return false }
+                return comparison.isNegative ? !matched : matched
+            }
+            let matched = values.contains { fieldValue in
+                switch comparison {
+                case .contains, .notContains: return fieldValue.localizedCaseInsensitiveContains(value)
+                case .equals, .notEquals: return fieldValue.caseInsensitiveCompare(value) == .orderedSame
+                case .startsWith, .notStartsWith: return fieldValue.lowercased().hasPrefix(value.lowercased())
+                case .endsWith, .notEndsWith: return fieldValue.lowercased().hasSuffix(value.lowercased())
+                default: return false
+                }
+            }
+            return comparison.isNegative ? !matched : matched
+        }
+    }
+
     private final class BodyMatch {
         let generation: UInt64
         let count: Int
@@ -244,6 +282,16 @@ struct TrafficConditionGroup: Codable, Equatable {
         conditions.contains { [.requestBody, .responseBody, .graphql, .scheme].contains($0.field) } || (groups ?? []).contains { $0.readsBody }
     }
 
+    @MainActor
+    func compileForPresentation() -> (Transaction) -> PresentationPredicateResult {
+        let tests = conditions.map { $0.compileForPresentation() } + (groups ?? []).map { $0.compileForPresentation() }
+        guard !tests.isEmpty else { return { _ in .matched } }
+        switch mode {
+        case .all: return { tx in PresentationPredicateResult.all(tests.lazy.map { $0(tx) }) }
+        case .any: return { tx in PresentationPredicateResult.any(tests.lazy.map { $0(tx) }) }
+        }
+    }
+
     func compile() -> (Transaction) -> Bool {
         let tests = conditions.map { $0.compile() } + (groups ?? []).map { $0.compile() }
         if tests.isEmpty { return { _ in true } }
@@ -261,4 +309,58 @@ struct SavedTrafficFilter: Codable, Identifiable {
     var highlightName: String? = nil
 
     static let defaultsKey = "ui.savedTrafficFilters"
+}
+
+/// Per-predicate Boolean memo survives scalar-cache eviction. The immediate
+/// completion event is consumed before a throttled list refilter can run; a
+/// 50k-row filter therefore progresses even with an 8 MiB metadata cache.
+@MainActor
+private final class PresentedGraphQLCondition {
+    private final class Stamp {
+        let key: JSONFieldCache.Key
+        let scheme: String
+        let webSocket: Bool
+        var matched: Bool?
+        init(_ tx: Transaction, key: JSONFieldCache.Key, matched: Bool? = nil) {
+            self.key = key; scheme = tx.scheme; webSocket = tx.isWebSocket; self.matched = matched
+        }
+        func isCurrent(_ tx: Transaction, key: JSONFieldCache.Key) -> Bool {
+            self.key == key && scheme == tx.scheme && webSocket == tx.isWebSocket
+        }
+    }
+    private let scheme: Bool
+    private let matches: ([String]) -> Bool
+    private let memo = NSMapTable<Transaction, Stamp>(keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory)
+    private var changes: AnyCancellable?
+    init(scheme: Bool, matches: @escaping ([String]) -> Bool) {
+        self.scheme = scheme; self.matches = matches
+        changes = NotificationCenter.default.publisher(for: .pmGraphQLValueReady).sink { [weak self] notification in
+            guard let self, let event = notification.object as? CustomColumnValues.GraphQLReady,
+                  let stamp = self.memo.object(forKey: event.transaction), stamp.matched == nil,
+                  stamp.isCurrent(event.transaction, key: event.key) else { return }
+            stamp.matched = self.match(event.transaction, name: event.value)
+        }
+    }
+    private func match(_ tx: Transaction, name: String) -> Bool {
+        matches(scheme ? [tx.scheme, tx.isWebSocket ? "WS" : "", name.isEmpty ? "" : "GraphQL"] : (name.isEmpty ? [] : [name]))
+    }
+    func evaluate(_ tx: Transaction) -> PresentationPredicateResult {
+        if scheme {
+            let absent = match(tx, name: ""), present = match(tx, name: "GraphQL")
+            if absent == present { return absent ? .matched : .notMatched }
+        }
+        let key = CustomColumnValues.shared.graphqlKey(for: tx)
+        if let stamp = memo.object(forKey: tx), stamp.isCurrent(tx, key: key), let matched = stamp.matched {
+            return matched ? .matched : .notMatched
+        }
+        switch CustomColumnValues.shared.graphqlState(for: tx) {
+        case .pending:
+            memo.setObject(Stamp(tx, key: key), forKey: tx)
+            return .pending
+        case .ready(let name):
+            let matched = match(tx, name: name)
+            memo.setObject(Stamp(tx, key: key, matched: matched), forKey: tx)
+            return matched ? .matched : .notMatched
+        }
+    }
 }

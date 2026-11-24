@@ -4,10 +4,11 @@ import NIOCore
 /// An event-loop confined writer. Writes preserve byte order across rate changes,
 /// and barriers run after any previously paced write has completed.
 final class BytePacingQueue {
-    enum QueueError: LocalizedError {
+    enum QueueError: LocalizedError, OperationIssueProviding {
         case capacityExceeded
 
-        var errorDescription: String? { "弱网限速缓冲已满" }
+        var operationIssue: OperationIssue { .networkPacingCapacityExceeded }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 
     private struct Pending {

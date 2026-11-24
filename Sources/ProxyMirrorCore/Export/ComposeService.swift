@@ -221,10 +221,10 @@ enum ComposeService {
     }
 
     @discardableResult
-    static func execute(_ parsed: ParsedRequest, proxyPort: UInt16? = nil,
+    static func execute(_ parsed: ParsedRequest, runtime: ProxyRuntimeContext, proxyPort: UInt16? = nil,
                         onResult: @escaping (Transaction) -> Void) -> RequestTask? {
         if let scheme = URL(string: parsed.url)?.scheme?.lowercased(), ["ws", "wss"].contains(scheme) {
-            return executeWebSocket(parsed, proxyPort: proxyPort, onResult: onResult)
+            return executeWebSocket(parsed, runtime: runtime, proxyPort: proxyPort, onResult: onResult)
         }
         guard (0...86400).contains(parsed.timeoutSeconds),
               let destination = URLParser.parse(target: parsed.url),
@@ -233,7 +233,7 @@ enum ComposeService {
               !parsed.method.isEmpty, parsed.method.utf8.allSatisfy(isTokenByte) else { return nil }
 
         let task = RequestTask()
-        let captureLimit = AppSettings.shared.maxBodyMB * 1024 * 1024
+        let captureLimit = runtime.captureLimit
         requestQueue.async {
             let tx = Transaction(captureBudget: .live)
             tx.method = parsed.method
@@ -246,25 +246,22 @@ enum ComposeService {
             tx.appendRequestBody(parsed.body ?? Data())
             tx.requestBodyComplete = true
             tx.state = .awaiting
-            send(parsed, tx: tx, proxyPort: proxyPort, task: task)
+            send(parsed, tx: tx, runtime: runtime, proxyPort: proxyPort, task: task)
             DispatchQueue.main.async { onResult(tx) }
         }
         return task
     }
 
-    private static func send(_ parsed: ParsedRequest, tx: Transaction, proxyPort: UInt16?, task: RequestTask) {
+    private static func send(_ parsed: ParsedRequest, tx: Transaction, runtime: ProxyRuntimeContext,
+                             proxyPort: UInt16?, task: RequestTask) {
         let options = HTTPRequestTransport.Options(proxyPort: proxyPort, captureLimit: tx.captureLimit,
-            reserve: { tx.captureReservation?.reserve($0) ?? $0 }, trustedCA: { request in
-                guard let target = URLParser.parse(target: request.url), target.scheme == "https",
-                      let host = target.host, ConnState(engine: .shared).shouldMITM(host: host) else { return nil }
-                try CertificateAuthority.shared.ensureCA()
-                return CertificateAuthority.shared.caCertPath
-            })
+            reserve: { tx.captureReservation?.reserve($0) ?? $0 }, trustedCA: runtime.trustedCA)
         let result = HTTPRequestTransport.send(parsed, options: options, cancellation: task.transportCancellation)
         if let head = result.head {
             tx.statusCode = head.status; tx.statusReason = head.reason; tx.responseVersion = head.version
             tx.responseHeaders = head.headers; tx.contentType = head.headers.value(of: "Content-Type") ?? ""
         }
+        tx.responseTrailers = result.trailers
         tx.receiveCapture(response: result.body, responseBytes: result.receivedBytes, charge: result.body.count)
         tx.responseBodyComplete = result.failure == nil
         tx.state = result.failure == nil ? .completed : .failed
@@ -308,7 +305,7 @@ enum ComposeService {
 extension ComposeService {
     /// Sends an optional initial message, receives one message, then closes the socket.
     /// WSS uses the system trust store, including an installed ProxyMirror CA.
-    static func executeWebSocket(_ parsed: ParsedRequest, proxyPort: UInt16?,
+    static func executeWebSocket(_ parsed: ParsedRequest, runtime: ProxyRuntimeContext, proxyPort: UInt16?,
                                  onResult: @escaping (Transaction) -> Void) -> RequestTask? {
         guard let url = URL(string: parsed.url), let host = url.host,
               ["ws", "wss"].contains(url.scheme?.lowercased() ?? ""),
@@ -321,7 +318,7 @@ extension ComposeService {
                                           "sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions"]
             if !reserved.contains(name.lowercased()) { request.addValue(value, forHTTPHeaderField: name) }
         }
-        let captureLimit = AppSettings.shared.maxBodyMB * 1024 * 1024
+        let captureLimit = runtime.captureLimit
         guard (parsed.body?.count ?? 0) <= captureLimit else { return nil }
         let tx = Transaction(captureBudget: .live)
         tx.method = "GET"; tx.scheme = url.scheme == "wss" ? "https" : "http"

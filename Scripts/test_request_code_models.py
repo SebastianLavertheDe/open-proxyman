@@ -17,15 +17,14 @@ import tempfile
 import threading
 
 from test_request_code import check_snippet
+from foundation_test_support import build_foundation_module
+from runtime_adapter_test_support import RUNTIME_STUBS
 
 
 ROOT = Path(__file__).resolve().parents[1]
-STUBS = r'''
+STUBS = RUNTIME_STUBS + r'''
 import Foundation
-final class AppSettings {
-    static let shared = AppSettings()
-    var redactSensitiveHeaders = false
-}
+@_exported import ProxyMirrorFoundation
 final class Transaction {
     var method = "POST"
     var host = "127.0.0.1"
@@ -36,15 +35,15 @@ final class Transaction {
     var canReplay = true
 }
 enum ComposeService {
-    struct ParsedRequest { var method: String; var url: String; var headers: [(String, String)]; var body: Data? }
+    typealias ParsedRequest = HTTPRequest
     static func request(from tx: Transaction) -> ParsedRequest {
         ParsedRequest(method: tx.method, url: tx.url, headers: tx.headers, body: tx.requestBody.isEmpty ? nil : tx.requestBody)
     }
 }
 enum ExportService {
-    static func curlCommand(_ tx: Transaction) -> String { fatalError("Excluded platform generator") }
-    static func httpieCommand(_ tx: Transaction) -> String { fatalError("Excluded platform generator") }
-    static func buildHAR(_ tx: [Transaction]) -> [String: Any] { fatalError("Excluded platform generator") }
+    static func curlCommand(_ tx: Transaction, runtime: ProxyRuntimeContext) -> String { fatalError("Excluded platform generator") }
+    static func httpieCommand(_ tx: Transaction, runtime: ProxyRuntimeContext) -> String { fatalError("Excluded platform generator") }
+    static func buildHAR(_ tx: [Transaction], redactSensitiveHeaders: Bool? = nil) -> [String: Any] { fatalError("Excluded platform generator") }
 }
 '''
 MAIN = r'''
@@ -116,10 +115,12 @@ def main():
     os.environ["PATH"] = str(Path(compiler).resolve().parent) + os.pathsep + os.environ.get("PATH", "")
     with tempfile.TemporaryDirectory(prefix="pm-request-code-models-") as temporary:
         directory = Path(temporary)
+        module_flags = build_foundation_module(compiler, directory)
         stubs = directory / "PlatformStubs.swift"; stubs.write_text(STUBS, encoding="utf-8")
         main_file = directory / "Run.swift"; main_file.write_text(MAIN, encoding="utf-8")
         executable = directory / "request-code-fixtures"
         subprocess.run([compiler, "-swift-version", "5", "-module-cache-path", str(directory / "module-cache"),
+                        *module_flags, str(ROOT / "Sources/ProxyMirrorCore/Export/ProxyRuntimeContext.swift"),
                         str(ROOT / "Sources/ProxyMirrorCore/Export/RequestCode.swift"),
                         str(ROOT / "Sources/ProxyMirrorCore/Export/ExportRedaction.swift"),
                         str(stubs), str(main_file), "-o", str(executable)], check=True, timeout=120)

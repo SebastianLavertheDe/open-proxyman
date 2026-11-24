@@ -4,7 +4,7 @@ import NIOEmbedded
 
 /// G6：WS 帧编解码 + 拦截管道 + 帧脚本（真实 ScriptWorker）
 @MainActor
-func checkWSInterception(_ test: CoreAssertions) {
+func checkWSInterception(_ test: CoreAssertions) throws {
     test.equal(ScriptingService.interpretFrameValue(.object(["drop": .bool(true)])), .drop,
                "WS drop:true drops the frame")
     test.equal(ScriptingService.interpretFrameValue(.object(["drop": .bool(false)])), nil,
@@ -100,7 +100,7 @@ func checkWSInterception(_ test: CoreAssertions) {
 
     // 帧脚本（真实 ScriptWorker）：文本改写 / false 丢帧 / base64 二进制改写
     let previous = InterceptionConfig.shared.rewrite.value
-    func runRule(_ source: String, frame: WSFrame) -> WSFrameAction {
+    func runRule(_ source: String, frame: WSFrame) throws -> WSFrameAction {
         InterceptionConfig.shared.rewrite.set([RewriteRuleSet(rules: [
             RewriteRule(rule: URLRule(), actions: [.script(phase: .webSocket, source: source)]),
         ])])
@@ -108,26 +108,26 @@ func checkWSInterception(_ test: CoreAssertions) {
                                      url: "ws://fixture.test/ws")
         let box = NSBox<WSFrameAction>()
         ScriptingService.rewriteFrame(target: target, graphqlName: nil, frame: frame) { box.store($0) }
-        return box.wait()
+        return try box.wait()
     }
     defer { InterceptionConfig.shared.rewrite.set(previous) }
 
     let textFrame = WSFrame(direction: .downstream, opcode: 0x1, fin: true, masked: false, payload: Data("hi".utf8))
     let textScript = #"return message.body + "-pm";"#
-    let firstAction = runRule(textScript, frame: textFrame)
+    let firstAction = try runRule(textScript, frame: textFrame)
     // Cold JavaScriptCore startup can use the production decision budget.
-    let textAction = firstAction == .pass ? runRule(textScript, frame: textFrame) : firstAction
+    let textAction = firstAction == .pass ? try runRule(textScript, frame: textFrame) : firstAction
     let activityLog = ScriptingActivity.shared.entries.suffix(3).map(\.text).joined(separator: " | ")
     test.equal(textAction, .modify(payload: Data("hi-pm".utf8), note: "text"),
                "WS 帧脚本：字符串返回改写文本（日志: \(activityLog.prefix(300))）")
-    test.equal(runRule("return false;", frame: textFrame), .drop, "WS 帧脚本：false 丢帧")
-    test.equal(runRule("return { drop: true };", frame: textFrame), .drop, "WS 帧脚本：drop:true 丢帧")
-    test.equal(runRule("return { drop: false };", frame: textFrame), .pass, "WS 帧脚本：drop:false 放行")
-    test.equal(runRule("return { body: message.body + '!' };", frame: textFrame),
+    test.equal(try runRule("return false;", frame: textFrame), .drop, "WS 帧脚本：false 丢帧")
+    test.equal(try runRule("return { drop: true };", frame: textFrame), .drop, "WS 帧脚本：drop:true 丢帧")
+    test.equal(try runRule("return { drop: false };", frame: textFrame), .pass, "WS 帧脚本：drop:false 放行")
+    test.equal(try runRule("return { body: message.body + '!' };", frame: textFrame),
                .modify(payload: Data("hi!".utf8), note: "text"), "WS 帧脚本：body 字段改写")
     let binaryFrame = WSFrame(direction: .upstream, opcode: 0x2, fin: true, masked: true, payload: Data([9, 9]))
-    test.equal(runRule(#"return { base64: "AQID" };"#, frame: binaryFrame),
+    test.equal(try runRule(#"return { base64: "AQID" };"#, frame: binaryFrame),
                .modify(payload: Data([1, 2, 3]), note: "binary"), "WS 帧脚本：base64 改写二进制")
-    test.equal(runRule(#"return { action: "close" };"#, frame: textFrame), .close, "WS 帧脚本：显式关闭连接")
-    test.equal(runRule("", frame: textFrame), .pass, "WS 帧脚本：无返回放行")
+    test.equal(try runRule(#"return { action: "close" };"#, frame: textFrame), .close, "WS 帧脚本：显式关闭连接")
+    test.equal(try runRule("", frame: textFrame), .pass, "WS 帧脚本：无返回放行")
 }

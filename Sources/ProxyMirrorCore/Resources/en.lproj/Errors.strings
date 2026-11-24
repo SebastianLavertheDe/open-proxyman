@@ -986,3 +986,31 @@
 "network_http_incomplete" = "The HTTP message is incomplete.";
 
 "network_http_malformed" = "Invalid HTTP message: %@";
+
+"sse_decoding_deferred" = "The SSE %@ body will be parsed after it has finished receiving.";
+
+"sse_encoding_unsupported" = "Unsupported SSE Content-Encoding: %@. Captured bytes are available in Raw.";
+
+"sse_body_output_limit" = "The SSE body exceeds the 32 MiB parsing limit; subsequent events were not parsed.";
+
+"sse_body_incomplete" = "The connection ended before the compressed SSE body was fully received. Events cannot be recovered; captured bytes are available in Raw.";
+
+"sse_compressed_body_incomplete" = "The compressed SSE body is incomplete. Recoverable events are shown.";
+
+"sse_decoder_initialization_failed" = "The SSE compression decoder could not be initialized.";
+
+"sse_compressed_body_extra_data" = "The compressed SSE body contains trailing data.";
+
+"sse_compressed_body_invalid" = "The compressed SSE body is damaged. Recoverable events are shown.";
+
+"sse_compressed_body_truncated" = "The compressed SSE body was truncated and cannot be fully decoded.";
+
+"sse_compressed_body_output_limit" = "The decompressed SSE body exceeds 32 MiB.";
+
+"sse_decode_failed" = "The compressed SSE body could not be decoded. Captured bytes are available in Raw.";
+
+"sse_no_decodable_body" = "No decodable SSE body is available.";
+
+"network_pacing_capacity_exceeded" = "The network throttling buffer is full.";
+
+"session_invalid_metrics" = "The session contains invalid byte counts or durations.";

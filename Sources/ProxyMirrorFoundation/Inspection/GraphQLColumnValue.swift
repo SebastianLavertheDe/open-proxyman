@@ -10,6 +10,11 @@ package enum GraphQLColumnValue {
         options: [.caseInsensitive])
 
     package static func operationName(path: String, query: String, contentType: String, body: Data) -> String {
+        displayName(operationNameForMatching(path: path, query: query, contentType: contentType, body: body))
+    }
+
+    /// Matching preserves the full name: a display truncation must not change equals/regex predicates.
+    package static func operationNameForMatching(path: String, query: String, contentType: String, body: Data) -> String {
         guard !Task.isCancelled, body.count <= maximumInputBytes else { return "" }
         var document: String?, declared: String?
         let media = contentType.split(separator: ";", maxSplits: 1).first?
@@ -31,17 +36,17 @@ package enum GraphQLColumnValue {
             else if path.range(of: "graphql", options: .caseInsensitive) != nil, declared?.isEmpty == false { document = "" }
         }
         guard !Task.isCancelled, let document else { return "" }
-        if let declared, !declared.isEmpty { return bounded(declared) }
+        if let declared, !declared.isEmpty { return declared }
         let withoutComments = document.trimmingCharacters(in: .whitespacesAndNewlines)
             .split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
             .joined(separator: "\n")
         guard !Task.isCancelled,
               let match = operation.firstMatch(in: withoutComments, range: NSRange(withoutComments.startIndex..., in: withoutComments)),
               match.numberOfRanges > 2, let range = Range(match.range(at: 2), in: withoutComments) else { return "" }
-        return bounded(String(withoutComments[range]))
+        return String(withoutComments[range])
     }
 
-    private static func bounded(_ value: String) -> String {
+    package static func displayName(_ value: String) -> String {
         // Avoid splitting a UTF-8 scalar while bounding retained display values.
         let bytes = value.utf8
         guard bytes.count > maximumValueBytes else { return value }

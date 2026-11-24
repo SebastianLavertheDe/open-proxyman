@@ -187,6 +187,12 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
     private static let maxWaiting = 128
     private static let idleTimeout = TimeAmount.seconds(30)
 
+    /// Event-loop confined count of acquired HTTP/2 stream slots.
+    var activeStreamCount: Int {
+        loop.assertInEventLoop()
+        return parents.values.reduce(0) { $0 + $1.activeStreams }
+    }
+
     init(downstream: Channel, listenerPort: UInt16, listenerAddresses: [String] = ["127.0.0.1"]) {
         loop = downstream.eventLoop
         self.listenerPort = listenerPort

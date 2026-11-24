@@ -33,7 +33,8 @@ final class AppState: ObservableObject, TrafficSink {
         created.sink = self
         return created
     }
-    private var certificateAuthority: CertificateAuthority { engine.certificateAuthority }
+    var certificateAuthority: CertificateAuthority { engine.certificateAuthority }
+    var runtimeContext: ProxyRuntimeContext { ProxyRuntimeContext(engine: engine, settings: settings) }
     /// A pending preference must never be advertised as an already bound endpoint.
     var listenerPort: UInt16 { resolvedEngine.flatMap { $0.isRunning ? $0.port : nil } ?? settings.port }
     @Published private(set) var tabs: [TrafficStore] = []
@@ -97,6 +98,7 @@ final class AppState: ObservableObject, TrafficSink {
     private var settingsChanges: AnyCancellable?
     private var certificateChanges: AnyCancellable?
     private var certificateStatusTask: Task<Void, Never>?
+    private var presentedSavedError: String?
     @Published var dockRight = UserDefaults.standard.bool(forKey: "ui.dockRight") {
         didSet { UserDefaults.standard.set(dockRight, forKey: "ui.dockRight") }
     }
@@ -195,7 +197,23 @@ final class AppState: ObservableObject, TrafficSink {
     private func observeActiveWorkspace() {
         store.setWorkspaceVisible(store === activeTab)
         for tab in tabs { tab.setWorkspaceVisible(tab === activeTab) }
-        storeChanges = activeStore.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        storeChanges = activeStore.objectWillChange.sink { [weak self] in
+            guard let self else { return }
+            if self.store.savedError == nil { self.presentedSavedError = nil }
+            self.objectWillChange.send()
+        }
+    }
+
+    func markSavedErrorPresented() {
+        presentedSavedError = store.savedError
+    }
+
+    func shouldPresentSavedError(_ message: String?) -> Bool {
+        guard let message else { presentedSavedError = nil; return false }
+        // Every main window observes the same data. Keep the acknowledgement
+        // until recovery so a second window cannot repeat the modal quit alert.
+        if presentedSavedError == message { return false }
+        return true
     }
 
     func addWorkspace() {
@@ -810,7 +828,8 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func copyRequestsAsCurl(_ transactions: [Transaction]) {
-        copyText(transactions.map(ExportService.curlCommand).joined(separator: "\n"))
+        let runtime = runtimeContext
+        copyText(transactions.map { ExportService.curlCommand($0, runtime: runtime) }.joined(separator: "\n"))
     }
 
     func copyRequestsUsingDefaultFormat(_ transactions: [Transaction]) {
@@ -820,7 +839,8 @@ final class AppState: ObservableObject, TrafficSink {
             systemProxyMessage = Strings.Errors.appStateTheSelectedRequestsCannotBeCopiedAsCheck(String(format.title))
             return
         }
-        copyText(transactions.map { RequestCode.generate($0, format: format) }.joined(separator: "\n\n"))
+        let runtime = runtimeContext
+        copyText(transactions.map { RequestCode.generate($0, format: format, runtime: runtime) }.joined(separator: "\n\n"))
     }
 
     private func withSelected(_ f: @escaping (Transaction) -> Void) {
@@ -837,7 +857,7 @@ final class AppState: ObservableObject, TrafficSink {
         guard tx.canReplay else { return }
         if !direct && !proxyRunning { startProxy(automaticallyTakeOver: false) }
         if !direct && !proxyRunning { return }
-        RepeatService.resend(tx, proxyPort: direct ? nil : engine.port) { [store] result in
+        RepeatService.resend(tx, runtime: runtimeContext, proxyPort: direct ? nil : engine.port) { [store] result in
             if direct || result.state == .failed { store.add(result) }
         }
     }

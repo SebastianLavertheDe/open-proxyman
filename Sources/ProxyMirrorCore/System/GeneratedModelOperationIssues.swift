@@ -432,6 +432,10 @@ extension OperationIssue {
              render: { Strings.Models.diffLineLimit(p0) })
     }
 
+    static var modelDiffOutputLimit: Self {
+        Self(code: "models.diff_output_limit", diagnostic: "Comparison output is limited to 1 MiB.", render: { Strings.Models.diffOutputLimit })
+    }
+
     static var modelExternalModeHttp: Self {
         Self(code: "models.external_mode_http", diagnostic: "HTTP", render: { Strings.Models.externalModeHttp })
     }
@@ -1507,6 +1511,9 @@ extension OperationIssue {
         case "models.diff_line_limit":
             guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
             return .modelDiffLineLimit(p0)
+        case "models.diff_output_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffOutputLimit
         case "models.external_mode_http":
             guard arguments.count == 0 else { return nil }
             return .modelExternalModeHttp

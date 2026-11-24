@@ -1,8 +1,29 @@
 import Darwin
 import Foundation
 import ProxyMirrorSystemProxy
+import ProxyMirrorFoundation
 
 enum Installer {
+    static func installCertificate(_ plan: CertificateTrustInstallPlan) throws {
+        guard geteuid() == 0, getuid() == 0 else { throw SystemProxyError(.authorizationRequired) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-p", "-c", CertificateTrustInstallPlan.script, "ProxyMirror"] + plan.arguments
+        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        process.standardInput = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let bytes = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let detail = String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if detail.isEmpty { throw SystemProxyError(.installationFailed) }
+            throw SystemProxyError(detail)
+        }
+    }
+
     static func install(from source: URL, uid: uid_t, appHash: String) throws {
         guard uid > 0, SystemProxyService.isValidHash(appHash) else {
             throw SystemProxyError(.invalidArguments)

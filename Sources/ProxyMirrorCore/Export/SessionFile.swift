@@ -186,17 +186,24 @@ struct SessionRecord: Codable, Sendable {
         else if tx.isSSE { tx.restoreSSEFromBody() }
         return tx
     }
+
+    func validatedMetrics() throws -> ImportedTrafficMetrics {
+        try ImportedTrafficMetrics(requestBytes: requestBytes, responseBytes: responseBytes,
+                                   capturedRequest: requestBody.count, capturedResponse: responseBody.count,
+                                   durationSeconds: duration)
+    }
 }
 
 struct SessionFile: Codable, Sendable {
     enum SessionError: LocalizedError, OperationIssueProviding {
-        case unsupportedVersion, duplicateIDs, invalidHAR
+        case unsupportedVersion, duplicateIDs, invalidHAR, invalidMetrics
 
         var operationIssue: OperationIssue {
             switch self {
             case .unsupportedVersion: return OperationIssue.modelSessionUnsupportedVersion
             case .duplicateIDs: return OperationIssue.modelSessionDuplicateIds
             case .invalidHAR: return OperationIssue.modelSessionHarInvalid
+            case .invalidMetrics: return OperationIssue.sessionInvalidMetrics
             }
         }
         var errorDescription: String? { operationIssue.diagnostic }
@@ -258,6 +265,10 @@ struct SessionFile: Codable, Sendable {
         guard version == Self.currentVersion else { throw SessionError.unsupportedVersion }
         records = try fields.decode([SessionRecord].self, forKey: .records)
         guard Set(records.map(\.id)).count == records.count else { throw SessionError.duplicateIDs }
+        for record in records {
+            do { _ = try record.validatedMetrics() }
+            catch { throw SessionError.invalidMetrics }
+        }
         pinnedDomains = try fields.decode([String].self, forKey: .pinnedDomains)
         selected = try fields.decode([UUID].self, forKey: .selected)
     }
@@ -320,8 +331,14 @@ struct SessionFile: Codable, Sendable {
             tx.upstreamProtocol = entry._upstreamProtocol
             tx.requestBody = try entry.request.postData?.bytes() ?? Data()
             tx.responseBody = try entry.response.content?.bytes() ?? Data()
-            tx.requestBytes = max(entry.request.bodySize ?? 0, tx.requestBody.count)
-            tx.responseBytes = max(entry.response.bodySize ?? 0, tx.responseBody.count)
+            let metrics: ImportedTrafficMetrics
+            do {
+                metrics = try .har(requestBytes: entry.request.bodySize, responseBytes: entry.response.bodySize,
+                                   capturedRequest: tx.requestBody.count, capturedResponse: tx.responseBody.count,
+                                   milliseconds: entry.time)
+            } catch { throw SessionError.invalidHAR }
+            tx.requestBytes = metrics.requestBytes
+            tx.responseBytes = metrics.responseBytes
             tx.requestBodyComplete = true
             let error = entry.response._error.flatMap { $0.isEmpty ? nil : $0 }
             tx.responseBodyComplete = error == nil
@@ -335,9 +352,10 @@ struct SessionFile: Codable, Sendable {
             tx.isTunnel = tx.method == "CONNECT"
             tx.isWebSocket = tx.statusCode == 101
             tx.contentType = entry.response.content?.mimeType ?? tx.responseHeaders.value(of: "Content-Type") ?? ""
-            tx.duration = max(0, entry.time ?? 0) / 1000
+            tx.duration = metrics.durationSeconds
             tx.comment = entry.comment ?? ""
-            if tx.isSSE { tx.restoreSSEFromBody() }
+            if let snapshot = entry.response._proxyMirrorSSE { tx.applySSESnapshot(snapshot) }
+            else if tx.isSSE { tx.restoreSSEFromBody() }
             return tx
         }
     }
@@ -373,6 +391,7 @@ private struct HARFile: Decodable {
         let content: Content?
         let _error: String?
         let _proxyMirrorFailure: CapturedFailure?
+        let _proxyMirrorSSE: SSEInspectionSnapshot?
         let _truncated: Bool?
         let _trailers: HTTPHeaders?
     }

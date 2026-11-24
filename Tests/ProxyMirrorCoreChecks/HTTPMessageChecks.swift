@@ -61,7 +61,9 @@ func checkHTTPMessages(_ test: CoreAssertions) throws {
 
     try checkHTTPTransportPolicies(test)
     try checkRequestRoutePlans(test)
-    try checkMetadataOwnership(test)
+    try test.run("checkMetadataOwnership") { try checkMetadataOwnership(test) }
+    try test.run("checkHTTP2EarlyResponseLifecycle") { try checkHTTP2EarlyResponseLifecycle(test) }
+    try test.run("checkAsyncMailbox") { try checkAsyncMailbox(test) }
 
     checkWebSocketCapture(test)
     checkWebSocketCompression(test)

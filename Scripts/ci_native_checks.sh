@@ -7,6 +7,8 @@ swift --version
 python3 Scripts/check_localization.py
 python3 Scripts/test_localization_resources.py
 python3 Scripts/audit_ui_localization.py
+python3 Scripts/test_processed_localization.py
+python3 Scripts/test_sse_issues.py
 
 case "$lane" in
   debug)
@@ -15,9 +17,11 @@ case "$lane" in
     support_dir="$(mktemp -d)"
     trap 'rm -rf "$support_dir"' EXIT
     export PM_SUPPORT_DIR="$support_dir"
+    export PM_CORE_GROUP_TIMEOUT=180
+    export PM_CORE_CASE_TIMEOUT=90
     swift test -j 2 --filter ProxyMirrorFoundationTests
     swift test -j 2 --filter ProxyMirrorCoreTests
-    .build/debug/ProxyMirrorSelfTest --core-unit
+    python3 Scripts/run_with_deadline.py --timeout 600 -- .build/debug/ProxyMirrorSelfTest --core-unit
     python3 Scripts/test_loopback.py --full
     python3 Scripts/test_loopback.py --concurrency
     python3 Scripts/test_http2.py
@@ -46,7 +50,8 @@ case "$lane" in
     support_dir="$(mktemp -d)"
     trap 'rm -rf "$support_dir"' EXIT
     export PM_SUPPORT_DIR="$support_dir"
-    "$PM_SELFTEST_BIN" --core-unit
+    export PM_CORE_CASE_TIMEOUT=180
+    python3 Scripts/run_with_deadline.py --timeout 900 -- "$PM_SELFTEST_BIN" --core-unit
     python3 Scripts/test_loopback.py --concurrency --timeout 180
     python3 Scripts/test_loopback.py --full --timeout 180
     python3 Scripts/test_http2.py --timeout 180

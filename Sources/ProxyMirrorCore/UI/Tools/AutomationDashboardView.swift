@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 public struct AutomationDashboardView: View {
-    @ObservedObject private var appState = AppState.shared
+    @EnvironmentObject private var appState: AppState
     @State private var message = ""
     @State private var error = false
     @State private var busy = false
@@ -37,9 +37,9 @@ public struct AutomationDashboardView: View {
             }
             Divider()
             Text(Strings.Tools.manualConfiguration).font(.headline)
-            Text(ProxyAutomation.environment(port: appState.listenerPort, certificate: CertificateAuthority.shared.caCertPath)
+            Text(ProxyAutomation.environment(port: appState.listenerPort, certificate: appState.certificateAuthority.caCertPath)
                 .keys.sorted().map { key in
-                    let value = ProxyAutomation.environment(port: appState.listenerPort, certificate: CertificateAuthority.shared.caCertPath)[key]!
+                    let value = ProxyAutomation.environment(port: appState.listenerPort, certificate: appState.certificateAuthority.caCertPath)[key]!
                     return "export \(key)=\(ProxyAutomation.shellQuote(value))"
                 }.joined(separator: "\n"))
                 .font(.system(.caption, design: .monospaced))
@@ -75,9 +75,9 @@ public struct AutomationDashboardView: View {
         Task { @MainActor in
             defer { busy = false }
             do {
-                try CertificateAuthority.shared.ensureCA()
+                try appState.certificateAuthority.ensureCA()
                 message = try await ProxyAutomation.launchAndWait(target, port: appState.listenerPort,
-                    certificate: CertificateAuthority.shared.caCertPath, application: selected)
+                    certificate: appState.certificateAuthority.caCertPath, application: selected)
                 error = false
             } catch {
                 message = LocalizedErrorPresentation.message(for: error)

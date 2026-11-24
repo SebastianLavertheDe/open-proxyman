@@ -31,8 +31,22 @@ enum LocalizationResources {
     }
 
     static func languageBundle(_ language: AppLanguage, in bundle: Bundle) -> Bundle? {
-        guard let path = bundle.path(forResource: language.rawValue, ofType: "lproj") else { return nil }
-        return Bundle(path: path)
+        if let path = bundle.path(forResource: language.rawValue, ofType: "lproj") {
+            return Bundle(path: path)
+        }
+        // SwiftPM normalizes processed localization directories (zh-hans.lproj).
+        // Match only our supported identifiers, including on case-sensitive disks;
+        // this does not permit an App to fall back to a development resource root.
+        guard let root = bundle.resourceURL,
+              let contents = try? FileManager.default.contentsOfDirectory(at: root,
+                  includingPropertiesForKeys: [.isDirectoryKey]) else { return nil }
+        let name = (language.rawValue + ".lproj").lowercased()
+        let matches = contents.filter {
+            $0.lastPathComponent.lowercased() == name &&
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+        guard matches.count == 1 else { return nil }
+        return Bundle(url: matches[0])
     }
 
     static func hasLanguages(_ bundle: Bundle) -> Bool {

@@ -142,6 +142,7 @@ struct ProxyMirrorMainApp: App {
 
         Window(Strings.Menus.automation, id: "automation") {
             AutomationDashboardView().preferredColorScheme(appColorScheme)
+                .environmentObject(appState)
                 .environment(\.locale, appLocale)
         }.defaultSize(width: 820, height: 580)
 
@@ -199,13 +200,16 @@ struct ProxyMirrorMainApp: App {
             .keyboardShortcut("c", modifiers: [.command, .shift])
             .disabled(appState.activeStore.selectedIDs.isEmpty)
             Button(Strings.Menus.copyAsHttpie) {
-                appState.copyText(appState.activeStore.selectedTransactions.map(ExportService.httpieCommand).joined(separator: "\n"))
+                let runtime = appState.runtimeContext
+                appState.copyText(appState.activeStore.selectedTransactions.map { ExportService.httpieCommand($0, runtime: runtime) }.joined(separator: "\n"))
             }
             .disabled(appState.activeStore.selectedIDs.isEmpty)
             Menu(Strings.Menus.copyAsCode) {
                 ForEach(RequestCode.Format.allCases, id: \.self) { format in
                     Button(format.title) {
-                        if let tx = appState.activeStore.selectedTransaction { appState.copyText(RequestCode.generate(tx, format: format)) }
+                        if let tx = appState.activeStore.selectedTransaction {
+                            appState.copyText(RequestCode.generate(tx, format: format, runtime: appState.runtimeContext))
+                        }
                     }.disabled(appState.activeStore.selectedTransaction.map { !RequestCode.supported(format, for: $0) } ?? true)
                 }
             }
@@ -452,7 +456,11 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
         }
         guard flushRulesBeforeQuit() else { return .terminateCancel }
         if state.store.finishSaving({ success in
-            guard success, !state.systemProxyBusy else {
+            guard success else {
+                self.cancelTerminationAfterSaveFailure(sender)
+                return
+            }
+            guard !state.systemProxyBusy else {
                 sender.reply(toApplicationShouldTerminate: false)
                 return
             }
@@ -479,8 +487,33 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
     }
 
     private func replyToTermination(_ sender: NSApplication, restored: Bool) {
-        // Saved writes and system proxy restoration may leave time for another UI edit.
-        sender.reply(toApplicationShouldTerminate: restored && flushRulesBeforeQuit())
+        let state = AppState.shared
+        guard restored, !state.systemProxyBusy else {
+            sender.reply(toApplicationShouldTerminate: false)
+            return
+        }
+        // Capture restoration can outlive the first Saved flush. Recheck the
+        // latest snapshot after every asynchronous wait before the final reply.
+        if state.store.finishSaving({ success in
+            guard success else {
+                self.cancelTerminationAfterSaveFailure(sender)
+                return
+            }
+            self.replyToTermination(sender, restored: true)
+        }) { return }
+        sender.reply(toApplicationShouldTerminate: flushRulesBeforeQuit())
+    }
+
+    private func cancelTerminationAfterSaveFailure(_ sender: NSApplication) {
+        let state = AppState.shared
+        state.markSavedErrorPresented()
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = Strings.Settings.saveFailed
+        alert.informativeText = state.store.savedError ?? Strings.Settings.saveFailed
+        alert.addButton(withTitle: Strings.Menus.cancel)
+        alert.runModal()
+        sender.reply(toApplicationShouldTerminate: false)
     }
 
     private func applyPreferences() {

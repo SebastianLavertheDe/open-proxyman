@@ -95,9 +95,18 @@ enum MCPDataRedaction {
         // A scalar session credential is sensitive; its container is not.
         if sensitiveKeys.contains(name), !(name == "session" && (value is [String: Any] || value is [Any])) { return marker }
         if let fields = value as? [String: Any] {
+            let graphQLDocument = (fields["query"] as? String).flatMap { graphQL($0, depth: depth + 1) }
+            let graphQLVariables = graphQLDocument?.variables ?? []
             var safe: [String: Any] = [:]
             for (field, nested) in fields {
                 if normalized(field) == "cookies" { safe[field] = [] as [Any] }
+                else if field == "variables", graphQLDocument?.text == marker { safe[field] = marker }
+                else if field == "variables", let variables = nested as? [String: Any], !graphQLVariables.isEmpty {
+                    safe[field] = variables.reduce(into: [String: Any]()) { output, pair in
+                        output[pair.key] = graphQLVariables.contains(pair.key) ? marker
+                            : sanitize(pair.value, key: pair.key, depth: depth + 1)
+                    }
+                }
                 else if field == "text", fields["encoding"] as? String == "base64", let encoded = nested as? String {
                     safe[field] = sanitizedBase64(encoded, depth: depth + 1)
                 } else { safe[field] = sanitize(nested, key: field, depth: depth + 1) }
@@ -181,6 +190,11 @@ enum MCPDataRedaction {
             let safe = sanitizeQuery(input, depth: depth + 1)
             if safe != input { return safe }
         }
+        if let document = graphQL(input, depth: depth + 1) { return document.text }
+        return credentialText(input, depth: depth)
+    }
+
+    private static func credentialText(_ input: String, depth: Int) -> String {
         var result = input
         if let regex = try? NSRegularExpression(pattern: #"https?://[^\s"'<>]+"#) {
             for match in regex.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed() {
@@ -297,6 +311,10 @@ enum MCPDataRedaction {
 
     private static func sanitizeQuery(_ query: String, depth: Int = 0) -> String {
         guard depth < 48 else { return marker }
+        // A JSON field called "query" can contain a GraphQL document rather
+        // than URL parameters. Never split a document's strings on '&' or '='.
+        if graphQL(query, depth: depth + 1) != nil
+            || (try? JSONSerialization.jsonObject(with: Data(query.utf8))) != nil { return text(query, depth: depth + 1) }
         // Replace values in place rather than re-encoding benign query fields.
         return query.split(separator: "&", omittingEmptySubsequences: false).map { item -> String in
             let pair = item.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
@@ -313,7 +331,175 @@ enum MCPDataRedaction {
                     return String(key) + "=" + (safe.addingPercentEncoding(withAllowedCharacters: allowed) ?? "redacted")
                 }
             }
-            return String(item)
+            return pair.count == 1 ? text(String(item), depth: depth + 1) : String(item)
         }.joined(separator: "&")
+    }
+
+    private struct GraphQLRedaction {
+        let text: String
+        let variables: Set<String>
+    }
+
+    private struct GraphQLToken {
+        let span: Range<Int>
+        var name: String? = nil
+        var symbol: UInt8? = nil
+    }
+
+    /// Lex values instead of matching a quoted substring: GraphQL supports
+    /// escaped quotes, block strings, input objects and variable defaults.
+    /// Malformed/truncated documents are hidden rather than partly exposed.
+    private static func graphQL(_ input: String, depth: Int) -> GraphQLRedaction? {
+        let bytes = Array(input.utf8)
+        var tokens: [GraphQLToken] = [], index = 0
+        var replacements: [(span: Range<Int>, text: String)] = []
+        func isName(_ byte: UInt8) -> Bool { byte == 95 || (65...90).contains(byte) || (97...122).contains(byte) }
+        func result(_ text: String = marker, variables: Set<String> = []) -> GraphQLRedaction {
+            GraphQLRedaction(text: text, variables: variables)
+        }
+        // Avoid treating URL query parameters such as query=... as a document.
+        var leading = 0
+        while leading < bytes.count {
+            if [9, 10, 13, 32, 44].contains(bytes[leading]) { leading += 1 }
+            else if leading + 2 < bytes.count, bytes[leading...leading + 2].elementsEqual([239, 187, 191]) { leading += 3 }
+            else if bytes[leading] == 35 { while leading < bytes.count, bytes[leading] != 10, bytes[leading] != 13 { leading += 1 } }
+            else { break }
+        }
+        let prefix = String(decoding: bytes[leading...], as: UTF8.self)
+        guard prefix.hasPrefix("{") || ["query", "mutation", "subscription", "fragment"].contains(where: {
+            prefix.hasPrefix($0) && prefix.dropFirst($0.count).first.map { $0.isWhitespace || ["{", "(", ",", "#", "\u{FEFF}"].contains($0) } == true
+        }), input.contains("{") else { return nil }
+        guard depth < 48 else { return result() }
+        while index < bytes.count {
+            let start = index, byte = bytes[index]
+            if index + 2 < bytes.count, bytes[index...index + 2].elementsEqual([239, 187, 191]) { index += 3; continue }
+            if [9, 10, 13, 32, 44].contains(byte) { index += 1; continue }
+            if byte == 35 {
+                while index < bytes.count, bytes[index] != 10, bytes[index] != 13 { index += 1 }
+                let comment = String(decoding: bytes[start..<index], as: UTF8.self)
+                let safe = credentialText(comment, depth: depth + 1)
+                if safe != comment { replacements.append((start..<index, safe)) }
+                continue
+            }
+            if byte == 34 {
+                let block = index + 2 < bytes.count && bytes[index + 1] == 34 && bytes[index + 2] == 34
+                index += block ? 3 : 1
+                var closed = false
+                while index < bytes.count {
+                    if bytes[index] == 92 {
+                        if block, index + 3 < bytes.count, bytes[index + 1...index + 3].allSatisfy({ $0 == 34 }) { index += 4 }
+                        else { index += 2 }
+                    } else if bytes[index] == 34, !block || (index + 2 < bytes.count && bytes[index + 1] == 34 && bytes[index + 2] == 34) {
+                        index += block ? 3 : 1; closed = true; break
+                    } else { index += 1 }
+                }
+                guard closed else { return result() }
+                tokens.append(GraphQLToken(span: start..<index))
+                let value: String?
+                if block {
+                    value = String(decoding: bytes[start + 3..<index - 3], as: UTF8.self)
+                        .replacingOccurrences(of: "\\\"\"\"", with: "\"\"\"")
+                } else {
+                    value = (try? JSONSerialization.jsonObject(with: Data(bytes[start..<index]), options: [.fragmentsAllowed])) as? String
+                }
+                guard let value else { return result() }
+                let safe = text(value, depth: depth + 1)
+                if safe != value, let encoded = try? JSONSerialization.data(withJSONObject: safe, options: [.fragmentsAllowed, .withoutEscapingSlashes]) {
+                    replacements.append((start..<index, String(decoding: encoded, as: UTF8.self)))
+                }
+            } else if isName(byte) {
+                index += 1
+                while index < bytes.count, isName(bytes[index]) || (48...57).contains(bytes[index]) { index += 1 }
+                tokens.append(GraphQLToken(span: start..<index, name: String(decoding: bytes[start..<index], as: UTF8.self)))
+            } else if byte == 45 || (48...57).contains(byte) {
+                index += 1
+                while index < bytes.count, (48...57).contains(bytes[index]) || [43, 45, 46, 69, 101].contains(bytes[index]) { index += 1 }
+                tokens.append(GraphQLToken(span: start..<index))
+            } else {
+                guard Array("!$():=@[]{|}.".utf8).contains(byte) else { return result() }
+                index += 1; tokens.append(GraphQLToken(span: start..<index, symbol: byte))
+            }
+            guard tokens.count <= 65_536 else { return result() }
+        }
+        // A JSON object inside a query field still belongs to the JSON redactor.
+        if tokens.first?.symbol == 123, tokens.count > 1, tokens[1].name == nil, tokens[1].symbol != 125 { return nil }
+        var scopes: [(opening: Int, closing: UInt8, input: Bool)] = [], argumentPositions: Set<Int> = []
+        var matchingEnds: [Int: Int] = [:]
+        for position in tokens.indices {
+            if scopes.last?.input == true { argumentPositions.insert(position) }
+            guard let symbol = tokens[position].symbol else { continue }
+            if symbol == 40 || symbol == 91 || symbol == 123 {
+                let previous = position > 0 ? tokens[position - 1].symbol : nil
+                let isInput = symbol != 123 || previous == 58 || previous == 61 || scopes.last?.closing == 93
+                scopes.append((position, symbol == 40 ? 41 : symbol == 91 ? 93 : 125, isInput))
+            } else if symbol == 41 || symbol == 93 || symbol == 125 {
+                guard let scope = scopes.popLast(), scope.closing == symbol else { return result() }
+                matchingEnds[scope.opening] = position
+            }
+        }
+        guard scopes.isEmpty else { return result() }
+        func valueTokens(at position: Int) -> Range<Int>? {
+            guard position + 2 < tokens.count, tokens[position + 1].symbol == 58 else { return nil }
+            var value = position + 2
+            if position > 0, tokens[position - 1].symbol == 36 {
+                // Variable declarations put a type before their optional default.
+                while value < tokens.count, tokens[value].name != nil || [91, 93, 33].contains(tokens[value].symbol ?? 0) { value += 1 }
+                guard value < tokens.count, tokens[value].symbol == 61 else { return nil }
+                value += 1
+            }
+            guard value < tokens.count else { return nil }
+            if tokens[value].symbol == 36 {
+                guard value + 1 < tokens.count, tokens[value + 1].name != nil else { return nil }
+                return value..<value + 2
+            }
+            if let opening = tokens[value].symbol, opening == 123 || opening == 91 {
+                guard let end = matchingEnds[value] else { return nil }
+                return value..<end + 1
+            }
+            guard tokens[value].symbol == nil else { return nil }
+            return value..<value + 1
+        }
+        var variables: Set<String> = []
+        // References can follow the variable declaration. Resolve their privacy
+        // context over each complete sensitive value subtree, including arrays
+        // and input objects, before redacting declarations and envelope variables.
+        var sensitiveValues: [Range<Int>] = []
+        for position in tokens.indices {
+            guard argumentPositions.contains(position), let name = tokens[position].name, sensitiveKeys.contains(normalized(name)),
+                  let value = valueTokens(at: position) else { continue }
+            sensitiveValues.append(value)
+        }
+        var scannedUntil = 0
+        for range in sensitiveValues.sorted(by: { $0.lowerBound < $1.lowerBound || ($0.lowerBound == $1.lowerBound && $0.upperBound > $1.upperBound) }) {
+            guard range.lowerBound >= scannedUntil else { continue }
+            for position in range where tokens[position].symbol == 36 && position + 1 < range.upperBound {
+                if let variable = tokens[position + 1].name { variables.insert(variable) }
+            }
+            scannedUntil = range.upperBound
+        }
+        var hiddenUntil = 0
+        for position in tokens.indices {
+            guard position >= hiddenUntil else { continue }
+            guard argumentPositions.contains(position), let name = tokens[position].name,
+                  sensitiveKeys.contains(normalized(name)) || (position > 0 && tokens[position - 1].symbol == 36 && variables.contains(name)),
+                  position + 2 < tokens.count, tokens[position + 1].symbol == 58 else { continue }
+            guard let range = valueTokens(at: position) else {
+                if position > 0, tokens[position - 1].symbol == 36 { continue }
+                return result()
+            }
+            let value = range.lowerBound, end = range.upperBound
+            if tokens[value].symbol == 36, value + 1 < tokens.count, let variable = tokens[value + 1].name {
+                variables.insert(variable); continue
+            }
+            replacements.append((tokens[value].span.lowerBound..<tokens[end - 1].span.upperBound, "\"\(marker)\""))
+            hiddenUntil = end
+        }
+        // Outer credential objects subsume any nested credential replacements.
+        let ordered = replacements.sorted { $0.span.lowerBound < $1.span.lowerBound || ($0.span.lowerBound == $1.span.lowerBound && $0.span.upperBound > $1.span.upperBound) }
+        var disjoint: [(span: Range<Int>, text: String)] = []
+        for replacement in ordered where disjoint.last.map({ $0.span.upperBound <= replacement.span.lowerBound }) ?? true { disjoint.append(replacement) }
+        var safe = bytes
+        for replacement in disjoint.reversed() { safe.replaceSubrange(replacement.span, with: Array(replacement.text.utf8)) }
+        return result(String(decoding: safe, as: UTF8.self), variables: variables)
     }
 }

@@ -510,7 +510,7 @@ private struct ContentSideView: View {
                 BodyContentView(data: tx.isWebSocket ? capturedData : data,
                                 contentType: tx.isWebSocket ? contentType : inspectedBody.contentType, pretty: true,
                                 complete: complete || tx.state == .failed, truncated: truncated, revision: bodyRevision,
-                                generation: bodyGeneration)
+                                generation: bodyGeneration, inspectionKey: currentBodyKey)
                     .id(ObjectIdentifier(tx))
             }
         case .query:
@@ -703,7 +703,7 @@ private struct ContentSideView: View {
             } else {
                 BodyContentView(data: data, contentType: inspectedBody.contentType, pretty: true,
                                 complete: complete || tx.state == .failed, truncated: truncated, revision: bodyRevision,
-                                generation: bodyGeneration)
+                                generation: bodyGeneration, inspectionKey: currentBodyKey)
                     .id(ObjectIdentifier(tx))
             }
         }

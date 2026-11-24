@@ -56,6 +56,16 @@ package actor JSONFieldCache {
         return value
     }
 
+    package func scalarValues(for key: Key, paths: [String], scalars: DerivedFieldCache = .shared,
+                              load: @Sendable () -> Data?) async -> [String: String] {
+        let cached = await scalars.lookup(key)
+        let missing = paths.filter { cached.values[$0] == nil }
+        guard !missing.isEmpty, !Task.isCancelled else { return cached.values }
+        let resolved = values(for: key, paths: missing, load: load)
+        await scalars.store(resolved, for: key, generation: cached.generation)
+        return cached.values.merging(resolved) { _, new in new }
+    }
+
     package func values(for key: Key, paths: [String], load: @Sendable () -> Data?) -> [String: String] {
         guard !Task.isCancelled else { return [:] }
         var entry: Entry

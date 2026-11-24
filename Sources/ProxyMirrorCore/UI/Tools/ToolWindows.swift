@@ -263,11 +263,11 @@ struct ComposeRequestView: View {
         guard direct || appState.proxyRunning else { error = appState.proxyStartError; return }
         error = nil
         result = nil
-        let proxyPort = direct ? nil : ProxyEngine.shared.port
+        let proxyPort = direct ? nil : appState.listenerPort
         appState.composeHistory.insert(request, at: 0)
         if appState.composeHistory.count > 20 { appState.composeHistory.removeLast() }
         ComposeService.saveHistory(appState.composeHistory)
-        task = ComposeService.execute(request, proxyPort: proxyPort) { tx in
+        task = ComposeService.execute(request, runtime: appState.runtimeContext, proxyPort: proxyPort) { tx in
             task = nil
             result = tx
             if proxyPort == nil || tx.state == .failed { appState.store.add(tx) }

@@ -50,6 +50,21 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
         state.stopProxy()
         try? engine.group.syncShutdownGracefully()
     }
+    let initialHTTP2 = settings.http2Enabled
+    let requestedHTTP2 = !sharedHTTP2
+    _ = try AutomationControl.execute(["operation": "http_version", "http2": requestedHTTP2], app: state)
+    test.expect(engine.http2Enabled == requestedHTTP2 && shared.http2Enabled == sharedHTTP2,
+                "Automation changes the injected engine without reconfiguring the shared runtime")
+    settings.http2Enabled = initialHTTP2
+    engine.http2Enabled = initialHTTP2
+    let context = state.runtimeContext
+    let httpsRequest = ComposeService.ParsedRequest(method: "GET", url: "https://runtime-ca.example.test/", headers: [], body: nil)
+    test.equal(try context.trustedCA(for: httpsRequest), authority.caCertPath,
+               "Compose trust uses the same private CA as its selected proxy engine")
+    engine.mitmExcludedHosts = ["runtime-ca.example.test"]
+    test.equal(try context.trustedCA(for: httpsRequest), nil,
+               "Compose consults its selected engine's MITM exclusions")
+    engine.mitmExcludedHosts = []
 
     // The same Transaction can be inspected in two independent fixtures. Only
     // the state receiving its engine callback may refresh body-dependent views.
@@ -109,6 +124,18 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
     settings.port = engine.port
     state.proxyRunning = true
     state.recordingEnabled = false
+    for operation in ["status", "proxy_address"] {
+        let data = try AutomationControl.execute(["operation": operation], app: state)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        test.equal(object?["port"] as? Int, Int(engine.port), "Automation \(operation) returns the injected listener's actual port")
+    }
+    let originalCopyProxy = settings.appendProxyToCommands
+    settings.appendProxyToCommands = true
+    let copied = Transaction(); copied.host = "runtime-copy.example.test"; copied.requestBodyComplete = true
+    test.expect(ExportService.curlCommand(copied, runtime: state.runtimeContext).contains("127.0.0.1:\(engine.port)")
+                && ExportService.httpieCommand(copied, runtime: state.runtimeContext).contains("127.0.0.1:\(engine.port)"),
+                "Both command adapters use the selected runtime's live endpoint")
+    settings.appendProxyToCommands = originalCopyProxy
     let client = try ClientBootstrap(group: engine.group).connect(host: "127.0.0.1", port: Int(engine.port)).wait()
     defer { try? client.close().wait() }
     let closed = LockedBox(false)
@@ -143,7 +170,7 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
     state.systemProxyActive = false
     test.expect(settings.port == originalPort && engine.port == originalPort && engine.isRunning,
                 "普通应用不在系统代理仍接管时擅自更换监听端点")
-    test.expect(state.systemProxyMessage?.contains("先恢复系统代理") == true,
+    test.equal(state.systemProxyMessage, Strings.Errors.appStateRestoreTheSystemProxyBeforeChangingTheListen,
                 "拒绝不安全的端点修改时给出明确反馈")
 
     let occupied = try ServerBootstrap(group: engine.group).bind(host: "127.0.0.1", port: 0).wait()
@@ -157,7 +184,9 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
     test.expect(!state.proxyRestarting && state.proxyRunning && engine.isRunning
                 && engine.port == originalPort && settings.port == originalPort,
                 "新端口已被占用时重启恢复原监听及设置")
-    test.expect(state.proxyStartError?.contains("已恢复原监听端口") == true,
+    let restoredSuffix = Strings.Errors.appStateRestoredThePreviousListenerPort(Int(originalPort))
+    test.expect(state.proxyStartError?.hasSuffix(restoredSuffix) == true
+                && (state.proxyStartError?.count ?? 0) > restoredSuffix.count,
                 "重绑失败并恢复后仍显示原始失败原因")
 }
 

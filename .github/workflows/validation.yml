@@ -24,7 +24,7 @@ jobs:
       - name: Prepare loopback transport fixtures
         run: |
           apt-get update -qq
-          apt-get install --yes --no-install-recommends python3 curl ca-certificates
+          apt-get install --yes --no-install-recommends python3 curl ca-certificates zlib1g-dev
       - name: Test the production Foundation module
         shell: bash
         run: |
@@ -36,6 +36,14 @@ jobs:
             cd "$validation_root"
             swift test -j 2
           )
+      - name: Verify process support against the container libc
+        run: python3 Scripts/test_process_support.py
+      - name: Verify actual SwiftPM localization resources
+        run: python3 Scripts/test_processed_localization.py
+      - name: Verify typed SSE failures and rendering
+        run: python3 Scripts/test_sse_issues.py
+      - name: Verify native check worker deadlines
+        run: python3 Scripts/test_core_check_runner.py
       - name: Exercise the production curl transport on loopback
         run: python3 Scripts/test_compose_transport.py
 

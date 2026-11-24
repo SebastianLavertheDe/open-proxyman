@@ -3,11 +3,12 @@ import SwiftUI
 /// 证书菜单的安装指南弹窗（iOS/Android/Java/Firefox 等平台的证书安装指引）
 struct CertificateGuideSheet: View {
     let platform: String
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
     private var guide: CertificatePlatformGuides.Guide {
-        CertificatePlatformGuides.guide(for: platform, certificatePath: CertificateAuthority.shared.caCertPath.path,
-                                       port: Int(AppState.shared.listenerPort))
+        CertificatePlatformGuides.guide(for: platform, certificatePath: appState.certificateAuthority.caCertPath.path,
+                                       port: Int(appState.listenerPort))
     }
 
     var body: some View {

@@ -10,9 +10,9 @@ enum RequestCode {
         "cookie", "cookie2", "date", "dnt", "expect", "origin", "referer", "set-cookie", "set-cookie2", "via"
     ]
 
-    static func pythonRequests(_ tx: Transaction) -> String {
+    static func pythonRequests(_ tx: Transaction, redactSensitiveHeaders: Bool? = nil) -> String {
         let request = ComposeService.request(from: tx)
-        let headers = replayHeaders(request.headers)
+        let headers = replayHeaders(request.headers, redactSensitiveHeaders: redactSensitiveHeaders)
         let pairs = headers.map { field in
             let value = quoted(field.value) + (field.value.utf8.allSatisfy { $0 < 128 } ? "" : ".encode(\"utf-8\")")
             return "    (\(quoted(field.name)), \(value)),"
@@ -44,9 +44,9 @@ enum RequestCode {
         return !["GET", "HEAD"].contains(method) || tx.requestBody.isEmpty
     }
 
-    static func javascriptFetch(_ tx: Transaction) -> String {
+    static func javascriptFetch(_ tx: Transaction, redactSensitiveHeaders: Bool? = nil) -> String {
         let request = ComposeService.request(from: tx)
-        let capturedHeaders = replayHeaders(request.headers)
+        let capturedHeaders = replayHeaders(request.headers, redactSensitiveHeaders: redactSensitiveHeaders)
         let headers = capturedHeaders.filter { field in
             let name = field.name.lowercased()
             return !browserHeaders.contains(name) && !name.hasPrefix("sec-") && !name.hasPrefix("proxy-")
@@ -82,12 +82,12 @@ enum RequestCode {
         return lines.joined(separator: "\n")
     }
 
-    private static func replayHeaders(_ headers: [(String, String)]) -> [(name: String, value: String)] {
+    private static func replayHeaders(_ headers: [(String, String)], redactSensitiveHeaders: Bool? = nil) -> [(name: String, value: String)] {
         let connectionFields = headers.filter { $0.0.caseInsensitiveCompare("Connection") == .orderedSame }
             .flatMap { $0.1.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() } }
         let omitted = transportHeaders.union(connectionFields)
         let punctuation = Set("!#$%&'*+-.^`|~_".utf8)
-        return ExportRedaction.headers(headers, redact: AppSettings.shared.redactSensitiveHeaders).filter { name, value in
+        return ExportRedaction.headers(headers, redact: redactSensitiveHeaders ?? AppSettings.shared.redactSensitiveHeaders).filter { name, value in
             !name.isEmpty && !omitted.contains(name.lowercased()) && name.utf8.allSatisfy {
                 (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || punctuation.contains($0)
             } && value.utf8.allSatisfy { $0 == 9 || ($0 >= 32 && $0 != 127) }
@@ -142,9 +142,9 @@ extension RequestCode {
         return tx.canReplay
     }
 
-    static func generate(_ tx: Transaction, format: Format) -> String {
+    static func generate(_ tx: Transaction, format: Format, runtime: ProxyRuntimeContext? = nil) -> String {
         let request = ComposeService.request(from: tx)
-        let headers = replayHeaders(request.headers)
+        let headers = replayHeaders(request.headers, redactSensitiveHeaders: runtime?.redactSensitiveHeaders)
         let url = quoted(request.url), method = quoted(request.method)
         let base64 = quoted((request.body ?? Data()).base64EncodedString())
         let groupedHeaders = mergedHeaders(headers)
@@ -153,10 +153,10 @@ extension RequestCode {
         let duplicateNote = groupedHeaders.count == headers.count ? "" : "// This client combines repeated header values. Use native Node.js http/https or Go for separate header fields.\n"
         let swiftHeaders = groupedHeaders.isEmpty ? "[:]" : "[" + groupedHeaders.map { "\(swiftLiteral($0.name)): \(swiftLiteral($0.value))" }.joined(separator: ", ") + "]"
         switch format {
-        case .curl: return ExportService.curlCommand(tx)
-        case .httpie: return ExportService.httpieCommand(tx)
-        case .python: return pythonRequests(tx)
-        case .fetch: return javascriptFetch(tx)
+        case .curl: return ExportService.curlCommand(tx, runtime: runtime ?? .shared)
+        case .httpie: return ExportService.httpieCommand(tx, runtime: runtime ?? .shared)
+        case .python: return pythonRequests(tx, redactSensitiveHeaders: runtime?.redactSensitiveHeaders)
+        case .fetch: return javascriptFetch(tx, redactSensitiveHeaders: runtime?.redactSensitiveHeaders)
         case .swift:
             return """
             import Foundation
@@ -351,7 +351,7 @@ extension RequestCode {
             } return 0; }
             """
         case .har:
-            return json(ExportService.buildHAR([tx]))
+            return json(ExportService.buildHAR([tx], redactSensitiveHeaders: runtime?.redactSensitiveHeaders))
         case .postman:
             let body: [String: Any]
             if let bytes = request.body, let text = String(data: bytes, encoding: .utf8), !bytes.contains(0) {

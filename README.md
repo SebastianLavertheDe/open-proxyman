@@ -192,6 +192,7 @@ proxymirror-cli mcp config
 
 ```
 Sources/
+  ProxyMirrorProcessSupport/ # spawn 平台 C 包装，保留子进程 FD 隔离
   ProxyMirrorFoundation/  # 可移植协议、匹配、持久化、检查、导出及进程策略
   ProxyMirrorCore/        # macOS 应用集成
     DesktopApplication/   # 菜单、窗口、CLI/MCP 分派和正式 package 应用入口
@@ -210,6 +211,8 @@ Scripts/                  # 测试夹具、打包与构建
 
 生产应用通过 package 入口连接 Core，发布打包仅构建应用及实际随包助手，不依赖 `@testable import` 或 `-enable-testing`。HTTP/1 与 HTTP/2 共用请求路由计划；协议处理器保留各自的连接、流控和缓冲状态。已发布流量的元数据修改统一派发到主线程，正文存储继续使用有预算的独立同步机制。
 
+Automation、Repeat、Compose 及代码导出通过运行时 context 使用所选引擎、CA 与配置。JSON/GraphQL 列和过滤采用不可变快照、后台派生缓存和待完成状态；实时捕获时保留已完成的排序批次。Diff 文档和 JSON 高亮在生成阶段限制输出与着色范围，并响应取消。Saved 写入失败保留待存快照，退出会重试，仍失败则提示并取消退出。
+
 ## 本机构建注意事项
 
 可使用提供 Swift 5.10 或更新版本的 macOS Command Line Tools，项目通过 SelfTest 可执行文件运行回归。如果本机环境终止并行编译，可改用 `swift build -j 1`。首次拉取依赖后遇到明确的 UTF-8 解码错误时，可检查依赖 checkout 的文件内容。
@@ -218,7 +221,7 @@ Scripts/                  # 测试夹具、打包与构建
 
 ### 可移植模块与持续集成
 
-根包在 Linux 仅启用 `ProxyMirrorFoundation`、其测试及运输夹具，macOS 再加入桌面应用和原生集成目标。Foundation 测试直接导入生产模块，覆盖 HTTP、正文检查、CSV 原子写入、进程取消、留存和稳定错误身份；`test_compose_transport.py` 通过正式 SwiftPM 夹具验证真实 cURL 与重定向。运行时不要让 Linux 的目标图改写桌面依赖锁，可在临时源码副本测试：
+根包在 Linux 仅启用 `ProxyMirrorFoundation`、进程 C 包装、其测试及运输夹具，macOS 再加入桌面应用和原生集成目标。Foundation 测试直接导入生产模块，覆盖 HTTP、正文检查、CSV 原子写入、进程取消、留存和稳定错误身份；`test_compose_transport.py` 通过正式 SwiftPM 夹具验证真实 cURL、重定向及 trailers 与正文分离。运行时不要让 Linux 的目标图改写桌面依赖锁，可在临时源码副本测试：
 
 ```sh
 validation_root="$(mktemp -d)"
@@ -279,11 +282,18 @@ python3 Scripts/test_script_frame_decisions.py
 python3 Scripts/test_device_commands.py
 python3 Scripts/test_inspection_safety.py
 python3 Scripts/test_root_ca_validation.py
+python3 Scripts/test_saved_models.py
+python3 Scripts/test_processed_localization.py
+python3 Scripts/test_process_support.py
+python3 Scripts/test_sse_issues.py
+python3 Scripts/test_core_check_runner.py
 ```
 
 `test_http_safety.py --nio-package .build/checkouts/swift-nio` 还会执行实际 NIO 连接拦截回归。根 CA 检查使用锁文件中的 X509 / Crypto 版本；可用 `--local-dependencies` 指定包含 `swift-certificates`、`swift-crypto` 和 `swift-asn1` 的本地依赖目录。可移植检查不代替 macOS 整包、UI、钥匙串及系统扩展验收。
 
-本轮问题及逐项修复记录见 [全项目代码审查](Docs/code-review-2026-11-24.md) 和 [结构、性能与多语言补充审查](Docs/architecture-performance-localization-review-2026-11-24.md)。
+`test_processed_localization.py` 使用真实 SwiftPM `.process` 资源验证语言目录解析；`test_process_support.py` 检查生产进程执行器的 FD 隔离；`test_sse_issues.py` 验证 SSE 与弱网错误的稳定身份和双语显示，需要 zlib 开发头及链接库。Core XCTest 每组在独立 SelfTest 子进程运行，保留逐 case 进度和超时诊断。
+
+问题及逐项修复记录见 [全项目代码审查](Docs/code-review-2026-11-24.md)、[结构、性能与多语言补充审查](Docs/architecture-performance-localization-review-2026-11-24.md) 和 [R30–R45 深入复审与修复记录](Docs/deep-review-4610101-2026-11-24.md)。
 
 ### Thread Sanitizer
 

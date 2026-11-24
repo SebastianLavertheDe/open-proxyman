@@ -22,9 +22,12 @@ func checkToolLocalization(_ test: CoreAssertions) {
                    "Compose template titles follow the running application language")
     }
 
+    let resources = LocalizationResources.resolve().bundle
     func render(_ key: String, _ language: String, _ arguments: [CVarArg] = []) -> String {
-        L10n.render(table: "Tools", key: key, arguments: arguments,
-                    englishFallback: "Missing tool localization", language: language)
+        let context = LocalizationContext(language: language == "en" ? .english : .simplifiedChinese,
+                                          resources: resources, regionLocale: Locale(identifier: "en_US"))
+        return context.render(table: "Tools", key: key, arguments: arguments,
+                              englishFallback: "Missing tool localization")
     }
     let raw = "/tmp/用户数据/100% original\\n.pem"
     test.equal(render("certificate_subject", "en", [raw]), "Subject: " + raw,
@@ -39,10 +42,10 @@ func checkToolLocalization(_ test: CoreAssertions) {
     #if os(macOS)
     // 复数必须由真实 Foundation 读取 stringsdict，不能用测试桩模拟词尾。
     for count in [0, 1, 2, 101, 1000] {
-        let numbers = [String(count), count == 1000 ? "1,000" : String(count)]
-        let english = numbers.map { $0 + (count == 1 ? " request" : " requests") }
-        test.expect(english.contains(render("requests", "en", [count])), "English tool counts select native plural forms")
-        test.expect(numbers.map { "\($0) 个请求" }.contains(render("requests", "zh-Hans", [count])),
+        let number = count == 1000 ? "1,000" : String(count)
+        let english = number + (count == 1 ? " request" : " requests")
+        test.equal(render("requests", "en", [count]), english, "English tool counts select native plurals with an explicit region")
+        test.equal(render("requests", "zh-Hans", [count]), "\(number) 个请求",
                     "Chinese tool counts use the other plural form")
     }
     #endif

@@ -3,6 +3,7 @@ import Foundation
 import Darwin
 #else
 import Glibc
+import ProxyMirrorProcessSupport
 #endif
 
 /// Runs a device tool in its own process group. Private output files avoid pipe
@@ -129,7 +130,7 @@ package enum DeviceCommandRunner {
         try check(posix_spawn_file_actions_adddup2(&actions, stdout, STDOUT_FILENO))
         try check(posix_spawn_file_actions_adddup2(&actions, stderr, STDERR_FILENO))
         #if os(Linux)
-        try check(posix_spawn_file_actions_addclosefrom_np(&actions, 3))
+        try check(pm_posix_spawn_file_actions_addclosefrom(&actions, 3))
         #endif
         try check(posix_spawnattr_setpgroup(&attributes, 0))
         var flags = Int16(POSIX_SPAWN_SETPGROUP)

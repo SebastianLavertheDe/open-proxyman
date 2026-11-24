@@ -180,6 +180,14 @@ struct TrafficListView: View {
                 let display = store.displayedRows(sortedBy: sortColumn, ascending: ascending)
                 VStack(spacing: 0) {
                     header(columns)
+                    if store.sortingBodyValues || store.filteringCapturedValues {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(store.filteringCapturedValues ? Strings.Traffic.filteringCapturedValues : Strings.Traffic.sortingBodyValues)
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                        }.padding(.horizontal, 10).padding(.vertical, 4)
+                    }
                     TrafficTable(
                         rows: display.rows,
                         revision: display.revision,
@@ -470,7 +478,7 @@ struct TrafficListView: View {
         menu.addSubmenu(targets.count > 1 ? Strings.Traffic.copyThisRequestAsCode : Strings.Traffic.copyAsCode, enabled: tx.canReplay) { submenu in
             for format in RequestCode.Format.allCases {
                 submenu.addAction(format.title, enabled: RequestCode.supported(format, for: tx)) {
-                    appState.copyText(RequestCode.generate(tx, format: format))
+                    appState.copyText(RequestCode.generate(tx, format: format, runtime: appState.runtimeContext))
                 }
             }
         }

@@ -961,6 +961,10 @@ extension OperationIssue {
         Self(code: "network_no_http_response", diagnostic: "No HTTP response received", render: { Strings.Errors.networkNoHttpResponse })
     }
 
+    static var networkPacingCapacityExceeded: Self {
+        Self(code: "network_pacing_capacity_exceeded", diagnostic: "The network throttling buffer is full.", render: { Strings.Errors.networkPacingCapacityExceeded })
+    }
+
     static var networkPipelineBufferFull: Self {
         Self(code: "network_pipeline_buffer_full", diagnostic: "The buffer for subsequent requests is full.", render: { Strings.Errors.networkPipelineBufferFull })
     }
@@ -1285,6 +1289,10 @@ extension OperationIssue {
         Self(code: "release_update_the_update_service_returned_invalid_release_information", diagnostic: "The update service returned invalid release information.", render: { Strings.Errors.releaseUpdateTheUpdateServiceReturnedInvalidReleaseInformation })
     }
 
+    static var sessionInvalidMetrics: Self {
+        Self(code: "session_invalid_metrics", diagnostic: "The session contains invalid byte counts or durations.", render: { Strings.Errors.sessionInvalidMetrics })
+    }
+
     static func simulatorCertificateInstallerFailedExitCode(_ p0: String, _ p1: Int, _ p2: String) -> Self {
         Self(code: "simulator_certificate_installer_failed_exit_code", arguments: [p0, String(p1), p2], diagnostic: String(format: "%@ failed (exit code %ld). %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
              render: { Strings.Errors.simulatorCertificateInstallerFailedExitCode(p0, p1, p2) })
@@ -1355,6 +1363,56 @@ extension OperationIssue {
 
     static var simulatorStateStopping: Self {
         Self(code: "simulator_state_stopping", diagnostic: "Shutting Down", render: { Strings.Errors.simulatorStateStopping })
+    }
+
+    static var sseBodyIncomplete: Self {
+        Self(code: "sse_body_incomplete", diagnostic: "The connection ended before the compressed SSE body was fully received. Events cannot be recovered; captured bytes are available in Raw.", render: { Strings.Errors.sseBodyIncomplete })
+    }
+
+    static var sseBodyOutputLimit: Self {
+        Self(code: "sse_body_output_limit", diagnostic: "The SSE body exceeds the 32 MiB parsing limit; subsequent events were not parsed.", render: { Strings.Errors.sseBodyOutputLimit })
+    }
+
+    static var sseCompressedBodyExtraData: Self {
+        Self(code: "sse_compressed_body_extra_data", diagnostic: "The compressed SSE body contains trailing data.", render: { Strings.Errors.sseCompressedBodyExtraData })
+    }
+
+    static var sseCompressedBodyIncomplete: Self {
+        Self(code: "sse_compressed_body_incomplete", diagnostic: "The compressed SSE body is incomplete. Recoverable events are shown.", render: { Strings.Errors.sseCompressedBodyIncomplete })
+    }
+
+    static var sseCompressedBodyInvalid: Self {
+        Self(code: "sse_compressed_body_invalid", diagnostic: "The compressed SSE body is damaged. Recoverable events are shown.", render: { Strings.Errors.sseCompressedBodyInvalid })
+    }
+
+    static var sseCompressedBodyOutputLimit: Self {
+        Self(code: "sse_compressed_body_output_limit", diagnostic: "The decompressed SSE body exceeds 32 MiB.", render: { Strings.Errors.sseCompressedBodyOutputLimit })
+    }
+
+    static var sseCompressedBodyTruncated: Self {
+        Self(code: "sse_compressed_body_truncated", diagnostic: "The compressed SSE body was truncated and cannot be fully decoded.", render: { Strings.Errors.sseCompressedBodyTruncated })
+    }
+
+    static var sseDecodeFailed: Self {
+        Self(code: "sse_decode_failed", diagnostic: "The compressed SSE body could not be decoded. Captured bytes are available in Raw.", render: { Strings.Errors.sseDecodeFailed })
+    }
+
+    static var sseDecoderInitializationFailed: Self {
+        Self(code: "sse_decoder_initialization_failed", diagnostic: "The SSE compression decoder could not be initialized.", render: { Strings.Errors.sseDecoderInitializationFailed })
+    }
+
+    static func sseDecodingDeferred(_ p0: String) -> Self {
+        Self(code: "sse_decoding_deferred", arguments: [p0], diagnostic: String(format: "The SSE %@ body will be parsed after it has finished receiving.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.sseDecodingDeferred(p0) })
+    }
+
+    static func sseEncodingUnsupported(_ p0: String) -> Self {
+        Self(code: "sse_encoding_unsupported", arguments: [p0], diagnostic: String(format: "Unsupported SSE Content-Encoding: %@. Captured bytes are available in Raw.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.sseEncodingUnsupported(p0) })
+    }
+
+    static var sseNoDecodableBody: Self {
+        Self(code: "sse_no_decodable_body", diagnostic: "No decodable SSE body is available.", render: { Strings.Errors.sseNoDecodableBody })
     }
 
     static var systemProxyAuthorizationAdministratorAuthorizationWasCancelled: Self {
@@ -2280,6 +2338,9 @@ extension OperationIssue {
         case "network_no_http_response":
             guard arguments.count == 0 else { return fallback }
             return .networkNoHttpResponse
+        case "network_pacing_capacity_exceeded":
+            guard arguments.count == 0 else { return fallback }
+            return .networkPacingCapacityExceeded
         case "network_pipeline_buffer_full":
             guard arguments.count == 0 else { return fallback }
             return .networkPipelineBufferFull
@@ -2511,6 +2572,9 @@ extension OperationIssue {
         case "release_update_the_update_service_returned_invalid_release_information":
             guard arguments.count == 0 else { return fallback }
             return .releaseUpdateTheUpdateServiceReturnedInvalidReleaseInformation
+        case "session_invalid_metrics":
+            guard arguments.count == 0 else { return fallback }
+            return .sessionInvalidMetrics
         case "simulator_certificate_installer_failed_exit_code":
             guard arguments.count == 3, let p1 = Int(arguments[1]) else { return fallback }
             return .simulatorCertificateInstallerFailedExitCode(arguments[0], p1, arguments[2])
@@ -2562,6 +2626,42 @@ extension OperationIssue {
         case "simulator_state_stopping":
             guard arguments.count == 0 else { return fallback }
             return .simulatorStateStopping
+        case "sse_body_incomplete":
+            guard arguments.count == 0 else { return fallback }
+            return .sseBodyIncomplete
+        case "sse_body_output_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .sseBodyOutputLimit
+        case "sse_compressed_body_extra_data":
+            guard arguments.count == 0 else { return fallback }
+            return .sseCompressedBodyExtraData
+        case "sse_compressed_body_incomplete":
+            guard arguments.count == 0 else { return fallback }
+            return .sseCompressedBodyIncomplete
+        case "sse_compressed_body_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .sseCompressedBodyInvalid
+        case "sse_compressed_body_output_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .sseCompressedBodyOutputLimit
+        case "sse_compressed_body_truncated":
+            guard arguments.count == 0 else { return fallback }
+            return .sseCompressedBodyTruncated
+        case "sse_decode_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .sseDecodeFailed
+        case "sse_decoder_initialization_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .sseDecoderInitializationFailed
+        case "sse_decoding_deferred":
+            guard arguments.count == 1 else { return fallback }
+            return .sseDecodingDeferred(arguments[0])
+        case "sse_encoding_unsupported":
+            guard arguments.count == 1 else { return fallback }
+            return .sseEncodingUnsupported(arguments[0])
+        case "sse_no_decodable_body":
+            guard arguments.count == 0 else { return fallback }
+            return .sseNoDecodableBody
         case "system_proxy_authorization_administrator_authorization_was_cancelled":
             guard arguments.count == 0 else { return fallback }
             return .systemProxyAuthorizationAdministratorAuthorizationWasCancelled

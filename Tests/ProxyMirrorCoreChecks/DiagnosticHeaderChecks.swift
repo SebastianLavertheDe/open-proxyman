@@ -1,6 +1,6 @@
 import Foundation
 import NIOCore
-import NIOEmbedded
+import NIOPosix
 import NIOHTTP1
 @testable import ProxyMirrorCore
 
@@ -46,6 +46,8 @@ func checkDiagnosticHeaders(_ test: CoreAssertions) throws {
     let defaults = UserDefaults.standard
     let previousPreference = defaults.object(forKey: key)
     let engine = ProxyEngine.shared
+    let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    defer { try? group.syncShutdownGracefully() }
     let previousRecording = engine.recordingEnabled
     engine.recordingEnabled = false
     defer {
@@ -63,8 +65,8 @@ func checkDiagnosticHeaders(_ test: CoreAssertions) throws {
     for enabled in [false, true] {
         defaults.set(enabled, forKey: key)
         for (rules, expectedSource, expectedStatus) in [(local, "Map Local", 200), (block, "Block / Allow", 403)] {
-            let http1 = try diagnosticHTTP1Response(engine: engine, host: host, rules: rules)
-            let http2 = try diagnosticHTTP2Response(engine: engine, host: host, rules: rules)
+            let http1 = try diagnosticHTTP1Response(group: group, engine: engine, host: host, rules: rules)
+            let http2 = try diagnosticHTTP2Response(group: group, engine: engine, host: host, rules: rules)
             test.equal(http1.status, expectedStatus, "HTTP/1 diagnostic fixture keeps the rule's real status")
             test.equal(Int(http2.status.code), expectedStatus, "HTTP/2 diagnostic fixture keeps the rule's real status")
             test.equal(http1.headers.value(of: "X-ProxyMirror-Rule"), enabled ? expectedSource : nil,
@@ -83,53 +85,45 @@ func checkDiagnosticHeaders(_ test: CoreAssertions) throws {
     let customLocal = RulesSnapshot(mapLocal: [ProxyRule(pattern: "*", target: localFile.path,
         responseHeaders: ProxyMirrorCore.HTTPHeaders([("X-ProxyMirror-Rule", "application-rule"),
             ("X-ProxyMirror-Request-ID", "application-id")]))])
-    let customHTTP1 = try diagnosticHTTP1Response(engine: engine, host: host, rules: customLocal)
-    let customHTTP2 = try diagnosticHTTP2Response(engine: engine, host: host, rules: customLocal)
+    let customHTTP1 = try diagnosticHTTP1Response(group: group, engine: engine, host: host, rules: customLocal)
+    let customHTTP2 = try diagnosticHTTP2Response(group: group, engine: engine, host: host, rules: customLocal)
     test.equal(customHTTP1.headers.value(of: "X-ProxyMirror-Rule"), "application-rule",
                "HTTP/1 preserves the Map Local rule's own diagnostic fields")
     test.equal(customHTTP2.headers.first(name: "x-proxymirror-request-id"), "application-id",
                "HTTP/2 preserves the Map Local rule's own correlation identity")
 }
 
-private func diagnosticHTTP1Response(engine: ProxyEngine, host: String, rules: RulesSnapshot) throws -> ProxyMirrorCore.HTTPResponseHead {
-    let channel = EmbeddedChannel(handler: ProxyConnectionHandler(conn: ConnState(engine: engine), requestRules: { rules }))
-    defer { _ = try? channel.finish() }
-    try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 54323)).wait()
-    _ = try channel.writeInbound(ByteBuffer(string:
-        "GET http://\(host)/fixture HTTP/1.1\r\nHost: \(host)\r\nConnection: close\r\n\r\n"))
-    let deadline = Date().addingTimeInterval(3)
-    var parser = ResponseHeadParser()
-    while Date() < deadline {
-        channel.embeddedEventLoop.run()
-        while let bytes = try channel.readOutbound(as: ByteBuffer.self) {
-            if let response = try parser.feed(Data(bytes.readableBytesView)) { return response }
-        }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.002))
-    }
-    throw NSError(domain: "DiagnosticHeaderChecks", code: 1,
-                  userInfo: [NSLocalizedDescriptionKey: "HTTP/1 local diagnostic fixture did not produce a response"])
+private func diagnosticHTTP1Response(group: EventLoopGroup, engine: ProxyEngine, host: String,
+                                     rules: RulesSnapshot) throws -> ProxyMirrorCore.HTTPResponseHead {
+    let listener = try waitForNativeCheck(ServerBootstrap(group: group).childChannelInitializer { channel in
+        channel.pipeline.addHandler(ProxyConnectionHandler(conn: ConnState(engine: engine), requestRules: { rules }))
+    }.bind(host: "127.0.0.1", port: 0))
+    defer { try? waitForNativeCheck(listener.close()) }
+    let collector = NativeResponseCollector()
+    let client = try waitForNativeCheck(ClientBootstrap(group: group).channelInitializer { channel in
+        channel.pipeline.addHTTPClientHandlers().flatMap { channel.pipeline.addHandler(collector) }
+    }.connect(host: "127.0.0.1", port: listener.localAddress!.port!))
+    defer { try? waitForNativeCheck(client.close()) }
+    let request = NIOHTTP1.HTTPRequestHead(version: .http1_1, method: .GET,
+        uri: "http://\(host)/fixture", headers: NIOHTTP1.HTTPHeaders([("host", host), ("connection", "close")]))
+    try waitForNativeCheck(client.writeAndFlush(HTTPClientRequestPart.head(request)))
+    try waitForNativeCheck(client.writeAndFlush(HTTPClientRequestPart.end(nil)))
+    let head = try collector.response.wait().get()
+    return ProxyMirrorCore.HTTPResponseHead(version: "HTTP/1.1", status: Int(head.status.code),
+        reason: head.status.reasonPhrase, headers: ProxyMirrorCore.HTTPHeaders(head.headers.map { ($0.name, $0.value) }))
 }
 
-private func diagnosticHTTP2Response(engine: ProxyEngine, host: String, rules: RulesSnapshot) throws -> NIOHTTP1.HTTPResponseHead {
-    let channel = EmbeddedChannel()
-    let pool = HTTP2UpstreamPool(downstream: channel, listenerPort: 0)
-    let handler = HTTP2ProxyStream(engine: engine, pool: pool, authorityHost: host, authorityPort: 443,
-        client: nil, clientApplication: nil, requestRules: { rules })
-    try channel.pipeline.addHandler(handler).wait()
-    defer { _ = try? channel.finish() }
-    try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 54324)).wait()
-    let request = NIOHTTP1.HTTPRequestHead(version: .init(major: 2, minor: 0), method: .GET,
+private func diagnosticHTTP2Response(group: EventLoopGroup, engine: ProxyEngine, host: String,
+                                     rules: RulesSnapshot) throws -> NIOHTTP1.HTTPResponseHead {
+    let listener = try nativeHTTP2Listener(group: group, engine: engine, host: host, rules: rules)
+    defer { try? waitForNativeCheck(listener.close()) }
+    let client = try NativeHTTP2Client(group: group, port: listener.localAddress!.port!)
+    defer { try? waitForNativeCheck(client.channel.close()) }
+    let collector = NativeResponseCollector()
+    let stream = try client.open(collector)
+    let request = NIOHTTP1.HTTPRequestHead(version: .http1_1, method: .GET,
         uri: "/fixture", headers: NIOHTTP1.HTTPHeaders([("host", host)]))
-    _ = try channel.writeInbound(HTTPServerRequestPart.head(request))
-    _ = try channel.writeInbound(HTTPServerRequestPart.end(nil))
-    let deadline = Date().addingTimeInterval(3)
-    while Date() < deadline {
-        channel.embeddedEventLoop.run()
-        while let part = try channel.readOutbound(as: HTTPServerResponsePart.self) {
-            if case .head(let response) = part { return response }
-        }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.002))
-    }
-    throw NSError(domain: "DiagnosticHeaderChecks", code: 2,
-                  userInfo: [NSLocalizedDescriptionKey: "HTTP/2 local diagnostic fixture did not produce a response"])
+    try waitForNativeCheck(stream.writeAndFlush(HTTPClientRequestPart.head(request)))
+    try waitForNativeCheck(stream.writeAndFlush(HTTPClientRequestPart.end(nil)))
+    return try collector.response.wait().get()
 }

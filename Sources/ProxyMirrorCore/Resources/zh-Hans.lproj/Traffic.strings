@@ -167,3 +167,7 @@
 "url" = "网址";
 "view" = "视图 %ld";
 "waiting_for_traffic" = "等待流量 · %@";
+
+"sorting_body_values" = "正在计算排序字段…";
+
+"filtering_captured_values" = "正在筛选请求…";

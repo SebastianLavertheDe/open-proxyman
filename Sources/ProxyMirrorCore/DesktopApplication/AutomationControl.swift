@@ -31,7 +31,7 @@ enum AutomationControl {
         let result: Any
         switch operation {
         case "proxy_address":
-            let port = app.proxyRunning ? ProxyEngine.shared.port : app.settings.port
+            let port = app.listenerPort
             result = ["host": "127.0.0.1", "port": Int(port), "listening": app.proxyRunning,
                       "url": "http://127.0.0.1:\(port)"]
         case "mcp_config":
@@ -53,7 +53,7 @@ enum AutomationControl {
         case "status":
             result = ["listening": app.proxyRunning, "recording": app.recordingEnabled,
                       "systemProxyActive": app.systemProxyActive, "count": app.store.transactions.count,
-                      "port": Int(app.proxyRunning ? ProxyEngine.shared.port : app.settings.port), "http2": app.settings.http2Enabled]
+                      "port": Int(app.listenerPort), "http2": app.settings.http2Enabled]
         case "query_flows", "get_flow", "export_flows", "copy_as_code":
             let matched = try matching(arguments, app: app)
             // Clone before code generation as secrets may otherwise be embedded
@@ -94,15 +94,15 @@ enum AutomationControl {
                     tx.requestTrailers = HTTPHeaders()
                 }
                 let code: String
-                if language == "curl", tx.isTunnel { code = ExportService.curlCommand(tx) }
-                else { code = try generatedCode(tx, language: language) }
+                if language == "curl", tx.isTunnel { code = ExportService.curlCommand(tx, runtime: app.runtimeContext) }
+                else { code = try generatedCode(tx, language: language, runtime: app.runtimeContext) }
                 result = ["language": language, "code": code]
             default:
                 guard !flows.isEmpty else { throw LocalControlError.noMatches("没有符合筛选条件的流量。") }
                 try checkBodyBudget(flows)
                 let format = arguments["format"] as? String ?? "har"
                 switch format {
-                case "har": result = ExportService.buildHAR(flows)
+                case "har": result = ExportService.buildHAR(flows, redactSensitiveHeaders: app.settings.redactSensitiveHeaders)
                 case "json":
                     let data = try encode(flows.map(SessionRecord.init))
                     if app.settings.redactSensitiveHeaders { return try ExportRedaction.jsonData(data) }
@@ -141,7 +141,7 @@ enum AutomationControl {
         case "http_version":
             if let enabled = arguments["http2"] as? Bool {
                 app.settings.http2Enabled = enabled
-                ProxyEngine.shared.http2Enabled = enabled
+                app.engine.http2Enabled = enabled
             }
             result = ["http2": app.settings.http2Enabled, "scope": "new connections"]
         case "launch":
@@ -157,8 +157,9 @@ enum AutomationControl {
                 }
                 application = URL(fileURLWithPath: path)
             } else { application = nil }
-            result = ["message": try ProxyAutomation.launch(target, port: ProxyEngine.shared.port,
-                certificate: CertificateAuthority.shared.caCertPath, application: application)]
+            try app.certificateAuthority.ensureCA()
+            result = ["message": try ProxyAutomation.launch(target, port: app.listenerPort,
+                certificate: app.certificateAuthority.caCertPath, application: application)]
         case "factory_reset": result = try factoryReset(arguments, app: app)
         case "script_help":
             result = ["worker": "JavaScriptCore", "stages": ["onRequest", "onResponse", "onWebSocket"],
@@ -179,14 +180,14 @@ enum AutomationControl {
 
     // Kept separate so code-generator expansion remains a core concern. This
     // adapter is updated alongside RequestCode.Format by the code-tool module.
-    private static func generatedCode(_ tx: Transaction, language: String) throws -> String {
+    private static func generatedCode(_ tx: Transaction, language: String, runtime: ProxyRuntimeContext) throws -> String {
         let aliases = ["javascript": "fetch", "javascript-fetch": "fetch", "python-requests": "python", "node": "nodeHTTP", "objc": "objectiveC"]
         let target = aliases[language] ?? language
         guard let format = RequestCode.Format.allCases.first(where: { $0.rawValue.caseInsensitiveCompare(target) == .orderedSame }),
               RequestCode.supported(format, for: tx) else {
             throw LocalControlError.usage("此请求不支持代码目标 \(language)。可用目标：\(RequestCode.Format.allCases.map(\.rawValue).joined(separator: ", "))")
         }
-        return RequestCode.generate(tx, format: format)
+        return RequestCode.generate(tx, format: format, runtime: runtime)
     }
 
     private static var toolNames: Set<String> {
@@ -428,7 +429,7 @@ enum AutomationControl {
             merged.merge(raw) { _, new in new }
             config = try JSONDecoder().decode(ExternalProxyConfig.self, from: json(merged))
             if let error = config.validationError { throw LocalControlError.usage(error) }
-            let ownPort = app.proxyRunning ? ProxyEngine.shared.port : app.settings.port
+            let ownPort = app.listenerPort
             guard !config.targetsLoopback(port: Int(ownPort)) else { throw LocalControlError.usage("外部代理不能指向 ProxyMirror。") }
         } else if action == "disable" { config.enabled = false }
         else if action != "get" { throw LocalControlError.usage("external-proxy 支持 get/set/disable。") }

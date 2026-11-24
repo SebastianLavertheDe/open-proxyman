@@ -32,6 +32,13 @@ class Origin(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            # Cancellation and header-only redirects deliberately close peers.
+            pass
+
     def handle_request(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         path = urlsplit(self.path).path
@@ -45,6 +52,30 @@ class Origin(BaseHTTPRequestHandler):
             self.wfile.write(b"HTTP/1.1 200 OK\r\nBroken-Header\r\n\r\n")
             self.wfile.flush()
             self.close_connection = True
+            return
+        if path in {"/trailers", "/redirect-trailers", "/large-trailers", "/slow-trailers"}:
+            self.send_response(303 if path == "/redirect-trailers" else 200)
+            if path == "/redirect-trailers":
+                self.send_header("Location", "/trailers")
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("Trailer", "X-Final, X-Multi")
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+            entity = b"intermediate" if path == "/redirect-trailers" else b'{"ok":true}'
+            try:
+                self.wfile.write(f"{len(entity):x}\r\n".encode() + entity + b"\r\n0\r\n")
+                self.wfile.flush()
+                if path == "/slow-trailers":
+                    time.sleep(2)
+                self.wfile.write((b"X-Large: " + b"x" * 1000 + b"\r\n") * 70 if path == "/large-trailers" else b"X-Final: check")
+                self.wfile.flush()
+                time.sleep(0.01)
+                self.wfile.write((b"" if path == "/large-trailers" else b"sum") + b"\r\nX-Multi: one\r\nX-Multi: two\r\n\r\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             return
         if path.startswith("/redirect/"):
             status = int(path.rsplit("/", 1)[1])
@@ -98,7 +129,7 @@ def compile_fixture(compiler, directory):
         package = directory / "package"
         package.mkdir()
         shutil.copy2(ROOT / "Package.swift", package / "Package.swift")
-        for relative in ["Sources/ProxyMirrorFoundation", "Tests/ProxyMirrorFoundationTests", "Tests/Fixtures/ComposeTransport"]:
+        for relative in ["Sources/ProxyMirrorFoundation", "Sources/ProxyMirrorProcessSupport", "Tests/ProxyMirrorFoundationTests", "Tests/Fixtures/ComposeTransport"]:
             shutil.copytree(ROOT / relative, package / relative)
     swift = str(Path(shutil.which(compiler) or compiler).resolve().with_name("swift"))
     common = [swift, "build", "--package-path", str(package), "--scratch-path", str(directory / "build")]
@@ -125,11 +156,15 @@ def main():
             work = Path(temporary)
             binary = compile_fixture(args.swiftc, work)
 
-            def send(method, path, data=b"\x00\xffredirect-body", timeout=5, follow=True, cancel=False):
+            def send(method, path, data=b"\x00\xffredirect-body", timeout=5, follow=True, cancel=False, limit=None, reserve=None):
                 Origin.seen.clear()
                 command = [str(binary), "send", method, url + path, base64.b64encode(data).decode(), str(timeout), str(follow).lower()]
                 if cancel:
                     command.append("cancel")
+                if limit is not None:
+                    command.append(f"limit={limit}")
+                if reserve is not None:
+                    command.append(f"reserve={reserve}")
                 result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15)
                 return json.loads(result.stdout)
 
@@ -186,6 +221,33 @@ def main():
             result = send("GET", "/malformed", data=b"")
             assert result["state"] == "failed" and time.monotonic() - start < 1.5, result
             checks += 1
+            expected_trailers = [{"name": "x-final", "value": "checksum"},
+                                 {"name": "x-multi", "value": "one"}, {"name": "x-multi", "value": "two"}]
+            for path, follow, entity in [("/trailers", True, b'{"ok":true}'),
+                                         ("/redirect-trailers", True, b'{"ok":true}'),
+                                         ("/redirect-trailers", False, b"intermediate")]:
+                result = send("GET", path, data=b"", follow=follow)
+                assert result["state"] == "completed" and base64.b64decode(result["body"]) == entity, result
+                assert result["bytes"] == len(entity) and result["trailers"] == expected_trailers, result
+                checks += 1
+            for limit, reserve, retained in [(0, None, b""), (4, None, b'{"ok'), (20, 2, b'{"')]:
+                result = send("GET", "/trailers", data=b"", limit=limit, reserve=reserve)
+                assert result["state"] == "completed" and base64.b64decode(result["body"]) == retained, result
+                assert result["bytes"] == 11 and result["trailers"] == expected_trailers, result
+                checks += 1
+            result = send("HEAD", "/trailers", data=b"")
+            assert result["state"] == "completed" and result["bytes"] == 0 and result["body"] == "" and result["trailers"] == [], result
+            checks += 1
+            result = send("GET", "/large-trailers", data=b"")
+            assert result["state"] == "failed" and "Response headers exceed" in result["error"], result
+            assert base64.b64decode(result["body"]) == b'{"ok":true}' and result["bytes"] == 11, result
+            checks += 1
+            for cancel, timeout in [(True, 5), (False, 1)]:
+                start = time.monotonic()
+                result = send("GET", "/slow-trailers", data=b"", cancel=cancel, timeout=timeout)
+                assert result["state"] == "failed" and time.monotonic() - start < 1.8, result
+                assert base64.b64decode(result["body"]) == b'{"ok":true}' and result["bytes"] == 11, result
+                checks += 1
             for method, payload in [("HEAD", b""), ("HEAD", b"must-not-send"), ("POST", b""), ("GET", b"")]:
                 data = base64.b64encode(payload).decode()
                 code = subprocess.check_output([str(binary), "curl", method, url + "/final", data], text=True, timeout=10)
@@ -196,7 +258,7 @@ def main():
                     if payload:
                         assert "captured request body is omitted" in code, code
                 checks += 1
-            print(f"PASS {checks} actual HTTP transport/cURL checks: no-follow, credentials, 100 Continue, hop limit, invalid targets, hanging redirect body, overall deadline, cancellation, malformed headers and HEAD")
+            print(f"PASS {checks} actual HTTP transport/cURL checks: redirects, credentials, 100 Continue, deadlines, cancellation, HEAD, separate duplicate trailers and capture budgets")
     finally:
         for server in [origin, second]:
             server.shutdown()

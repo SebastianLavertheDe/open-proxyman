@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import ProxyMirrorFoundation
 
 /// Saved filter colors are a display overlay; they never overwrite a flow's manual highlight.
 @MainActor
@@ -7,7 +8,7 @@ final class TrafficFilterPalette: ObservableObject {
     static let shared = TrafficFilterPalette()
     @Published private(set) var revision: UInt64 = 0
     private var stored = Data()
-    private var tests: [(String, (Transaction) -> Bool)] = []
+    private var tests: [(String, (Transaction) -> PresentationPredicateResult)] = []
     private var changes: AnyCancellable?
 
     init(defaults: UserDefaults = .standard) {
@@ -25,12 +26,12 @@ final class TrafficFilterPalette: ObservableObject {
         tests = profiles.compactMap { profile in
             guard let color = profile.highlightName, ProxymanTheme.highlightNames.contains(color),
                   profile.group.isValid, !profile.group.isEmpty else { return nil }
-            return (color, profile.group.compile())
+            return (color, profile.group.compileForPresentation())
         }
         revision &+= 1
     }
 
     func highlight(for transaction: Transaction) -> String? {
-        tests.first { $0.1(transaction) }?.0
+        tests.first { $0.1(transaction) == .matched }?.0
     }
 }

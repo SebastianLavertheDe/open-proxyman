@@ -45,7 +45,7 @@ func checkLocalization(_ test: CoreAssertions) throws {
         try fileManager.createDirectory(at: resourceDirectory.appendingPathComponent(language + ".lproj"),
                                         withIntermediateDirectories: true)
     }
-    let info = ["CFBundleIdentifier": "com.proxymirror.localization-fixture", "CFBundleDevelopmentRegion": "en"]
+    let info = ["CFBundleIdentifier": "com.proxymirror.localization-fixture.\(UUID().uuidString)", "CFBundleDevelopmentRegion": "en"]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: infoURL)
     try #"""
     "hello" = "Hello";
@@ -60,6 +60,21 @@ func checkLocalization(_ test: CoreAssertions) throws {
     "formatted_percentage" = "已完成 %ld%%";
     "message" = "%1$@ 有 %2$ld 条请求";
     """#.write(to: resourceDirectory.appendingPathComponent("zh-Hans.lproj/Fixture.strings"), atomically: true, encoding: .utf8)
+    #if os(macOS)
+    // Darwin caches a Bundle's resource inventory. Create every table before
+    // constructing the Bundle or performing its first localization lookup.
+    let plural: [String: Any] = [
+        "requests": [
+            "NSStringLocalizedFormatKey": "%#@count@",
+            "count": [
+                "NSStringFormatSpecTypeKey": "NSStringPluralRuleType", "NSStringFormatValueTypeKey": "ld",
+                "one": "%ld request", "other": "%ld requests"
+            ]
+        ]
+    ]
+    try PropertyListSerialization.data(fromPropertyList: plural, format: .xml, options: 0)
+        .write(to: resourceDirectory.appendingPathComponent("en.lproj/Plural.stringsdict"))
+    #endif
     guard let resources = Bundle(url: resourceRoot) else {
         test.expect(false, "创建真实测试资源 bundle")
         return
@@ -99,6 +114,12 @@ func checkLocalization(_ test: CoreAssertions) throws {
         if let appResources = app.resourceURL {
             let embedded = appResources.appendingPathComponent(LocalizationResources.expectedBundleName, isDirectory: true)
             try fileManager.copyItem(at: resourceRoot, to: embedded)
+            // Simulate a fresh app launch without reusing CFBundle's cached
+            // identity for the original bundle that is still open above.
+            let embeddedInfoURL = embedded.appendingPathComponent(infoURL.path.replacingOccurrences(of: resourceRoot.path + "/", with: ""))
+            var embeddedInfo = info
+            embeddedInfo["CFBundleIdentifier"] = "com.proxymirror.localization-embedded.\(UUID().uuidString)"
+            try PropertyListSerialization.data(fromPropertyList: embeddedInfo, format: .xml, options: 0).write(to: embeddedInfoURL)
             let relocated = LocalizationResources.resolve(in: app, developmentBundle: {
                 queriedDevelopment = true
                 return nil
@@ -112,19 +133,9 @@ func checkLocalization(_ test: CoreAssertions) throws {
     } else { test.expect(false, "构造缺语言资源的 App bundle") }
 
     #if os(macOS)
-    let plural: [String: Any] = [
-        "requests": [
-            "NSStringLocalizedFormatKey": "%#@count@",
-            "count": [
-                "NSStringFormatSpecTypeKey": "NSStringPluralRuleType", "NSStringFormatValueTypeKey": "ld",
-                "one": "%ld request", "other": "%ld requests"
-            ]
-        ]
-    ]
-    try PropertyListSerialization.data(fromPropertyList: plural, format: .xml, options: 0)
-        .write(to: resourceDirectory.appendingPathComponent("en.lproj/Plural.stringsdict"))
     for count in [0, 1, 2, 101, 1000] {
-        let expected = "\(count) " + (count == 1 ? "request" : "requests")
+        let formatted = count == 1000 ? "1,000" : String(count)
+        let expected = "\(formatted) " + (count == 1 ? "request" : "requests")
         test.expect(english.render(table: "Plural", key: "requests", arguments: [count], englishFallback: "%ld requests") == expected,
                     "真实 Foundation 英文复数 \(count)")
     }

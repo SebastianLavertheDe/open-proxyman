@@ -37,6 +37,7 @@ package enum HTTPRequestTransport {
     }
     package struct Output {
         package let head: HTTPResponseHead?
+        package let trailers: HTTPHeaders
         package let body: Data
         package let receivedBytes: Int
         package let failure: Error?
@@ -57,6 +58,10 @@ package enum HTTPRequestTransport {
             guard !cancelled else { throw Failure.cancelled }
             try process.run(); self.process = process
         }
+        fileprivate func check() throws {
+            lock.lock(); defer { lock.unlock() }
+            if cancelled { throw Failure.cancelled }
+        }
         fileprivate static func stop(_ process: Process) {
             guard process.isRunning else { return }
             process.terminate()
@@ -70,6 +75,7 @@ package enum HTTPRequestTransport {
         let startedAt = ProcessInfo.processInfo.systemUptime
         let proxyPort = options.proxyPort
         var responseHead: HTTPResponseHead?
+        var responseTrailers = HTTPHeaders()
         var failure: Error?
         let files = FileManager.default
         let directory = files.temporaryDirectory.appendingPathComponent("proxymirror-send-\(UUID().uuidString)")
@@ -88,14 +94,22 @@ package enum HTTPRequestTransport {
             var current = parsed
             var redirects = 0
             while true {
+                responseHead = nil
+                responseTrailers = HTTPHeaders()
+                // curl sends trailers through its header callback as well. A
+                // private FIFO keeps every header byte out of the entity pipe,
+                // while allowing redirects before an intermediate body arrives.
+                let headerURL = directory.appendingPathComponent("headers-\(redirects)")
+                guard mkfifo(headerURL.path, mode_t(0o600)) == 0 else { throw currentError() }
+                let headerFD = open(headerURL.path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+                guard headerFD >= 0 else { throw currentError() }
+                defer { close(headerFD); _ = unlink(headerURL.path) }
                 let remaining = parsed.timeoutSeconds == 0 ? 0
                     : Double(parsed.timeoutSeconds) - (ProcessInfo.processInfo.systemUptime - started)
                 guard parsed.timeoutSeconds == 0 || remaining > 0 else { throw Failure.timedOut }
                 var config = [
                     "silent", "show-error", "http1.1", "suppress-connect-headers",
-                    // dump-header flushes header blocks before any body. curl's
-                    // --include can buffer headers until the entity arrives.
-                    "dump-header = \"-\"", "no-buffer", "connect-timeout = 20", "max-time = \(remaining)", "proto = \"=http,https\"",
+                    "dump-header = \(quoted(headerURL.path))", "no-buffer", "connect-timeout = 20", "max-time = \(remaining)", "proto = \"=http,https\"",
                     "url = \(quoted(current.url))", "request = \(quoted(current.method))",
                     "stderr = \(quoted(errorFile.path))",
                 ]
@@ -138,32 +152,47 @@ package enum HTTPRequestTransport {
                 let reader = output.fileHandleForReading
                 try? output.fileHandleForWriting.close()
                 defer { try? reader.close() }
+                guard fcntl(reader.fileDescriptor, F_SETFL, O_NONBLOCK) == 0 else { throw currentError() }
                 var truncated = false
                 var pendingHead = Data()
                 var head: HTTPResponseHead?
                 var next: HTTPRequest?
-                while let bytes = try readAvailable(reader) {
-                    var body = bytes
-                    if head == nil {
+                var bodyEnded = false
+                var earlyBody: Data?
+                func capture(_ body: Data) {
+                    guard current.method != "HEAD" else { return }
+                    count += body.count
+                    guard !truncated else { return }
+                    let wanted = min(body.count, max(0, options.captureLimit - captured.count))
+                    let accepted = wanted == 0 ? 0 : min(wanted, max(0, options.reserve(wanted)))
+                    if accepted > 0 { captured.append(contentsOf: body.prefix(accepted)) }
+                    truncated = accepted < body.count
+                }
+                while true {
+                    try cancellation.check()
+                    guard parsed.timeoutSeconds == 0 || ProcessInfo.processInfo.systemUptime - started < Double(parsed.timeoutSeconds) else {
+                        throw Failure.timedOut
+                    }
+                    var received = false
+                    if case .bytes(let bytes) = try readAvailable(headerFD) {
+                        received = true
                         pendingHead.append(bytes)
-                        while let divider = pendingHead.range(of: Data([13, 10, 13, 10])) {
+                        while head == nil, let divider = pendingHead.range(of: Data([13, 10, 13, 10])) {
                             guard divider.lowerBound <= 64 * 1024 else { throw Failure.responseHeadersTooLarge(64 * 1024) }
                             let candidate = try ResponseHeadParser.parse(String(decoding: pendingHead[..<divider.lowerBound], as: UTF8.self))
                             pendingHead.removeSubrange(..<divider.upperBound)
                             if candidate.status < 200 && candidate.status != 101 { continue }
                             head = candidate
+                            responseHead = candidate
                             if let location = candidate.headers.value(of: "Location") {
                                 next = try redirectedRequest(current, status: candidate.status, location: location)
                                 if next != nil && redirects >= 10 { throw Failure.redirectLimit(10) }
                             }
                             break
                         }
-                        guard head != nil else {
-                            guard pendingHead.count <= 64 * 1024 else { throw Failure.responseHeadersTooLarge(64 * 1024) }
-                            continue
-                        }
-                        body = pendingHead
-                        pendingHead = Data()
+                        // After the final head this buffer contains trailers
+                        // only, with an independent bound from the body budget.
+                        guard pendingHead.count <= 64 * 1024 else { throw Failure.responseHeadersTooLarge(64 * 1024) }
                     }
                     // Intermediate entities never consume the final response's
                     // capture budget. Header bytes and HEAD output are not bodies.
@@ -173,13 +202,32 @@ package enum HTTPRequestTransport {
                         Cancellation.stop(hop)
                         break
                     }
-                    if current.method == "HEAD" { continue }
-                    count += body.count
-                    guard !truncated else { continue }
-                    let wanted = min(body.count, options.captureLimit - captured.count)
-                    let accepted = wanted == 0 ? 0 : options.reserve(wanted)
-                    if accepted > 0 { captured.append(contentsOf: body.prefix(accepted)) }
-                    truncated = accepted < body.count
+                    if head != nil, let body = earlyBody {
+                        capture(body)
+                        earlyBody = nil
+                    }
+                    // The two descriptors can become readable between our
+                    // reads. Hold at most one body chunk until its final head
+                    // decides whether this hop should be followed or captured.
+                    if head != nil || earlyBody == nil {
+                        switch try readAvailable(reader.fileDescriptor) {
+                        case .bytes(let body):
+                            received = true
+                            if head == nil { earlyBody = body } else { capture(body) }
+                        case .end: bodyEnded = true
+                        case .unavailable: break
+                        }
+                    }
+                    // Drain both channels after exit before parsing trailers.
+                    if !hop.isRunning && !received { break }
+                    if !received {
+                        var events = [pollfd(fd: headerFD, events: Int16(POLLIN), revents: 0)]
+                        if !bodyEnded && (head != nil || earlyBody == nil) {
+                            events.append(pollfd(fd: reader.fileDescriptor, events: Int16(POLLIN | POLLHUP), revents: 0))
+                        }
+                        let status = events.withUnsafeMutableBufferPointer { poll($0.baseAddress, nfds_t($0.count), 10) }
+                        if status < 0 && errno != EINTR { throw currentError() }
+                    }
                 }
                 hop.waitUntilExit()
                 responseHead = head
@@ -187,6 +235,10 @@ package enum HTTPRequestTransport {
                     current = next
                     redirects += 1
                     continue
+                }
+                if head != nil, !pendingHead.isEmpty {
+                    let lines = String(decoding: pendingHead, as: UTF8.self).components(separatedBy: "\r\n")
+                    responseTrailers = try HTTPFraming.parseHeaders(lines[...])
                 }
                 if hop.terminationReason == .uncaughtSignal {
                     failure = Failure.cancelled
@@ -203,24 +255,28 @@ package enum HTTPRequestTransport {
             if let process, process.isRunning { process.waitUntilExit() }
             failure = error
         }
-        return Output(head: responseHead, body: captured, receivedBytes: count, failure: failure,
+        return Output(head: responseHead, trailers: responseTrailers, body: captured, receivedBytes: count, failure: failure,
                       duration: ProcessInfo.processInfo.systemUptime - startedAt)
     }
 
-    /// FileHandle.read(upToCount:) can fill the requested buffer before
-    /// returning on some Foundation implementations. A pipe read must expose
-    /// response headers immediately, even if the response body never arrives.
-    private static func readAvailable(_ handle: FileHandle) throws -> Data? {
+    private enum ReadResult { case bytes(Data), unavailable, end }
+
+    /// Nonblocking reads keep both curl streams flowing and let cancellation or
+    /// a redirect interrupt a peer that has sent headers but no entity bytes.
+    private static func readAvailable(_ descriptor: Int32) throws -> ReadResult {
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
             let count = buffer.withUnsafeMutableBytes { bytes in
-                read(handle.fileDescriptor, bytes.baseAddress!, bytes.count)
+                read(descriptor, bytes.baseAddress!, bytes.count)
             }
             if count < 0 && errno == EINTR { continue }
-            guard count >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-            return count == 0 ? nil : Data(buffer.prefix(count))
+            if count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { return .unavailable }
+            guard count >= 0 else { throw currentError() }
+            return count == 0 ? .end : .bytes(Data(buffer.prefix(count)))
         }
     }
+
+    private static func currentError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
 
     /// Each hop gets its own curl invocation, so changing the method also
     /// changes the entity/framing semantics instead of merely changing -X.

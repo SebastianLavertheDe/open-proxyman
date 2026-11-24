@@ -1,3 +1,4 @@
+import ProxyMirrorFoundation
 import AppKit
 import SwiftUI
 
@@ -8,6 +9,7 @@ import SwiftUI
 struct CodeDocument: NSViewRepresentable {
     let text: String
     var attributed: AttributedString?
+    var highlights: JSONHighlightPlan?
     var fontSize: CGFloat = 12
     var wordWrap: Bool?
     var showInvisibles: Bool?
@@ -19,7 +21,7 @@ struct CodeDocument: NSViewRepresentable {
         view.configure(text: text, attributed: attributed, fontSize: fontSize,
                        wordWrap: wordWrap ?? settings.wordWrap,
                        showInvisibles: showInvisibles ?? settings.showInvisibles,
-                       settings: settings)
+                       settings: settings, highlights: highlights)
     }
 }
 
@@ -45,6 +47,7 @@ final class CodeDocumentContainer: NSView {
     private var scrollBeyondLastLine = false
     private var styled: Style?
     private var lastAttributed: AttributedString?
+    private var lastHighlights: JSONHighlightPlan?
     private var lastLayoutWidth: CGFloat = -1
     private var lastLayoutHeight: CGFloat = -1
 
@@ -89,13 +92,13 @@ final class CodeDocumentContainer: NSView {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     func configure(text: String, attributed: AttributedString?, fontSize: CGFloat,
-                   wordWrap: Bool, showInvisibles: Bool, settings: AppSettings) {
+                   wordWrap: Bool, showInvisibles: Bool, settings: AppSettings, highlights: JSONHighlightPlan? = nil) {
         textView.setAccessibilityLabel(Strings.Editor.bodyText)
         minimap.updateAccessibilityLabels()
         let style = Style(size: PresentationFonts.resolvedSize(fontSize, settings: settings),
                           family: settings.monospacedFontFamily, monospaced: settings.useMonospacedFont,
                           tabs: settings.codeTabWidth, wrap: wordWrap, invisibles: showInvisibles)
-        let changedText = textView.string != text || lastAttributed != attributed
+        let changedText = textView.string != text || lastAttributed != attributed || lastHighlights != highlights
         if changedText {
             let selection = textView.selectedRanges
             let output = NSMutableAttributedString(string: text, attributes: [.foregroundColor: NSColor.textColor])
@@ -109,6 +112,11 @@ final class CodeDocumentContainer: NSView {
                     offset += length
                 }
             }
+            for span in highlights?.spans ?? [] where span.offset >= 0 && span.length > 0
+                && span.offset <= output.length && span.length <= output.length - span.offset {
+                output.addAttribute(.foregroundColor, value: JSONHighlighter.color(for: span.kind),
+                                    range: NSRange(location: span.offset, length: span.length))
+            }
             textView.textStorage?.setAttributedString(output)
             textView.selectedRanges = selection.map {
                 let range = $0.rangeValue
@@ -116,6 +124,7 @@ final class CodeDocumentContainer: NSView {
                 return NSValue(range: NSRange(location: start, length: min(range.length, output.length - start)))
             }
             lastAttributed = attributed
+            lastHighlights = highlights
         }
         if styled != style || changedText {
             CodeTextStyle.apply(to: textView, settings: settings, fontSize: fontSize, wordWrap: wordWrap)

@@ -1635,7 +1635,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             if let transaction = tx {
                 let sink = conn.engine.sink
                 onMain {
-                    transaction.recordFailure(NetworkFailure(.networkWsWriteFailed(error.localizedDescription)))
+                    transaction.recordFailure(error is OperationIssueProviding ? error : NetworkFailure(.networkWsWriteFailed(error.localizedDescription)))
                     transaction.state = .failed
                     sink?.transactionUpdated(transaction)
                 }
@@ -2159,7 +2159,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                         transaction.state = .completed
                     case .failure(let error):
                         transaction.state = .failed
-                        transaction.recordFailure(NetworkFailure(.networkClientWriteFailed(error.localizedDescription)))
+                        transaction.recordFailure(error is OperationIssueProviding ? error : NetworkFailure(.networkClientWriteFailed(error.localizedDescription)))
                     }
                     sink?.transactionUpdated(transaction)
                 }
@@ -2386,7 +2386,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                 guard let self else { return }
                 self.downloadPacer = nil
                 if self.mode == .inFlight {
-                    self.finishRequestWithFailure(NetworkFailure(.networkThrottledWriteFailed(error.localizedDescription)))
+                    self.finishRequestWithFailure(error is OperationIssueProviding ? error : NetworkFailure(.networkThrottledWriteFailed(error.localizedDescription)))
                 } else if self.mode == .finishingResponse {
                     self.completeResponseWrite(.failure(error))
                 } else {

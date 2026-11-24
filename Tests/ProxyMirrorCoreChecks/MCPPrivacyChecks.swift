@@ -80,6 +80,86 @@ func checkMCPPrivacy(_ test: CoreAssertions) throws {
                 "Incomplete JSON SSE event data is hidden conservatively")
     let nestedQuery = "data=%7B%22password%22%3A%22nested-form-secret%22%7D&tag=one"
     test.expect(!MCPDataRedaction.text(nestedQuery).contains("nested-form-secret"), "Encoded JSON inside a form/query field is redacted")
+    let graphQLCases: [(String, String)] = [
+        (#"mutation Login { login(password: "graphql-inline-secret", label: "visible") { token } }"#, "graphql-inline-secret"),
+        (#"{ login(password: "escaped\"graphql-escaped-secret tail") { id } }"#, "graphql-escaped-secret"),
+        ("{ login(password: \"\"\"block\ngraphql-block-secret\n\"\"\") { id } }", "graphql-block-secret"),
+        ("{ login(password # comment\n: \"graphql-comment-secret\") { id } }", "graphql-comment-secret"),
+        (#"query Login($apiKey: String! = "graphql-default-secret") { user(key: $apiKey) { id } }"#, "graphql-default-secret"),
+        (#"query Login($value: String = "graphql-alias-default-secret") { login(password: $value) { id } }"#, "graphql-alias-default-secret"),
+        (#"mutation Login($value: String = "graphql-container-default-secret") { login(password: [$value]) { id } }"#, "graphql-container-default-secret"),
+        (#"mutation { login(credentials: { value: "graphql-object-secret", password: "nested-secret" }) { id } }"#, "graphql-object-secret"),
+        (#"{ login(token: 123456789) { id } }"#, "123456789"),
+        (#"{ login(email: "graphql-email-secret") { id } }"#, "graphql-email-secret"),
+        ("\u{FEFF}{ login(password: \"graphql-bom-secret\") { id } }", "graphql-bom-secret"),
+        ("# leading comment\n,\u{FEFF}query# inline comment\nLogin { login(password: \"graphql-ignored-secret\") { id } }", "graphql-ignored-secret"),
+    ]
+    for (query, secret) in graphQLCases {
+        let envelope = try JSONSerialization.data(withJSONObject: ["query": query, "operationName": "visible"])
+        let safe = MCPDataRedaction.text(String(decoding: envelope, as: UTF8.self))
+        test.expect(!safe.contains(secret) && safe.contains("visible"), "GraphQL JSON query hides the complete \(secret) literal")
+        let native = try MCPDataRedaction.jsonData(JSONSerialization.data(withJSONObject: ["requestBody": envelope.base64EncodedString()]))
+        let fields = try JSONSerialization.jsonObject(with: native) as! [String: String]
+        test.expect(!String(decoding: Data(base64Encoded: fields["requestBody"]!)!, as: UTF8.self).contains(secret),
+                    "Native GraphQL base64 bodies hide \(secret)")
+        test.expect(!MCPDataRedaction.text("data: " + String(decoding: envelope, as: UTF8.self) + "\n\n").contains(secret),
+                    "GraphQL SSE envelopes hide \(secret)")
+    }
+    let validGraphQL = #"query Login { login(password: "secret") { id } }"#
+    let safeGraphQL = MCPDataRedaction.text(validGraphQL)
+    test.expect(safeGraphQL.contains(#"password: "<redacted>""#), "GraphQL redaction retains a quoted string value")
+    let benignGraphQL = #"query Visible($id: ID!) { session: viewer(id: $id) { token: publicName label } }"#
+    test.equal(MCPDataRedaction.text(benignGraphQL), benignGraphQL, "Benign GraphQL selections, aliases and variables remain intact")
+    let aliasEnvelope: [String: Any] = ["query": #"mutation Login($value: String!) { login(password: $value) { id } }"#,
+        "variables": ["value": "graphql-indirect-secret", "label": "visible"]]
+    let safeAlias = MCPDataRedaction.sanitize(aliasEnvelope) as! [String: Any]
+    test.equal((safeAlias["variables"] as? [String: String])?["value"], MCPDataRedaction.marker,
+               "Sensitive GraphQL argument references redact the corresponding variables")
+    test.equal((safeAlias["variables"] as? [String: String])?["label"], "visible", "GraphQL keeps nonsensitive variables")
+    // Valid input shapes for password: [String!] and a CredentialsInput with
+    // opaque: String, tokens: [String!] and nested: CredentialsInput fields.
+    let containerReferences: [(String, [String: String])] = [
+        (#"mutation Login($v: String!) { login(password: [$v]) { id } }"#, ["v": "graphql-array-variable-secret"]),
+        (#"mutation Login($v: String!) { login(credentials: {opaque: $v}) { id } }"#, ["v": "graphql-object-variable-secret"]),
+        (#"mutation Login($left: String!, $right: String!) { login(credentials: {tokens: [$left], nested: {opaque: $right}}) { id } }"#,
+         ["left": "graphql-nested-left-secret", "right": "graphql-nested-right-secret"]),
+    ]
+    for (query, variables) in containerReferences {
+        let envelope: [String: Any] = ["query": query, "variables": variables.merging(["label": "visible"]) { old, _ in old }]
+        let safe = MCPDataRedaction.sanitize(envelope) as! [String: Any]
+        let safeVariables = safe["variables"] as! [String: String]
+        for name in variables.keys { test.equal(safeVariables[name], MCPDataRedaction.marker, "Sensitive GraphQL value subtrees hide variable \(name)") }
+        test.equal(safeVariables["label"], "visible", "GraphQL container taint leaves unrelated variables intact")
+        let bytes = try JSONSerialization.data(withJSONObject: envelope)
+        let safeText = MCPDataRedaction.text(String(decoding: bytes, as: UTF8.self))
+        let native = MCPDataRedaction.sanitize(bytes.base64EncodedString(), key: "requestBody") as! String
+        let nativeText = String(decoding: Data(base64Encoded: native)!, as: UTF8.self)
+        let sse = MCPDataRedaction.text("data: " + String(decoding: bytes, as: UTF8.self) + "\n\n")
+        for output in [safeText, nativeText, sse] {
+            test.expect(variables.values.allSatisfy { !output.contains($0) }, "GraphQL containers hide referenced credentials in JSON, native bodies and SSE")
+        }
+    }
+    let benignAliasVariables = MCPDataRedaction.sanitize(["query": #"query Visible($v: String!) { token: displayName user(id: $v) { email: displayName } }"#,
+        "variables": ["v": "visible-identifier"]]) as! [String: Any]
+    test.equal((benignAliasVariables["variables"] as? [String: String])?["v"], "visible-identifier",
+               "Selection aliases do not taint unrelated argument variables")
+    test.equal(MCPDataRedaction.text(#"{ login(password: "truncated-secret"#), MCPDataRedaction.marker,
+               "Truncated GraphQL strings are hidden conservatively")
+    let graphQLMultipart = "--fixture\r\nContent-Disposition: form-data; name=operations\r\n\r\n{\"query\":\"{login(password: \\\"multipart-graphql-secret\\\") {id}}\"}\r\n--fixture--\r\n"
+    test.expect(!MCPDataRedaction.text(graphQLMultipart).contains("multipart-graphql-secret"), "GraphQL multipart operation JSON is redacted")
+    let graphQLURL = #"query { lookup(url: "https://url-user:url-password@example.test/?token=graphql-url-secret") { id } }"#
+    let safeGraphQLURL = MCPDataRedaction.text(graphQLURL)
+    test.expect(!safeGraphQLURL.contains("url-user") && !safeGraphQLURL.contains("url-password") && !safeGraphQLURL.contains("graphql-url-secret"),
+                "Benign GraphQL string arguments still redact embedded URL credentials")
+    let nestedGraphQL = "mutation { login(credentials: " + String(repeating: "{credentials:", count: 1000)
+        + "\"deep-graphql-secret\"" + String(repeating: "}", count: 1000) + ") { id } }"
+    test.expect(!MCPDataRedaction.text(nestedGraphQL).contains("deep-graphql-secret"), "Deep GraphQL credential objects are hidden as one complete value")
+    test.equal(MCPDataRedaction.text("query { " + String(repeating: "field ", count: 70_000) + "}"), MCPDataRedaction.marker,
+               "GraphQL token scanning is bounded for very large documents")
+    let queryJSON = #"{"password":"query-json-secret&tail","ok":"visible"}"#
+    let safeQueryJSON = MCPDataRedaction.sanitize(queryJSON, key: "query") as! String
+    test.expect(!safeQueryJSON.contains("query-json-secret") && !safeQueryJSON.contains("tail") && safeQueryJSON.contains("visible"),
+                "JSON strings named query are sanitized before URL parameter splitting")
     let source = "const url = \"https://source-user:source-password@example.test/?token=source-token\";"
     let safeSource = MCPDataRedaction.text(source)
     test.expect(!safeSource.contains("source-user") && !safeSource.contains("source-password") && !safeSource.contains("source-token"), "Rule source URLs are redacted")
@@ -121,4 +201,55 @@ func checkMCPPreferencesRuntime(_ test: CoreAssertions) {
     controller.refresh()
     test.expect(controller.isRunning && controller.errorMessage == nil, "Retry clears stale transport errors")
     test.equal(controller.configuration(client: .codex, transport: .stdio), "codex:stdio", "Configuration uses the selected client and transport")
+    do { try checkMCPGraphQLAutomation(test) }
+    catch { test.expect(false, "GraphQL MCP export regression: \(error)") }
+}
+
+@MainActor
+private func checkMCPGraphQLAutomation(_ test: CoreAssertions) throws {
+    let directory = try makeCheckDirectory()
+    let previousSupport = ProcessInfo.processInfo.environment["PM_SUPPORT_DIR"]
+    setenv("PM_SUPPORT_DIR", directory.path, 1)
+    let suite = "ProxyMirror.MCPGraphQL.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer {
+        defaults.removePersistentDomain(forName: suite)
+        if let previousSupport { setenv("PM_SUPPORT_DIR", previousSupport, 1) } else { unsetenv("PM_SUPPORT_DIR") }
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let settings = AppSettings(defaults: defaults)
+    settings.autoStartProxy = false
+    settings.autoTakeOverSystemProxy = false
+    settings.mcpEnabled = true
+    settings.mcpRedactSensitiveData = true
+    let app = AppState(settings: settings, launchServices: false)
+    let tx = Transaction(captureBudget: CaptureBudget(limit: 1024 * 1024))
+    tx.method = "POST"; tx.host = "graphql.example"; tx.path = "/graphql"
+    tx.requestHeaders = HTTPHeaders([("Content-Type", "application/json")])
+    tx.requestBody = try JSONSerialization.data(withJSONObject: [
+        "query": #"mutation Login($v: String!, $w: String!) { login(password: [$v], credentials: {opaque: $w}, token: "automation-graphql-secret", label: "visible") { id } }"#,
+        "variables": ["v": "automation-array-secret", "w": "automation-object-secret"]] as [String: Any])
+    tx.requestBodyComplete = true
+    app.store.add(tx)
+    let original = tx.requestBody
+    let secrets = ["automation-graphql-secret", "automation-array-secret", "automation-object-secret"]
+    func containsSecret(_ text: String) -> Bool {
+        if secrets.contains(where: text.contains) { return true }
+        let pattern = try! NSRegularExpression(pattern: "[A-Za-z0-9+/]{16,}={0,2}")
+        return pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).contains { match in
+            guard let range = Range(match.range, in: text), let bytes = Data(base64Encoded: String(text[range])),
+                  let decoded = String(data: bytes, encoding: .utf8) else { return false }
+            return secrets.contains(where: decoded.contains)
+        }
+    }
+    for operation in ["get_flow", "export_flows", "copy_as_code"] {
+        for option in operation == "export_flows" ? ["har", "json", "session"] : operation == "copy_as_code" ? ["curl", "python", "fetch"] : [""] {
+            var arguments: [String: Any] = ["operation": operation, "id": tx.id.uuidString]
+            if operation == "export_flows" { arguments["format"] = option }
+            if operation == "copy_as_code" { arguments["language"] = option }
+            let result = try AutomationControl.execute(arguments, app: app, isMCP: true)
+            test.expect(!containsSecret(String(decoding: result, as: UTF8.self)), "Real MCP \(operation)/\(option) hides GraphQL literals and encoded bodies")
+        }
+    }
+    test.equal(tx.requestBody, original, "MCP GraphQL exports preserve the original captured body")
 }

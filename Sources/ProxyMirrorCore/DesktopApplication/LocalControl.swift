@@ -193,7 +193,7 @@ enum LocalControl {
             listening = app.proxyRunning
             recording = app.proxyRunning && app.recordingEnabled
             systemProxyActive = app.systemProxyActive
-            listenAddress = app.proxyRunning ? ProxyEngine.shared.listenAddress : nil
+            listenAddress = app.proxyRunning ? app.engine.listenAddress : nil
             liveCount = app.store.transactions.lazy.filter { !$0.hideFromList }.count
             selectedCount = app.activeStore.selectedTransactions.count
         }

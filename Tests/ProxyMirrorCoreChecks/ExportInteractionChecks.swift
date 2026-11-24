@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 func checkExportInteractions(_ test: CoreAssertions) throws {
+    try checkImportedTrafficMetrics(test)
+    try checkDiffSnapshots(test)
     try checkCapturedFailurePersistence(test)
     checkMCPPreferencesRuntime(test)
     let directory = try makeCheckDirectory()

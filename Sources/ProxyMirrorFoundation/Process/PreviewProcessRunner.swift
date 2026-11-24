@@ -3,6 +3,7 @@ import Foundation
 import Darwin
 #else
 import Glibc
+import ProxyMirrorProcessSupport
 #endif
 
 /// Disposable preview execution; cancellation reaches the process group, and a
@@ -99,7 +100,7 @@ package enum PreviewProcessRunner {
         // Match CLOEXEC_DEFAULT on macOS. Concurrent work may temporarily own
         // descriptors without CLOEXEC; a child must not inherit another job's
         // writable executable or keep another worker's pipe alive.
-        try check(posix_spawn_file_actions_addclosefrom_np(&actions, 3))
+        try check(pm_posix_spawn_file_actions_addclosefrom(&actions, 3))
         #endif
         try check(posix_spawnattr_setpgroup(&attributes, 0))
         var mask = sigset_t(); sigemptyset(&mask)

@@ -116,13 +116,6 @@ struct SettingsView: View {
                             .background(destination.color, in: RoundedRectangle(cornerRadius: 6))
                         Text(destination.title).fontWeight(.medium)
                         Spacer(minLength: 0)
-                        if let badge = destination.badgeTitle {
-                            Text(badge)
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(destination == .networkExtension ? Color.black : Color.white)
-                                .padding(.horizontal, 8).frame(height: 18)
-                                .background(destination == .networkExtension ? Color.yellow : Color.red, in: Capsule())
-                        }
                     }
                     .padding(.horizontal, 14).frame(height: 32)
                     .foregroundStyle(page == destination ? Color.white : Color.primary)

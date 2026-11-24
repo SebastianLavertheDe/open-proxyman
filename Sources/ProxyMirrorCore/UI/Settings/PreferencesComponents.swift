@@ -23,14 +23,6 @@ enum PreferencesPalette {
 }
 
 extension PreferencesPage {
-    var badgeTitle: String? {
-        switch self {
-        case .mcp, .workspace: return Strings.Settings.newFeatureBadge
-        case .networkExtension: return Strings.Settings.betaFeatureBadge
-        default: return nil
-        }
-    }
-
     var symbol: String {
         switch self {
         case .general: return "gearshape.circle"

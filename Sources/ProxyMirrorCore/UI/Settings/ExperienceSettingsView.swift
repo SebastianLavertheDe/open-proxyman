@@ -40,7 +40,6 @@ struct ExperienceSettingsView: View {
                 }
             }
             PreferencesSetting(target: .appearance) { themeSettings }
-            iconSettings
             Button(Strings.Settings.restoreDefaults) {
                 settings.resetAppearanceDefaults()
                 appearance = .system
@@ -113,35 +112,5 @@ struct ExperienceSettingsView: View {
         }
         .buttonStyle(.plain).accessibilityLabel(title)
         .accessibilityAddTraits(appearance == value ? .isSelected : [])
-    }
-
-    private var iconSettings: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(Strings.Settings.proxymirrorAppIcon).fontWeight(.medium)
-            HStack(spacing: 6) {
-                iconOption("earth", title: Strings.Settings.onEarth)
-                iconOption("mars", title: Strings.Settings.onMars)
-                iconOption("candy", title: Strings.Settings.spaceCandy)
-                iconOption("classic", title: Strings.Settings.classic)
-            }
-            .padding(7).background(PreferencesPalette.strip)
-        }
-    }
-
-    private func iconOption(_ value: String, title: String) -> some View {
-        Button { settings.appIconStyle = value } label: {
-            HStack(spacing: 7) {
-                Image(nsImage: AppIconController.image(style: value, size: 64))
-                    .resizable().frame(width: 28, height: 28)
-                Text(title).font(.system(size: 12)).lineLimit(1)
-                Spacer(minLength: 0)
-                if settings.appIconStyle == value { Image(systemName: "checkmark").foregroundStyle(PreferencesPalette.selection) }
-            }
-            .padding(.horizontal, 5).frame(height: 40)
-            .background(settings.appIconStyle == value ? PreferencesPalette.selection.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
-            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(settings.appIconStyle == value ? PreferencesPalette.selection : .clear) }
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(settings.appIconStyle == value ? .isSelected : [])
     }
 }

@@ -387,7 +387,6 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
     private var preferencesObserver: NSObjectProtocol?
     private var snapshotObserver: NSObjectProtocol?
     private var lastAppliedAppearance: String?
-    private var lastAppliedIconStyle: String?
     private var lastAppliedMCPEnabled: Bool?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -476,10 +475,6 @@ final class ProxyMirrorLifecycle: NSObject, NSApplicationDelegate {
             case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
             default: NSApp.appearance = nil
             }
-        }
-        if lastAppliedIconStyle != settings.appIconStyle {
-            lastAppliedIconStyle = settings.appIconStyle
-            AppIconController.apply(style: settings.appIconStyle)
         }
         if lastAppliedMCPEnabled != settings.mcpEnabled {
             lastAppliedMCPEnabled = settings.mcpEnabled

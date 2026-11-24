@@ -14,7 +14,7 @@ import sys
 from prepare_transparent_signing import (
     APP_GROUPS, APP_ID, APP_PROXY, INSTALL_EXTENSION, NETWORK_EXTENSION, TEAM_ID,
 )
-from test_localization_bundle import verify_resources
+from test_localization_bundle import ROOT, verify_resources
 
 
 def verify_transparent_extension(app, info):
@@ -129,12 +129,15 @@ def verify_bundle(app, expect_transparent=False):
         "CFBundleIdentifier": "com.sebastianLavertheDe.proxymirror",
         "CFBundlePackageType": "APPL",
         "CFBundleExecutable": "ProxyMirror",
+        "CFBundleIconFile": "AppIcon",
         "LSMinimumSystemVersion": "13.0",
     }
     for key, value in expected.items():
         if info.get(key) != value:
             raise ValueError(f"{key}: expected {value!r}, got {info.get(key)!r}")
 
+    if (contents / "Resources/AppIcon.icns").read_bytes() != (ROOT / "Resources/AppIcon.icns").read_bytes():
+        raise ValueError("The packaged application icon differs from the canonical AppIcon.icns")
     verify_resources(app, expect_transparent)
 
     executable = contents / "MacOS" / info["CFBundleExecutable"]

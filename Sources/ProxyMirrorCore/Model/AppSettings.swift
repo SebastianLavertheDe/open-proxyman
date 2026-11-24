@@ -217,6 +217,7 @@ final class AppSettings: ObservableObject {
     }
     /// Layout names describe the divider: vertical places Request beside Response.
     var contentDividerIsVertical: Bool { contentLayout == "vertical" }
+    /// Retained for older preference backups; the app always uses its bundled icon.
     var appIconStyle: String {
         get { Self.choice(d.string(forKey: Keys.appIconStyle), in: ["earth", "mars", "candy", "classic"], fallback: "earth") }
         set { d.set(Self.choice(newValue, in: ["earth", "mars", "candy", "classic"], fallback: "earth"), forKey: Keys.appIconStyle); notifyChange() }

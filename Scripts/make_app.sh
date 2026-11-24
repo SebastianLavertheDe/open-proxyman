@@ -199,10 +199,8 @@ PY
   python3 Scripts/configure_updates.py "$APP"
 fi
 
-# 图标（若存在）
-if [ -f "Resources/AppIcon.icns" ]; then
-  cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-fi
+# 启动和运行时统一使用原有宇航员图标；缺失图标时让打包失败。
+cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 if (( TRANSPARENT )); then
   host_id=$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")

@@ -85,7 +85,7 @@ struct DetailContentView: View {
             if tx.suspectedPinning { pinningBanner }
 
             Group {
-                if presentationSettings.contentLayout == "horizontal" {
+                if presentationSettings.contentDividerIsVertical {
                     HSplitView {
                         ContentSideView(tx: tx, side: .request).frame(minWidth: 180)
                         ContentSideView(tx: tx, side: .response).frame(minWidth: 180)

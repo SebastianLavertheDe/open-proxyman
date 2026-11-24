@@ -33,12 +33,13 @@
 "apply_settings" = "Apply Settings";
 "apply_to_active_system_proxy" = "Apply to Active System Proxy";
 "apply_to_all_tabs_in_the_request_response" = "Apply to all tabs in the request, response and traffic panels.";
-"arrange_the_request_and_response_panels_vertically_or" = "Arrange the request and response panels vertically or horizontally.";
+"arrange_the_request_and_response_panels_vertically_or" = "Vertical: side by side. Horizontal: stacked.";
 "automatically_check_for_updates" = "Automatically check for updates";
 "automatically_redact_sensitive_information_before_sending_it_to" = "Automatically redact sensitive information before sending it to AI tools.";
 "automatically_remove_old_requests" = "Automatically remove old requests";
 "back" = "Back";
 "beta" = "BETA";
+"beta_feature_badge" = "BETA";
 "body_capture_limit" = "Body Capture Limit";
 "body_capture_limit_mb" = "Body capture limit: %ld MB";
 "body_tab" = "Body tab:";
@@ -136,6 +137,7 @@
 "install_trust" = "Install & Trust";
 "install_trust_ca_certificate" = "Install & Trust CA Certificate";
 "integrations" = "Integrations";
+"installed_and_trusted" = "Installed & trusted";
 "lan_proxy_devices" = "LAN Proxy & Devices";
 "language" = "Language:";
 "language_english_autonym" = "English";
@@ -168,6 +170,7 @@
 "mtls_target_host" = "mTLS target host";
 "network_extension" = "Network Extension";
 "network_extension_and_system_proxy_cannot_run_at" = "Network Extension and System Proxy cannot run at the same time. Enabling Network Extension turns off System Proxy.";
+"new_feature_badge" = "NEW";
 "new_view" = "New View";
 "no_github_token_is_saved" = "No GitHub token is saved.";
 "no_matching_settings" = "No matching settings.";

@@ -215,6 +215,8 @@ final class AppSettings: ObservableObject {
         get { Self.choice(d.string(forKey: Keys.contentLayout), in: ["vertical", "horizontal"], fallback: "vertical") }
         set { d.set(Self.choice(newValue, in: ["vertical", "horizontal"], fallback: "vertical"), forKey: Keys.contentLayout); notifyChange() }
     }
+    /// Layout names describe the divider: vertical places Request beside Response.
+    var contentDividerIsVertical: Bool { contentLayout == "vertical" }
     var appIconStyle: String {
         get { Self.choice(d.string(forKey: Keys.appIconStyle), in: ["earth", "mars", "candy", "classic"], fallback: "earth") }
         set { d.set(Self.choice(newValue, in: ["earth", "mars", "candy", "classic"], fallback: "earth"), forKey: Keys.appIconStyle); notifyChange() }

@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PreferencesGeneralView: View {
     let onAdvanced: () -> Void
@@ -8,6 +10,7 @@ struct PreferencesGeneralView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var portDraft = String(AppSettings.shared.port)
     @State private var portError: String?
+    @State private var showingLanguageHelp = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -20,12 +23,13 @@ struct PreferencesGeneralView: View {
             PreferencesCertificateCard(onReset: onResetCertificate)
         }
         .padding(.horizontal, 10)
+        .controlSize(.regular)
         .onChange(of: settings.port) { value in portDraft = String(value) }
         .disabled(appState.proxyRestarting)
     }
 
     private var displaySettings: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             PreferencesSetting(target: .contentLayout) {
                 PreferencesRow(label: Strings.Settings.contentLayout) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -48,7 +52,7 @@ struct PreferencesGeneralView: View {
                         Text(Strings.Settings.head).tag("head")
                         Text(Strings.Settings.middle).tag("middle")
                         Text(Strings.Settings.tail).tag("tail")
-                    }.labelsHidden().frame(width: 76)
+                    }.labelsHidden().fixedSize()
                 }
             }
         }
@@ -56,10 +60,11 @@ struct PreferencesGeneralView: View {
 
     private var proxySettings: some View {
         PreferencesRow(label: Strings.Settings.port) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 PreferencesSetting(target: .listenPort) {
                     HStack(spacing: 8) {
                         TextField("9090", text: $portDraft)
+                            .controlSize(.small)
                             .frame(width: 78).onSubmit(applyPort)
                             .accessibilityLabel(Strings.Settings.proxyPort)
                         if portDraft != String(settings.port) {
@@ -90,17 +95,16 @@ struct PreferencesGeneralView: View {
                     }
                 }
                 Button(Strings.Settings.advancedProxySettings, action: onAdvanced)
+                    .controlSize(.small)
                 if let error = appState.proxyStartError {
                     Text(error).font(.system(size: 11)).foregroundStyle(.red)
-                } else if let message = appState.systemProxyMessage {
-                    PreferencesHelp(message)
                 }
             }
         }
     }
 
     private var behaviorSettings: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             PreferencesSetting(target: .appBehavior) {
                 PreferencesRow(label: Strings.Settings.application) {
                     VStack(alignment: .leading, spacing: 9) {
@@ -112,13 +116,25 @@ struct PreferencesGeneralView: View {
             PreferencesSetting(target: .language) {
                 PreferencesRow(label: Strings.Settings.language) {
                     VStack(alignment: .leading, spacing: 7) {
-                        Picker("", selection: Binding(get: { settings.applicationLanguage }, set: { settings.applicationLanguage = $0 })) {
-                            Text(Strings.Settings.system).tag("system")
-                            Text(Strings.Settings.languageSimplifiedChineseAutonym).tag("zh-Hans")
-                            Text(Strings.Settings.languageEnglishAutonym).tag("en")
-                        }.labelsHidden().frame(width: 170)
+                        HStack(spacing: 8) {
+                            Picker("", selection: Binding(get: { settings.applicationLanguage }, set: { settings.applicationLanguage = $0 })) {
+                                Text(Strings.Settings.system).tag("system")
+                                Text(Strings.Settings.languageSimplifiedChineseAutonym).tag("zh-Hans")
+                                Text(Strings.Settings.languageEnglishAutonym).tag("en")
+                            }.labelsHidden().frame(width: 170)
+                            Button { showingLanguageHelp.toggle() } label: {
+                                Image(systemName: "questionmark.circle.fill")
+                                    .font(.system(size: 18)).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Strings.Settings.applicationLanguage)
+                            .help(Strings.Settings.languageRestartNotice)
+                            .popover(isPresented: $showingLanguageHelp) {
+                                PreferencesHelp(Strings.Settings.languageRestartNotice)
+                                    .padding(12).frame(width: 250, alignment: .leading)
+                            }
+                        }
                         PreferencesHelp(Strings.Settings.chooseTheLanguageUsedInProxymirror)
-                        PreferencesHelp(Strings.Settings.languageRestartNotice)
                     }
                 }
             }
@@ -148,13 +164,10 @@ struct PreferencesCertificateCard: View {
     var body: some View {
         PreferencesSetting(target: .caCertificate) {
             HStack(alignment: .top, spacing: 14) {
-                Image(systemName: "doc.text.image")
-                    .font(.system(size: 35, weight: .light))
-                    .foregroundStyle(.orange)
+                Image(nsImage: NSWorkspace.shared.icon(for: UTType(filenameExtension: "cer") ?? .data))
+                    .resizable().scaledToFit()
                     .frame(width: 62, height: 54)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .overlay { Rectangle().strokeBorder(Color.orange, lineWidth: 2) }
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(status?.commonName ?? "ProxyMirror CA").fontWeight(.semibold)
                     if let before = status?.notBefore {
                         Text(Strings.Settings.certificateValidFrom(dateString(before))).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -163,8 +176,10 @@ struct PreferencesCertificateCard: View {
                         Text(Strings.Settings.certificateValidUntil(dateString(after))).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     if let status {
-                        Label(status.statusText, systemImage: status.trusted ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        Label(status.trusted ? Strings.Settings.installedAndTrusted : status.statusText,
+                              systemImage: status.trusted ? "checkmark.circle.fill" : "exclamationmark.circle")
                             .font(.system(size: 11)).foregroundStyle(status.trusted ? Color.green : Color.secondary)
+                            .imageScale(.large).help(status.statusText)
                     } else {
                         ProgressView().controlSize(.mini)
                     }
@@ -183,6 +198,7 @@ struct PreferencesCertificateCard: View {
                         }.fixedSize()
                         if refreshing { ProgressView().controlSize(.mini) }
                     }
+                    .controlSize(.small)
                     .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
@@ -198,8 +214,7 @@ struct PreferencesCertificateCard: View {
     private func dateString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = L10n.locale
-        formatter.dateStyle = .long
-        formatter.timeStyle = .medium
+        formatter.setLocalizedDateFormatFromTemplate("EEEEdMMMyyyyHHmmssZZZZZ")
         return formatter.string(from: date)
     }
 

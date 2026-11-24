@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ProxyMirrorFoundation)
+import ProxyMirrorFoundation
+#endif
 #if canImport(ProxyMirrorSystemProxy)
 import ProxyMirrorSystemProxy
 #endif
@@ -6,24 +9,26 @@ import ProxyMirrorSystemProxy
 /// 技术诊断与界面文案分别渲染；日志、CLI 和会话文件始终使用 diagnostic。
 struct OperationIssue: Sendable, Equatable {
     let code: String
+    let arguments: [String]
     let diagnostic: String
     private let render: @Sendable () -> String
 
-    init(code: String, diagnostic: String, render: @escaping @Sendable () -> String) {
+    init(code: String, arguments: [String] = [], diagnostic: String, render: @escaping @Sendable () -> String) {
         self.code = code
+        self.arguments = arguments
         self.diagnostic = diagnostic
         self.render = render
     }
 
     var localizedPresentation: String { render() }
     func withPresentation(_ renderer: @escaping @Sendable () -> String) -> Self {
-        Self(code: code, diagnostic: diagnostic, render: renderer)
+        Self(code: code, arguments: arguments, diagnostic: diagnostic, render: renderer)
     }
     static func technical(_ detail: String) -> Self {
         Self(code: "technical_detail", diagnostic: detail, render: { detail })
     }
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.code == rhs.code && lhs.diagnostic == rhs.diagnostic
+        lhs.code == rhs.code && lhs.arguments == rhs.arguments && lhs.diagnostic == rhs.diagnostic
     }
 }
 
@@ -34,6 +39,12 @@ protocol OperationIssueProviding: Error {
 /// 任意系统返回的错误保留其技术详情；已知操作错误则按稳定 code 渲染。
 enum LocalizedErrorPresentation {
     static func message(for error: Error) -> String {
+        #if canImport(ProxyMirrorFoundation)
+        if let failure = error as? CapturedFailure {
+            return OperationIssue.restored(code: failure.code, arguments: failure.arguments,
+                                           diagnostic: failure.diagnostic).localizedPresentation
+        }
+        #endif
         if let error = error as? OperationIssueProviding {
             return error.operationIssue.localizedPresentation
         }

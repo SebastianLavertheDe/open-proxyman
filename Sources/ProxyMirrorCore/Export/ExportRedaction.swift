@@ -95,15 +95,15 @@ enum MCPDataRedaction {
         // A scalar session credential is sensitive; its container is not.
         if sensitiveKeys.contains(name), !(name == "session" && (value is [String: Any] || value is [Any])) { return marker }
         if let fields = value as? [String: Any] {
-            if let header = fields["name"] as? String, sensitiveKeys.contains(normalized(header)), fields["value"] != nil {
-                var safe = fields; safe["value"] = marker; return safe
-            }
             var safe: [String: Any] = [:]
             for (field, nested) in fields {
                 if normalized(field) == "cookies" { safe[field] = [] as [Any] }
                 else if field == "text", fields["encoding"] as? String == "base64", let encoded = nested as? String {
                     safe[field] = sanitizedBase64(encoded, depth: depth + 1)
                 } else { safe[field] = sanitize(nested, key: field, depth: depth + 1) }
+            }
+            if let header = fields["name"] as? String, sensitiveKeys.contains(normalized(header)), fields["value"] != nil {
+                safe["value"] = marker
             }
             return safe
         }
@@ -126,11 +126,40 @@ enum MCPDataRedaction {
 
     static func text(_ input: String, depth: Int = 0) -> String {
         guard depth < 48 else { return marker }
+        // A MIME part can itself contain SSE text. Parse the outer container
+        // before looking for data: lines, including when MIME has a preamble.
+        if let multipart = multipart(input, depth: depth) { return multipart }
         let lines = input.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         if lines.count > 1, lines.contains(where: { $0.hasPrefix("data:") }) {
-            return lines.map { line in
-                line.hasPrefix("data:") ? text(line, depth: depth + 1) : line
-            }.joined(separator: "\n")
+            var output: [String] = [], event: [String] = []
+            func appendEvent() {
+                let fields = event.indices.filter { event[$0].hasPrefix("data:") }
+                guard let first = fields.first else {
+                    output += event.map { text($0, depth: depth + 1) }; return
+                }
+                // SSE joins every data field in the same event with LF. A JSON
+                // key and its credential may be on different physical lines.
+                let payload = fields.map { index -> String in
+                    let value = event[index].dropFirst(5)
+                    return String(value.hasPrefix(" ") ? value.dropFirst() : value)
+                }.joined(separator: "\n")
+                let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+                let incompleteJSON = (trimmed.hasPrefix("{") || trimmed.hasPrefix("["))
+                    && (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) == nil
+                let safe = incompleteJSON ? marker : text(payload, depth: depth + 1)
+                let prefix = event[first].hasPrefix("data: ") ? "data: " : "data:"
+                let fieldIndices = Set(fields)
+                for index in event.indices {
+                    if index == first { output += safe.components(separatedBy: "\n").map { prefix + $0 } }
+                    else if !fieldIndices.contains(index) { output.append(text(event[index], depth: depth + 1)) }
+                }
+            }
+            for line in lines {
+                if line.isEmpty { appendEvent(); event.removeAll(); output.append("") }
+                else { event.append(line) }
+            }
+            if !event.isEmpty { appendEvent() }
+            return output.joined(separator: "\n")
         }
         if input.hasPrefix("data:") {
             return "data:" + text(String(input.dropFirst(5)).trimmingCharacters(in: .whitespaces), depth: depth + 1)
@@ -138,16 +167,6 @@ enum MCPDataRedaction {
         if let bytes = input.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: bytes),
            let encoded = try? JSONSerialization.data(withJSONObject: sanitize(object, depth: depth + 1), options: [.sortedKeys, .withoutEscapingSlashes]) {
             return String(decoding: encoded, as: UTF8.self)
-        }
-        if input.hasPrefix("--"), let boundary = input.components(separatedBy: .newlines).first,
-           input.contains("Content-Disposition: form-data") {
-            return input.components(separatedBy: boundary).map { part in
-                guard let divider = part.range(of: "\r\n\r\n") ?? part.range(of: "\n\n"),
-                      let regex = try? NSRegularExpression(pattern: #"(?i)\bname="([^"]+)""#),
-                      let match = regex.firstMatch(in: String(part[..<divider.lowerBound]), range: NSRange(part.startIndex..<divider.lowerBound, in: part)),
-                      let range = Range(match.range(at: 1), in: part), sensitiveKeys.contains(normalized(String(part[range]))) else { return part }
-                return String(part[..<divider.upperBound]) + marker + "\r\n"
-            }.joined(separator: boundary)
         }
         if var url = URLComponents(string: input), url.scheme != nil, url.host != nil {
             if url.user != nil { url.user = marker }
@@ -181,6 +200,99 @@ enum MCPDataRedaction {
                                                     withTemplate: index == 1 ? "$1" + marker : marker)
         }
         return result
+    }
+
+    /// MIME parameter names and disposition types are case-insensitive. Values
+    /// can be tokens or quoted strings with quoted-pair escaping (RFC 2183).
+    private static func dispositionName(_ input: String) -> String? {
+        var segments: [String] = [], segment = "", quoted = false, escaped = false
+        for character in input {
+            if escaped { segment.append(character); escaped = false }
+            else if quoted && character == "\\" { segment.append(character); escaped = true }
+            else if character == "\"" { segment.append(character); quoted.toggle() }
+            else if character == ";" && !quoted { segments.append(segment); segment = "" }
+            else { segment.append(character) }
+        }
+        guard !quoted, !escaped else { return nil }
+        segments.append(segment)
+        guard segments.removeFirst().trimmingCharacters(in: .whitespaces).lowercased() == "form-data" else { return nil }
+        func token(_ value: String) -> Bool {
+            !value.isEmpty && value.utf8.allSatisfy { $0 > 32 && $0 < 127 && !Array("()<>@,;:\\\"/[]?=".utf8).contains($0) }
+        }
+        var parameters: [String: String] = [:]
+        for segment in segments {
+            guard let equals = segment.firstIndex(of: "=") else { return nil }
+            let key = segment[..<equals].trimmingCharacters(in: .whitespaces).lowercased()
+            let raw = segment[segment.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+            guard token(key), parameters[key] == nil else { return nil }
+            let value: String
+            if raw.hasPrefix("\"") {
+                var decoded = "", escaped = false, closed = false
+                for character in raw.dropFirst() {
+                    guard !closed else { return nil }
+                    if escaped { decoded.append(character); escaped = false }
+                    else if character == "\\" { escaped = true }
+                    else if character == "\"" { closed = true }
+                    else { decoded.append(character) }
+                }
+                guard closed, !escaped else { return nil }
+                value = decoded
+            } else {
+                guard token(raw) else { return nil }
+                value = raw
+            }
+            parameters[key] = value
+        }
+        // Extended/ambiguous names cannot safely select a credential field.
+        guard parameters["name*"] == nil else { return nil }
+        return parameters["name"]
+    }
+
+    private static func multipart(_ input: String, depth: Int) -> String? {
+        let lines = input.components(separatedBy: .newlines)
+        guard let boundary = lines.first(where: { $0.hasPrefix("--") }),
+              input.range(of: "content-disposition", options: .caseInsensitive) != nil
+                || lines.contains(where: { $0.trimmingCharacters(in: .whitespaces) == boundary + "--" }) else { return nil }
+        guard boundary.utf8.count <= 202,
+              let pattern = try? NSRegularExpression(pattern: "(?m)^" + NSRegularExpression.escapedPattern(for: boundary) + "(?:--)?[ \\t]*(?:\\r?\\n|$)") else { return marker }
+        let delimiters = pattern.matches(in: input, range: NSRange(input.startIndex..., in: input))
+        guard delimiters.count >= 2, let last = delimiters.last.flatMap({ Range($0.range, in: input) }),
+              input[last].trimmingCharacters(in: .whitespacesAndNewlines) == boundary + "--" else { return marker }
+        guard let first = Range(delimiters[0].range, in: input) else { return marker }
+        var output = text(String(input[..<first.lowerBound]), depth: depth + 1)
+        for (index, delimiter) in delimiters.enumerated() {
+            guard let range = Range(delimiter.range, in: input) else { return marker }
+            output += input[range]
+            let end = index + 1 < delimiters.count ? Range(delimiters[index + 1].range, in: input)!.lowerBound : input.endIndex
+            let part = String(input[range.upperBound..<end])
+            if index + 1 == delimiters.count {
+                output += text(part, depth: depth + 1)
+                continue
+            }
+            guard let divider = part.range(of: "\r\n\r\n") ?? part.range(of: "\n\n") else {
+                output += marker + "\r\n"; continue
+            }
+            let head = String(part[..<divider.lowerBound])
+            var fields: [String: String] = [:], last: String?, malformed = false
+            for line in head.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
+                if line.hasPrefix(" ") || line.hasPrefix("\t"), let last {
+                    fields[last, default: ""] += " " + line.trimmingCharacters(in: .whitespaces)
+                } else if let colon = line.firstIndex(of: ":") {
+                    let key = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+                    if fields[key] != nil { malformed = true }
+                    fields[key] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                    last = key
+                } else { malformed = true }
+            }
+            let body = String(part[divider.upperBound...])
+            let ending = body.hasSuffix("\r\n") ? "\r\n" : body.hasSuffix("\n") ? "\n" : ""
+            let content = String(body.dropLast(ending.count))
+            let name = fields["content-disposition"].flatMap(dispositionName)
+            let safe = !malformed && name.map({ !sensitiveKeys.contains(normalized($0)) }) == true
+                ? text(content, depth: depth + 1) : marker
+            output += String(part[..<divider.upperBound]) + safe + ending
+        }
+        return output
     }
 
     private static func sanitizeQuery(_ query: String, depth: Int = 0) -> String {

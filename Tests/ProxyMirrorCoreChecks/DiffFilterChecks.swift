@@ -44,6 +44,18 @@ func checkDiffAndFilters(_ test: CoreAssertions) throws {
                 "Numeric operations reject nonnumeric fields")
     test.expect(!TrafficCondition(field: .url, comparison: .notRegex, value: "[").compile()(tx),
                 "Invalid negative regex fails closed")
+    let normalRegex = TrafficCondition(field: .host, comparison: .regex, value: #"^API\.EXAMPLE\.TEST$"#).compile()
+    test.expect(normalRegex(tx), "Bounded regular expressions preserve case-insensitive matching")
+    let previousComment = tx.comment
+    tx.comment = String(repeating: "a", count: 48) + "!"
+    let startedRegex = ProcessInfo.processInfo.systemUptime
+    let limitedRegex = TrafficCondition(field: .comment, comparison: .regex, value: "(a+)+$").compile()
+    let limitedNegative = TrafficCondition(field: .comment, comparison: .notRegex, value: "(a+)+$").compile()
+    test.expect(!limitedRegex(tx) && !limitedNegative(tx), "Budget exhaustion fails closed for positive and negative regex filters")
+    test.expect(ProcessInfo.processInfo.systemUptime - startedRegex < 0.5, "Catastrophic backtracking is interrupted within the matching budget")
+    tx.comment = "a"
+    test.expect(!limitedRegex(tx) && !limitedNegative(tx), "An exhausted compiled rule cannot repeatedly consume its budget")
+    tx.comment = previousComment
     let nested = TrafficConditionGroup(mode: .all, conditions: [TrafficCondition(field: .method, comparison: .equals, value: "POST")],
         groups: [TrafficConditionGroup(mode: .any, conditions: [
             TrafficCondition(field: .status, comparison: .equals, value: "404"),
@@ -51,9 +63,12 @@ func checkDiffAndFilters(_ test: CoreAssertions) throws {
     test.expect(nested.compile()(tx), "Nested OR evaluates within its parent AND")
     tx.method = "GET"
     test.expect(!nested.compile()(tx), "Parent AND remains effective around nested OR")
-    let legacy = Data(#"{"name":"Old","id":"00000000-0000-0000-0000-000000000001","group":{"mode":"全部匹配 (AND)","conditions":[]}}"#.utf8)
-    let old = try JSONDecoder().decode(SavedTrafficFilter.self, from: legacy)
-    test.expect(old.highlightName == nil && old.group.groups == nil, "Legacy saved filters decode without new optional fields")
+    let minimal = Data(#"{"name":"Minimal","id":"00000000-0000-0000-0000-000000000001","group":{"mode":"all","conditions":[]}}"#.utf8)
+    let decoded = try JSONDecoder().decode(SavedTrafficFilter.self, from: minimal)
+    test.expect(decoded.highlightName == nil && decoded.group.groups == nil, "Saved filters decode without optional fields using stable storage IDs")
+    let obsoleteMode = Data(#""全部匹配 (AND)""#.utf8)
+    test.expect((try? JSONDecoder().decode(TrafficConditionGroup.Mode.self, from: obsoleteMode)) == nil,
+                "Obsolete localized mode IDs are rejected")
 
     let reordered = Transaction()
     reordered.responseHeaders = HTTPHeaders([("A-Header", "first"), ("Z-Header", "last")])
@@ -91,4 +106,11 @@ func checkDiffAndFilters(_ test: CoreAssertions) throws {
     tx.statusCode = 500
     test.equal(palette.highlight(for: tx), "Red", "The first matching saved color has precedence")
     test.expect(tx.highlightName == nil, "Filter coloring never mutates manual session highlights")
+    let limitedProfiles = [SavedTrafficFilter(name: "limited", group: TrafficConditionGroup(conditions: [
+        TrafficCondition(field: .comment, comparison: .notRegex, value: "(a+)+$")]), highlightName: "Red")]
+    defaults.set(try JSONEncoder().encode(limitedProfiles), forKey: SavedTrafficFilter.defaultsKey)
+    let limitedPalette = TrafficFilterPalette(defaults: defaults)
+    tx.comment = String(repeating: "a", count: 48) + "!"
+    test.expect(limitedPalette.highlight(for: tx) == nil, "Saved coloring uses the same fail-closed regex budget")
+    tx.comment = previousComment
 }

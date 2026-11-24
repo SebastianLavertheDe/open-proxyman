@@ -11,6 +11,7 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
         case .httpMessages: try checkHTTPMessages(assertions)
         case .rules:
             try checkRules(assertions)
+            try checkPendingSaves(assertions)
             try checkCustomCertificateBackup(assertions)
             try checkTunnelRuleEnforcement(assertions)
             try checkWorkbench(assertions)

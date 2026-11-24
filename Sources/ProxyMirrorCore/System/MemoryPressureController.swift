@@ -49,6 +49,7 @@ final class MemoryPressureController: ObservableObject {
          now: @escaping () -> Date = Date.init) {
         self.cleaners = cleaners ?? [
             Cleaner(name: "decoded-bodies", clear: { InspectionBody.clearCache() }),
+            Cleaner(name: "json-column-values", clear: { CustomColumnValues.shared.clear() }),
             Cleaner(name: "leaf-tls-contexts", clear: { CertificateAuthority.shared.invalidateLeafContexts() }),
             Cleaner(name: "custom-certificate-chains", clear: { CustomCertificateStore.shared.invalidate() }),
             Cleaner(name: "client-tls-contexts", clear: { UpstreamTrust.clearClientIdentityContexts() }),

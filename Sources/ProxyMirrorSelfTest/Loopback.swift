@@ -1,11 +1,19 @@
 import Foundation
+import Combine
 import NIOPosix
 @testable import ProxyMirrorCore
 
 private final class LoopbackSink: TrafficSink {
     var records: [Transaction] = []
-    func transactionCreated(_ tx: Transaction) { records.append(tx) }
-    func transactionUpdated(_ tx: Transaction) {}
+    private var metadataSubscriptions: [AnyCancellable] = []
+    func transactionCreated(_ tx: Transaction) {
+        precondition(Thread.isMainThread, "Capture publication must run on the main thread")
+        records.append(tx)
+        metadataSubscriptions.append(tx.objectWillChange.sink { _ in
+            precondition(Thread.isMainThread, "Published HTTP/WS/SSE metadata changed off the main thread")
+        })
+    }
+    func transactionUpdated(_ tx: Transaction) { precondition(Thread.isMainThread) }
 }
 
 func runLoopbackTests() {

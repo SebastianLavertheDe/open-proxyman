@@ -118,7 +118,7 @@ final class CertificateAuthority: @unchecked Sendable {
         NSLog("[ProxyMirror] CA 已生成: \(caCertPath.path)")
     }
 
-    /// G7：导入外部根 CA（PEM 证书 + PEM 私钥）。校验公私钥匹配且为 CA 证书后替换内置 CA。
+    /// 导入外部根 CA：验证有效期、签发用途及公私钥匹配后，原子替换当前证书和私钥。
     /// 导入后客户端需重新信任新 CA（菜单重新安装即可）。
     func importRootCA(certificatePEM: String, privateKeyPEM: String) throws {
         try queue.sync {
@@ -126,12 +126,7 @@ final class CertificateAuthority: @unchecked Sendable {
             guard let key = try? Certificate.PrivateKey(pemEncoded: privateKeyPEM) else {
                 throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "无法读取 PEM 私钥"])
             }
-            guard key.publicKey == cert.publicKey else {
-                throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "私钥与证书不匹配"])
-            }
-            guard case .isCertificateAuthority? = try cert.extensions.basicConstraints else {
-                throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "所选证书不是 CA 证书（缺少 CA 基本约束）"])
-            }
+            try CertificateFormats.validateRootCA(cert, privateKey: key)
             try replaceCA(certificate: cert, key: key)
             NSLog("[ProxyMirror] 已导入自定义根 CA: \(cert.subject)")
         }

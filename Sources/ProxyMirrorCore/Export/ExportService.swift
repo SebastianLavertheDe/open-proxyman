@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import UniformTypeIdentifiers
+import ProxyMirrorFoundation
 
 /// 剪贴板助手
 enum CopyPaste {
@@ -93,6 +94,10 @@ enum ExportService {
             resp["headersSize"] = -1
             resp["bodySize"] = max(tx.responseBytes, tx.responseBody.count)
             if let error = tx.errorText, !error.isEmpty { resp["_error"] = error }
+            if let failure = tx.failure {
+                resp["_proxyMirrorFailure"] = ["code": failure.code, "arguments": failure.arguments,
+                                               "diagnostic": failure.diagnostic] as [String: Any]
+            }
             resp["_truncated"] = tx.responseTruncated
             if let original = tx.originalURL { entry["_originalURL"] = original }
             if let protocolName = tx.upstreamProtocol { entry["_upstreamProtocol"] = protocolName }
@@ -127,59 +132,39 @@ enum ExportService {
         headers.pairs.map { ["name": $0.name, "value": $0.value] }
     }
 
-    /// CSV 导出（对齐 Proxyman Export ▸ as CSV）
+    /// Snapshot mutable metadata before the background writer starts.
+    @MainActor
     static func exportCSV(_ transactions: [Transaction]) {
         guard !transactions.isEmpty else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "proxymirror.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try writeCSV(transactions, to: url) }
-        catch { reportExportFailure(error, format: "CSV") }
+        CSVExportJob.start(csvSnapshot(transactions), to: url, dateStyle: csvDateStyle())
     }
 
     static func writeCSV(_ transactions: [Transaction], to url: URL) throws {
-        var rows = ["Method,Status,URL,Content Type,Size,Duration(ms),Start Time"]
-        for tx in transactions {
-            let cells = [tx.method, String(tx.statusCode), tx.fullURL,
-                         tx.contentType, String(tx.totalSize),
-                         String(format: "%.0f", tx.duration * 1000), tx.timeText]
-            rows.append(cells.map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))" }.joined(separator: ","))
-        }
-        try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        try AtomicCSVWriter.write(csvSnapshot(transactions), to: url, dateStyle: csvDateStyle())
+    }
+
+    private static func csvSnapshot(_ transactions: [Transaction]) -> [CSVExportRecord] {
+        transactions.map { CSVExportRecord(method: $0.method, status: $0.statusCode, url: $0.fullURL,
+            contentType: $0.contentType, size: $0.totalSize, duration: $0.duration, startedAt: $0.startedAt) }
+    }
+
+    private static func csvDateStyle() -> AtomicCSVWriter.DateStyle {
+        .init(uses24HourClock: AppSettings.shared.use24HourClock, includesDate: AppSettings.shared.showFullDate)
     }
 
     /// 生成可复用的 cURL 命令
     static func curlCommand(_ tx: Transaction) -> String {
         let proxyPort = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
-        if tx.isTunnel {
-            let authority = URLParser.authority(host: tx.host, port: tx.port, scheme: "https")
-            let proxy = AppSettings.shared.appendProxyToCommands ? " --proxy 'http://127.0.0.1:\(proxyPort)'" : ""
-            return "curl\(proxy) 'https://\(_escape(authority))'"
-        }
-        var parts = ["curl '\(_escape(tx.fullURL))'"]
-        if AppSettings.shared.appendProxyToCommands { parts.append("--proxy 'http://127.0.0.1:\(proxyPort)'") }
-        let body = tx.requestBody
-        if tx.method != "GET" || !body.isEmpty {
-            let method = tx.method.utf8.allSatisfy { (65...90).contains($0) } ? tx.method : "'\(_escape(tx.method))'"
-            parts.append("-X \(method)")
-        }
-        let headers = ExportRedaction.commandHeaders(
-            ExportRedaction.headers(tx.requestHeaders.pairs.map { ($0.name, $0.value) }, redact: AppSettings.shared.redactSensitiveHeaders),
-            preserveOriginal: AppSettings.shared.preserveOriginalHeaders, omitAcceptEncodingByDefault: true)
-        for (name, value) in headers {
-            let header = value.isEmpty ? name + ";" : name + ": " + value
-            parts.append("-H '\(_escape(header))'")
-        }
-        if !body.isEmpty {
-            if let text = String(data: body, encoding: .utf8), !text.utf8.contains(0) {
-                parts.append("--data-raw '\(_escape(text))'")
-            } else {
-                parts[0] = "printf '%s' '\(body.base64EncodedString())' | base64 -d | " + parts[0]
-                parts.append("--data-binary @-")
-            }
-        }
-        return parts.joined(separator: " \\\n  ")
+        let request = HTTPRequest(method: tx.method, url: tx.fullURL,
+            headers: tx.requestHeaders.pairs.map { ($0.name, $0.value) }, body: tx.requestBody)
+        return CurlCommandGenerator.command(request, isTunnel: tx.isTunnel,
+            proxyURL: AppSettings.shared.appendProxyToCommands ? "http://127.0.0.1:\(proxyPort)" : nil,
+            preserveOriginalHeaders: AppSettings.shared.preserveOriginalHeaders,
+            redactSensitiveHeaders: AppSettings.shared.redactSensitiveHeaders)
     }
 
     private static func _escape(_ s: String) -> String {

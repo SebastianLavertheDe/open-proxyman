@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import UniformTypeIdentifiers
+import ProxyMirrorFoundation
 
 struct SessionRecord: Codable, Sendable {
     let id: UUID
@@ -16,6 +17,7 @@ struct SessionRecord: Codable, Sendable {
     let statusCode: Int
     let statusReason: String
     let errorText: String?
+    let failure: CapturedFailure?
     let isTLSIntercepted: Bool
     let isTunnel: Bool
     let isWebSocket: Bool
@@ -75,6 +77,7 @@ struct SessionRecord: Codable, Sendable {
         statusCode = tx.statusCode
         statusReason = tx.statusReason
         errorText = tx.errorText
+        failure = tx.failure
         isTLSIntercepted = tx.isTLSIntercepted
         isTunnel = tx.isTunnel
         isWebSocket = tx.isWebSocket
@@ -135,6 +138,7 @@ struct SessionRecord: Codable, Sendable {
         tx.statusCode = statusCode
         tx.statusReason = statusReason
         tx.errorText = errorText
+        if let failure { tx.setFailure(failure) }
         tx.isTLSIntercepted = isTLSIntercepted
         tx.isTunnel = isTunnel
         tx.isWebSocket = isWebSocket
@@ -326,6 +330,7 @@ struct SessionFile: Codable, Sendable {
             tx.statusCode = entry.response.status
             tx.statusReason = entry.response.statusText ?? ""
             tx.errorText = error
+            if let failure = entry.response._proxyMirrorFailure { tx.setFailure(failure) }
             tx.state = tx.errorText == nil && tx.statusCode > 0 ? .completed : .failed
             tx.isTunnel = tx.method == "CONNECT"
             tx.isWebSocket = tx.statusCode == 101
@@ -367,6 +372,7 @@ private struct HARFile: Decodable {
         let bodySize: Int?
         let content: Content?
         let _error: String?
+        let _proxyMirrorFailure: CapturedFailure?
         let _truncated: Bool?
         let _trailers: HTTPHeaders?
     }

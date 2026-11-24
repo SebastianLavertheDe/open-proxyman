@@ -40,6 +40,44 @@ func checkMCPPrivacy(_ test: CoreAssertions) throws {
     let multipart = "--fixture\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nmultipart-secret\r\n--fixture\r\nContent-Disposition: form-data; name=\"label\"\r\n\r\nvisible\r\n--fixture--\r\n"
     let safeMultipart = MCPDataRedaction.text(multipart)
     test.expect(!safeMultipart.contains("multipart-secret") && safeMultipart.contains("visible"), "Multipart credentials are removed without hiding benign fields")
+    let headerLikeJSON = #"{"name":"token","value":"header-secret","password":"sibling-secret","nested":{"access_token":"nested-secret","ok":"visible"}}"#
+    let safeHeaderLikeJSON = MCPDataRedaction.text(headerLikeJSON)
+    for secret in ["header-secret", "sibling-secret", "nested-secret"] {
+        test.expect(!safeHeaderLikeJSON.contains(secret), "Header-shaped JSON still recursively hides \(secret)")
+    }
+    test.expect(safeHeaderLikeJSON.contains("visible"), "Header-shaped JSON retains benign nested fields")
+    let encodedHeaderLikeJSON = MCPDataRedaction.sanitize(Data(headerLikeJSON.utf8).base64EncodedString(), key: "responseBody") as! String
+    test.expect(!String(decoding: Data(base64Encoded: encodedHeaderLikeJSON)!, as: UTF8.self).contains("sibling-secret"),
+                "Base64 response-body redaction traverses header-shaped JSON")
+    for disposition in ["Content-Disposition: form-data; name=password", "content-disposition: FORM-DATA; NAME = password",
+                        "Content-Disposition: form-data; name=\"pass\\word\"", "Content-Disposition: form-data;\r\n name=password"] {
+        let input = "--fixture\r\n\(disposition)\r\n\r\nunquoted-secret\r\n--fixture\r\nContent-Disposition: form-data; name=label\r\n\r\nvisible --fixture text\r\n--fixture--\r\n"
+        let safe = MCPDataRedaction.text(input)
+        test.expect(!safe.contains("unquoted-secret") && safe.contains("visible --fixture text"),
+                    "Multipart accepts token/quoted names, header case and folding without splitting body substrings")
+    }
+    let malformedMultipart = "--fixture\r\nContent-Disposition: form-data; name=label; name=password\r\n\r\nambiguous-secret\r\n--fixture--\r\n"
+    test.expect(!MCPDataRedaction.text(malformedMultipart).contains("ambiguous-secret"), "Ambiguous multipart names hide the body conservatively")
+    let unfinishedMultipart = "--fixture\r\nContent-Disposition: form-data; name=label\r\n\r\nvisible\r\n--fixture\r\nContent-Disposition: form-data; name=password\r\n\r\nunfinished-secret"
+    test.expect(!MCPDataRedaction.text(unfinishedMultipart).contains("unfinished-secret"), "Unclosed multipart envelopes do not expose an unparsed trailing part")
+    let nestedMultipart = "--fixture\r\nContent-Disposition: form-data; name=metadata\r\n\r\n{\"password\":\"nested-form-secret\",\"ok\":\"visible\"}\r\n--fixture--\r\n"
+    let safeNestedMultipart = MCPDataRedaction.text(nestedMultipart)
+    test.expect(!safeNestedMultipart.contains("nested-form-secret") && safeNestedMultipart.contains("visible"), "Benign multipart fields still redact nested JSON credentials")
+    let preambleMultipart = "MIME preamble\r\n--fixture\r\nContent-Disposition: form-data; name=password\r\n\r\npreamble-secret\r\n--fixture--\r\n"
+    let safePreamble = MCPDataRedaction.text(preambleMultipart)
+    test.expect(!safePreamble.contains("preamble-secret") && safePreamble.contains("MIME preamble"), "MIME preamble does not bypass multipart redaction")
+    let sseMultipart = "--fixture\r\nContent-Disposition: form-data; name=password\r\n\r\nouter-secret\r\n--fixture\r\nContent-Disposition: form-data; name=note\r\n\r\ndata: hello\r\n--fixture--\r\n"
+    let safeSSEMultipart = MCPDataRedaction.text(sseMultipart)
+    test.expect(!safeSSEMultipart.contains("outer-secret") && safeSSEMultipart.contains("data:hello"), "SSE text inside a MIME part does not bypass the outer credential field")
+    test.expect(!MCPDataRedaction.text("password=non-data-secret\ndata: hello\n").contains("non-data-secret"), "SSE detection does not bypass redaction of other lines")
+    let multilineSSE = "id: 42\nevent: credentials\n: keep comment\ndata: {\"password\":\ndata: \"split-event-secret\",\"ok\":\"visible\"}\n\nid: 43\ndata: ordinary\ndata: multiline text\n\n"
+    let safeMultilineSSE = MCPDataRedaction.text(multilineSSE)
+    test.expect(!safeMultilineSSE.contains("split-event-secret") && safeMultilineSSE.contains("visible"), "SSE data fields are combined before JSON credential redaction")
+    test.expect(safeMultilineSSE.contains("id: 42") && safeMultilineSSE.contains("event: credentials") && safeMultilineSSE.contains(": keep comment")
+                && safeMultilineSSE.contains("id: 43") && safeMultilineSSE.contains("data: ordinary\ndata: multiline text"),
+                "Multiline SSE preserves event metadata, comments, boundaries and ordinary text")
+    test.expect(!MCPDataRedaction.text("data: {\"password\":\ndata: \"incomplete-event-secret\"\n\n").contains("incomplete-event-secret"),
+                "Incomplete JSON SSE event data is hidden conservatively")
     let nestedQuery = "data=%7B%22password%22%3A%22nested-form-secret%22%7D&tag=one"
     test.expect(!MCPDataRedaction.text(nestedQuery).contains("nested-form-secret"), "Encoded JSON inside a form/query field is redacted")
     let source = "const url = \"https://source-user:source-password@example.test/?token=source-token\";"

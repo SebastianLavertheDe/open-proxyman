@@ -8,7 +8,7 @@ Scripts/generate_localization.sh --check
 python3 Scripts/check_localization.py
 ```
 
-可以通过 `SWIFTGEN_BIN` 指定固定版本的可执行文件。普通 App 构建直接使用已经提交的生成代码，无需安装生成器。
+可以通过 `SWIFTGEN_BIN` 指定固定版本的可执行文件。App 打包在编译前调用完整检查，因此构建机也必须安装 SwiftGen 6.6.3。检查会用真实生成器在临时目录重建访问器，并逐字节比较已提交的 `Strings.swift`；仅保留相同指纹头不能绕过比较。缺生成器或版本不符时明确失败，不改写源码。
 
 `localization-swift5.stencil` 把 SwiftGen 解析出的表、稳定 key 和参数类型转换为 `Strings.Table.member`。查询与格式化全部委托给本次启动冻结的 `LocalizationContext`。表名构成 Swift 命名空间；key 限制为 lower_snake_case，生成的成员为 lowerCamelCase。
 
@@ -18,4 +18,4 @@ python3 Scripts/check_localization.py
 
 资源中的字面百分号统一写成 `%%`，避免生成器把英文中的 `% Loss` 等误认成格式参数。无参数展示仅反转义 `%%`；带参数展示才使用 Foundation 格式化。
 
-完整检查包括资源同构、占位符与复数规则、生成指纹、类型化成员引用、遗留中文 key 调用、两类延迟错误工厂，以及 UI 文案分类审计。语法与静态审计不能代替 macOS 上的原生复数、签名产物和界面验收。
+完整检查包括资源同构、占位符与复数规则、真实 SwiftGen 再生比较、类型化成员引用、遗留中文 key 调用、两类延迟错误工厂，以及 UI 文案分类审计。复数分支的参数位置和类型必须属于完整消息的参数合同；隐式占位符从当前复数变量的位置开始解析，显式位置可用于合法重排。`--resources-only` 只用于生成前检查和临时输入准备，不是发布门禁。语法与静态审计不能代替 macOS 上的原生复数、签名产物和界面验收。

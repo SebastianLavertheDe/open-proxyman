@@ -327,7 +327,12 @@ final class RulesStore: ObservableObject {
 
     private let lock = NSLock()
     private var snapshotCache: RulesSnapshot = RulesSnapshot()
-    private var saveTimer: Timer?
+    private lazy var pendingSave = PendingSave(commit: { [weak self] in
+        guard let self else { return }
+        try self.persist(self.backup())
+    }, reportFailure: { error in
+        NSLog("[ProxyMirror][Rules] 保存失败: %@", error.localizedDescription)
+    })
     private var applyingBackup = false
     private var certificateRulesNeedInvalidation = false
     private var organizationObserver: NSObjectProtocol?
@@ -362,7 +367,6 @@ final class RulesStore: ObservableObject {
 
     deinit {
         if let organizationObserver { NotificationCenter.default.removeObserver(organizationObserver) }
-        saveTimer?.invalidate()
     }
 
     func rebuildSnapshot() {
@@ -402,10 +406,7 @@ final class RulesStore: ObservableObject {
     private func scheduleSave() {
         guard !applyingBackup else { return }
         rebuildSnapshot()
-        saveTimer?.invalidate()
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            self?.save()
-        }
+        pendingSave.schedule()
     }
 
     private func load() {
@@ -435,8 +436,15 @@ final class RulesStore: ObservableObject {
     }
 
     func save() {
-        do { try persist(backup()) }
+        do {
+            try persist(backup())
+            pendingSave.didCommit()
+        }
         catch { NSLog("[ProxyMirror][Rules] 保存失败: %@", error.localizedDescription) }
+    }
+
+    func flushPendingSave() throws {
+        try pendingSave.flush()
     }
 
     func backup() -> RuleBackup {
@@ -456,7 +464,7 @@ final class RulesStore: ObservableObject {
         rules.settings = nil
         try rules.validate()
         try persist(rules)
-        saveTimer?.invalidate()
+        pendingSave.didCommit()
         apply(rules)
         DiagnosticLog.record("rule configuration committed")
         if let dns = rules.dns { InterceptionConfig.shared.dnsSpoof.set(dns) }

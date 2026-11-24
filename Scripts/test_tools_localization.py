@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from foundation_test_support import build_foundation_module
 
 ROOT = Path(__file__).resolve().parents[1]
 SWIFT_SOURCES = [
@@ -16,6 +17,8 @@ SWIFT_SOURCES = [
     "Sources/ProxyMirrorCore/UI/PresentationLocalization.swift",
     "Sources/ProxyMirrorCore/System/LocalizedErrorPresentation.swift",
     "Sources/ProxyMirrorCore/System/GeneratedOperationIssues.swift",
+    "Sources/ProxyMirrorCore/System/GeneratedModelOperationIssues.swift",
+    "Sources/ProxyMirrorCore/System/ModelOperationIssues.swift",
 ]
 
 
@@ -30,6 +33,7 @@ def main():
         raise SystemExit("Generate the checked-in localization accessors first")
     with tempfile.TemporaryDirectory(prefix="proxymirror-tools-localization-") as temporary:
         directory = Path(temporary)
+        module_flags = build_foundation_module(args.swiftc, directory)
         resources = directory / "Tools.bundle"
         shutil.copytree(ROOT / "Sources/ProxyMirrorCore/Resources", resources)
         if sys.platform != "darwin":
@@ -86,7 +90,7 @@ print("Native stringsdict plural assertions require the macOS test lane.")
         sources += [str(path) for path in generated]
         sources += [str(directory / name) for name in ("ToolModels.swift", "ComposeModels.swift", "PlatformCallChecks.swift",
                                                      "ToolChecks.swift", "Assertions.swift", "main.swift")]
-        subprocess.run([args.swiftc, "-swift-version", "5", *sources, "-o", str(executable)], check=True)
+        subprocess.run([args.swiftc, "-swift-version", "5", *sources, *module_flags, "-o", str(executable)], check=True)
         environment = os.environ.copy()
         environment["PM_LOCALIZATION_RESOURCE_DIR"] = str(resources)
         for language in ("en", "zh-Hans"):

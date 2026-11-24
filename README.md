@@ -39,6 +39,8 @@
 
 ## 构建 / 运行
 
+主应用需要 macOS 13 或更新版本，以及提供 Swift 5.10 或更新版本的 Command Line Tools / Xcode。可用 `swift --version` 检查当前工具链；项目及当前锁定的核心依赖均以 Swift tools 5.10 为最低要求。独立的 ProxyMirrorBridgeKit 保持 Swift tools 5.9 的最低要求。打包和本地化校验还需要 SwiftGen **6.6.3**，可通过 `SWIFTGEN_BIN=/absolute/path/to/swiftgen` 指定；缺失或版本不符会阻止打包。
+
 ```zsh
 swift build --skip-update -j 2
 .build/debug/ProxyMirrorSelfTest
@@ -190,23 +192,44 @@ proxymirror-cli mcp config
 
 ```
 Sources/
-  ProxyMirrorCore/        # 核心库
+  ProxyMirrorFoundation/  # 可移植协议、匹配、持久化、检查、导出及进程策略
+  ProxyMirrorCore/        # macOS 应用集成
+    DesktopApplication/   # 菜单、窗口、CLI/MCP 分派和正式 package 应用入口
     Proxy/                # nio 代理引擎 + HTTP 解析 + MITM 证书 + SNI 嗅探
     Model/                # Transaction / TrafficStore / AppSettings
     UI/                   # 侧栏 / 列表 / 详情 / 设置（SwiftUI）
     Export/               # HAR + cURL + Repeat
     System/               # SystemConfiguration 系统代理 + 证书与信任配置
-  ProxyMirror/            # @main 应用壳（菜单命令 / 独立窗口）
+  ProxyMirror/            # @main 薄入口，调用正式 package API
   ProxyMirrorSelfTest/    # CLT 单测入口、回环、并发及基准
-Tests/                    # 核心断言、XCTest 与性能测试
+Tests/
+  ProxyMirrorFoundationTests/ # 直接导入生产模块的跨平台 XCTest
+  ProxyMirrorCoreChecks/      # macOS / Combine / 引擎与 UI 适配检查
 Scripts/                  # 测试夹具、打包与构建
 ```
 
+生产应用通过 package 入口连接 Core，发布打包仅构建应用及实际随包助手，不依赖 `@testable import` 或 `-enable-testing`。HTTP/1 与 HTTP/2 共用请求路由计划；协议处理器保留各自的连接、流控和缓冲状态。已发布流量的元数据修改统一派发到主线程，正文存储继续使用有预算的独立同步机制。
+
 ## 本机构建注意事项
 
-仅需 macOS Command Line Tools，项目通过 SelfTest 可执行文件运行回归。如果本机环境终止并行编译，可改用 `swift build -j 1`。首次拉取依赖后遇到明确的 UTF-8 解码错误时，可检查依赖 checkout 的文件内容。
+可使用提供 Swift 5.10 或更新版本的 macOS Command Line Tools，项目通过 SelfTest 可执行文件运行回归。如果本机环境终止并行编译，可改用 `swift build -j 1`。首次拉取依赖后遇到明确的 UTF-8 解码错误时，可检查依赖 checkout 的文件内容。
 
 ## 测试
+
+### 可移植模块与持续集成
+
+根包在 Linux 仅启用 `ProxyMirrorFoundation`、其测试及运输夹具，macOS 再加入桌面应用和原生集成目标。Foundation 测试直接导入生产模块，覆盖 HTTP、正文检查、CSV 原子写入、进程取消、留存和稳定错误身份；`test_compose_transport.py` 通过正式 SwiftPM 夹具验证真实 cURL 与重定向。运行时不要让 Linux 的目标图改写桌面依赖锁，可在临时源码副本测试：
+
+```sh
+validation_root="$(mktemp -d)"
+tar --exclude=Package.resolved -cf - Package.swift Sources Tests | tar -xf - -C "$validation_root"
+(
+  cd "$validation_root"
+  swift test -j 2
+)
+```
+
+[持续集成配置](.github/workflows/validation.yml) 包含 Linux Foundation 和三条独立 macOS 验证：debug 的真实模块与代理回归、双语设置窗口及打包检查；不带测试可见性开关的 release 打包；Thread Sanitizer 下的原生核心、并发和 HTTP/1、HTTP/2 回归。新增配置需要在远端实际运行后才能证明这些原生检查通过。
 
 ### 偏好设置界面验收
 
@@ -234,6 +257,7 @@ swift build --skip-update -j 2
 python3 Scripts/test_loopback.py --full
 python3 Scripts/test_loopback.py --concurrency
 python3 Scripts/test_http2.py
+python3 Scripts/test_http_transport.py
 
 PM_APP_PATH="$PWD/.build/test-app/ProxyMirror.app" Scripts/make_app.sh debug
 python3 Scripts/test_app_bundle.py --app .build/test-app/ProxyMirror.app
@@ -241,6 +265,25 @@ python3 Scripts/test_cli.py --app .build/test-app/ProxyMirror.app
 ```
 
 HTTP/2 可用 `PM_FIXTURE_GO` 指定 Go，也可用 `PM_HTTP2_FIXTURE_BIN` 传入由同一夹具源码构建的可执行文件。在完整 Xcode 环境用 `swift test --filter ProxyMirrorCoreTests --enable-code-coverage` 运行 XCTest 并生成覆盖率。
+
+`test_http_transport.py` 使用独立临时数据目录检查真实代理的自连接拒绝、HTTP 报文边界和 Host，并并行验证 40 秒的固定长度 / chunked 上传及 35 秒静默的 SSE。该套件需要 macOS 构建的 SelfTest，可通过 `--binary` 指定路径，不接管系统代理或操作钥匙串。
+
+以下边界回归使用生产 Swift 实现，可在具备 Swift 5.10 或更新工具链的 Linux 或 macOS 上运行。已迁入 Foundation 的策略通过真实模块测试，平台适配夹具仍用于补充验证；脚本支持 `--swiftc` 指定编译器，根 CA 检查使用 `--swift` 指定 SwiftPM：
+
+```sh
+python3 Scripts/test_http_safety.py
+python3 Scripts/test_mcp_privacy.py
+python3 Scripts/test_compose_transport.py
+python3 Scripts/test_pending_saves.py
+python3 Scripts/test_script_frame_decisions.py
+python3 Scripts/test_device_commands.py
+python3 Scripts/test_inspection_safety.py
+python3 Scripts/test_root_ca_validation.py
+```
+
+`test_http_safety.py --nio-package .build/checkouts/swift-nio` 还会执行实际 NIO 连接拦截回归。根 CA 检查使用锁文件中的 X509 / Crypto 版本；可用 `--local-dependencies` 指定包含 `swift-certificates`、`swift-crypto` 和 `swift-asn1` 的本地依赖目录。可移植检查不代替 macOS 整包、UI、钥匙串及系统扩展验收。
+
+本轮问题及逐项修复记录见 [全项目代码审查](Docs/code-review-2026-11-24.md) 和 [结构、性能与多语言补充审查](Docs/architecture-performance-localization-review-2026-11-24.md)。
 
 ### Thread Sanitizer
 

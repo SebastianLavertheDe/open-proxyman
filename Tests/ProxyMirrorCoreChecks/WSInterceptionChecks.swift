@@ -5,6 +5,16 @@ import NIOEmbedded
 /// G6：WS 帧编解码 + 拦截管道 + 帧脚本（真实 ScriptWorker）
 @MainActor
 func checkWSInterception(_ test: CoreAssertions) {
+    test.equal(ScriptingService.interpretFrameValue(.object(["drop": .bool(true)])), .drop,
+               "WS drop:true drops the frame")
+    test.equal(ScriptingService.interpretFrameValue(.object(["drop": .bool(false)])), nil,
+               "WS drop:false leaves the frame unchanged")
+    test.equal(ScriptingService.interpretFrameValue(.object([:])), nil,
+               "WS missing drop leaves the frame unchanged")
+    test.equal(ScriptingService.interpretFrameValue(.object(["action": .string("pass"), "drop": .bool(true)])), .pass,
+               "WS explicit action takes precedence over drop")
+    test.equal(ScriptingService.interpretFrameValue(.object(["drop": .bool(false), "body": .string("updated")])),
+               .modify(payload: Data("updated".utf8), note: "text"), "WS drop:false still permits payload rewriting")
     // 编解码回环（无掩码 / 掩码）
     let payload = Data("汉化 payload".utf8)
     let unmasked = WSFrameCodec.encode(opcode: 0x1, fin: true, payload: payload, mask: false)
@@ -108,14 +118,16 @@ func checkWSInterception(_ test: CoreAssertions) {
     // Cold JavaScriptCore startup can use the production decision budget.
     let textAction = firstAction == .pass ? runRule(textScript, frame: textFrame) : firstAction
     let activityLog = ScriptingActivity.shared.entries.suffix(3).map(\.text).joined(separator: " | ")
-    test.equal(textAction, .modify(payload: Data("hi-pm".utf8), note: "文本"),
+    test.equal(textAction, .modify(payload: Data("hi-pm".utf8), note: "text"),
                "WS 帧脚本：字符串返回改写文本（日志: \(activityLog.prefix(300))）")
     test.equal(runRule("return false;", frame: textFrame), .drop, "WS 帧脚本：false 丢帧")
+    test.equal(runRule("return { drop: true };", frame: textFrame), .drop, "WS 帧脚本：drop:true 丢帧")
+    test.equal(runRule("return { drop: false };", frame: textFrame), .pass, "WS 帧脚本：drop:false 放行")
     test.equal(runRule("return { body: message.body + '!' };", frame: textFrame),
-               .modify(payload: Data("hi!".utf8), note: "文本"), "WS 帧脚本：body 字段改写")
+               .modify(payload: Data("hi!".utf8), note: "text"), "WS 帧脚本：body 字段改写")
     let binaryFrame = WSFrame(direction: .upstream, opcode: 0x2, fin: true, masked: true, payload: Data([9, 9]))
     test.equal(runRule(#"return { base64: "AQID" };"#, frame: binaryFrame),
-               .modify(payload: Data([1, 2, 3]), note: "二进制"), "WS 帧脚本：base64 改写二进制")
+               .modify(payload: Data([1, 2, 3]), note: "binary"), "WS 帧脚本：base64 改写二进制")
     test.equal(runRule(#"return { action: "close" };"#, frame: textFrame), .close, "WS 帧脚本：显式关闭连接")
     test.equal(runRule("", frame: textFrame), .pass, "WS 帧脚本：无返回放行")
 }

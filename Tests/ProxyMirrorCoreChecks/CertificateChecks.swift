@@ -49,6 +49,32 @@ func checkCertificates(_ test: CoreAssertions) throws {
     }
     test.equal((try? authority.caPEM()) ?? "", originalPEM, "失败导入不改变现有 CA")
 
+    let originalKey = try Data(contentsOf: authority.caKeyPath)
+    let now = Date()
+    for (name, before, after, permitsSigning) in [
+        ("expired", now.addingTimeInterval(-7200), now.addingTimeInterval(-3600), true),
+        ("not yet valid", now.addingTimeInterval(3600), now.addingTimeInterval(7200), true),
+        ("signing forbidden", now.addingTimeInterval(-3600), now.addingTimeInterval(3600), false),
+    ] {
+        let invalid = try Certificate(version: .v3, serialNumber: .init(bytes: [11]),
+            publicKey: Certificate.PublicKey(key.publicKey), notValidBefore: before, notValidAfter: after,
+            issuer: subject, subject: subject,
+            extensions: try Certificate.Extensions {
+                Critical(BasicConstraints.isCertificateAuthority(maxPathLength: nil))
+                Critical(KeyUsage(digitalSignature: true, keyCertSign: permitsSigning))
+            }, issuerPrivateKey: Certificate.PrivateKey(key))
+        let pem = try invalid.serializeAsPEM().pemString
+        test.rejects(try authority.importRootCA(certificatePEM: pem, privateKeyPEM: key.pemRepresentation),
+                     with: CertificateFormats.FormatError.self, "Root CA import rejects \(name)")
+        test.equal(try authority.caPEM(), originalPEM, "Rejected \(name) import preserves the active CA")
+        test.equal(try String(contentsOf: authority.caCertPath, encoding: .utf8), originalPEM,
+                   "Rejected \(name) import preserves the certificate on disk")
+        test.equal(try Data(contentsOf: authority.caKeyPath), originalKey,
+                   "Rejected \(name) import preserves the private key on disk")
+        test.equal(try CertificateAuthority(storageDirectory: dir).caPEM(), originalPEM,
+                   "Rejected \(name) import preserves the CA after reload")
+    }
+
     // 2) 正常导入替换 CA
     try authority.importRootCA(certificatePEM: secondPEM, privateKeyPEM: key.pemRepresentation)
     test.equal((try? authority.caPEM()) ?? "", secondPEM, "导入后 CA 替换为外部证书")

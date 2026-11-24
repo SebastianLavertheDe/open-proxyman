@@ -110,7 +110,7 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
         guard isValid else { return { _ in false } }
         let options: NSRegularExpression.Options = comparison == .wildcard || comparison == .notWildcard
             ? [.caseInsensitive, .dotMatchesLineSeparators] : [.caseInsensitive]
-        let pattern = comparison.usesRegex ? try? NSRegularExpression(pattern: expression, options: options) : nil
+        let pattern = comparison.usesRegex ? try? BoundedTrafficRegex(pattern: expression, options: options) : nil
         let threshold = Double(value)
         let bounds = range
         let test: (Transaction) -> Bool = { tx in
@@ -162,15 +162,16 @@ struct TrafficCondition: Codable, Equatable, Identifiable {
                 values = [tx.requestVersion, tx.statusCode > 0 ? tx.responseVersion : nil, tx.upstreamProtocol].compactMap { $0 }
             case .graphql: values = tx.graphqlOperationName.map { [$0] } ?? []
             }
+            if comparison.usesRegex {
+                guard let matched = pattern?.matchesAny(in: values) else { return false }
+                return comparison.isNegative ? !matched : matched
+            }
             let matched = values.contains { fieldValue in
                 switch comparison {
                 case .contains, .notContains: return fieldValue.localizedCaseInsensitiveContains(value)
                 case .equals, .notEquals: return fieldValue.caseInsensitiveCompare(value) == .orderedSame
                 case .startsWith, .notStartsWith: return fieldValue.lowercased().hasPrefix(value.lowercased())
                 case .endsWith, .notEndsWith: return fieldValue.lowercased().hasSuffix(value.lowercased())
-                case .regex, .notRegex, .wildcard, .notWildcard:
-                    let range = NSRange(fieldValue.startIndex..., in: fieldValue)
-                    return pattern?.firstMatch(in: fieldValue, range: range) != nil
                 default: return false
                 }
             }

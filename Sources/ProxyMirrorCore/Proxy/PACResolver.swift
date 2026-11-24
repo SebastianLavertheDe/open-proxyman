@@ -24,13 +24,13 @@ extension ExternalProxyConfig {
                  timeout: TimeAmount = .seconds(5), respectGlobalSwitch: Bool = true) -> EventLoopFuture<ExternalProxyConfig?> {
         guard enabled else { return loop.makeSucceededFuture(nil) }
         guard let host = target.host, !host.isEmpty else {
-            return loop.makeFailedFuture(ExternalProxyError("无法解析 PAC 请求目标主机。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyPacTargetHost))
         }
         guard applies(to: host, url: target.absoluteString, respectGlobalSwitch: respectGlobalSwitch) else { return loop.makeSucceededFuture(nil) }
-        if let issue = validationError { return loop.makeFailedFuture(ExternalProxyError(issue)) }
+        if let issue = validationIssue { return loop.makeFailedFuture(ExternalProxyError(issue)) }
         if mode != .pac { return loop.makeSucceededFuture(self) }
         guard let proxyPACURL else {
-            return loop.makeFailedFuture(ExternalProxyError("PAC URL 无效。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyPacInvalidUrl))
         }
         return PACResolver.resolve(config: self, script: proxyPACURL, target: target, on: loop, timeout: timeout)
     }
@@ -56,14 +56,14 @@ private enum PACResolver {
     static func resolve(config: ExternalProxyConfig, script: URL, target: URL, on loop: EventLoop,
                         timeout: TimeAmount) -> EventLoopFuture<ExternalProxyConfig?> {
         guard timeout.nanoseconds > 0 else {
-            return loop.makeFailedFuture(ExternalProxyError("PAC 解析超时。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyPacTimeout))
         }
         let key = FlightKey(config: config, target: target.absoluteString, timeoutNanoseconds: timeout.nanoseconds)
         flightLock.lock()
         if var existing = flights[key] {
             guard existing.participants < maxParticipants else {
                 flightLock.unlock()
-                return loop.makeFailedFuture(ExternalProxyError("PAC 解析繁忙，请重试。"))
+                return loop.makeFailedFuture(ExternalProxyError(.proxyPacBusy))
             }
             existing.participants += 1
             flights[key] = existing
@@ -72,7 +72,7 @@ private enum PACResolver {
         }
         guard workerSlots.wait(timeout: .now()) == .success else {
             flightLock.unlock()
-            return loop.makeFailedFuture(ExternalProxyError("PAC 解析繁忙，请重试。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyPacBusy))
         }
         let request = PACRequest(loop, beforeCompletion: {
             flightLock.lock()
@@ -83,7 +83,7 @@ private enum PACResolver {
         flightLock.unlock()
 
         let timer = loop.scheduleTask(in: timeout) {
-            request.finish(.failure(ExternalProxyError("PAC 解析超时。")))
+            request.finish(.failure(ExternalProxyError(.proxyPacTimeout)))
         }
         request.promise.futureResult.whenComplete { _ in timer.cancel() }
 
@@ -105,7 +105,7 @@ private enum PACResolver {
                     let request = Unmanaged<PACRequest>.fromOpaque(info).takeUnretainedValue()
                     if let error {
                         let code = CFErrorGetCode(error)
-                        request.finish(.failure(ExternalProxyError("PAC 下载或执行失败（\(code)）。")))
+                        request.finish(.failure(ExternalProxyError(.proxyPacFailed(Int(code)))))
                         return
                     }
                     request.finish(Result { try PACResolver.firstRoute(list) })
@@ -131,7 +131,7 @@ private enum PACResolver {
                 if !request.finished {
                     CFRunLoopRunInMode(.defaultMode, Double(timeout.nanoseconds) / 1_000_000_000, false)
                 }
-                request.finish(.failure(ExternalProxyError("PAC 未返回可用结果。")))
+                request.finish(.failure(ExternalProxyError(.proxyPacNoResult)))
             }
         }
         return request.promise.futureResult
@@ -141,17 +141,17 @@ private enum PACResolver {
         let limit = 256 * 1024
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true, let size = values.fileSize, (1...limit).contains(size) else {
-            throw ExternalProxyError("PAC 文件必须是 256 KiB 以内的普通文件。")
+            throw ExternalProxyError(.proxyPacFileInvalid)
         }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var data = Data()
         while let bytes = try handle.read(upToCount: 32 * 1024), !bytes.isEmpty {
-            guard data.count + bytes.count <= limit else { throw ExternalProxyError("PAC 文件超过 256 KiB。") }
+            guard data.count + bytes.count <= limit else { throw ExternalProxyError(.proxyPacFileTooLarge) }
             data.append(bytes)
         }
         guard let text = String(data: data, encoding: .utf8) else {
-            throw ExternalProxyError("PAC 文件不是 UTF-8 文本。")
+            throw ExternalProxyError(.proxyPacFileEncoding)
         }
         return text
     }
@@ -159,7 +159,7 @@ private enum PACResolver {
     private static func firstRoute(_ list: CFArray) throws -> ExternalProxyConfig? {
         guard let entries = list as? [[String: Any]], let first = entries.first,
               let type = first[kCFProxyTypeKey as String] as? String else {
-            throw ExternalProxyError("PAC 未返回可用路由。")
+            throw ExternalProxyError(.proxyPacNoRoute)
         }
         if type == kCFProxyTypeNone as String { return nil }
 
@@ -170,17 +170,17 @@ private enum PACResolver {
             mode = .http
         } else if type == (kCFProxyTypeSOCKS as String) {
             guard first[kCFStreamPropertySOCKSVersion as String] as? String == kCFStreamSocketSOCKSVersion5 as String else {
-                throw ExternalProxyError("PAC 未明确返回 SOCKS5 版本。")
+                throw ExternalProxyError(.proxyPacSocksVersion)
             }
             mode = .socks5
         } else {
-            throw ExternalProxyError("PAC 首选路由类型暂不支持。")
+            throw ExternalProxyError(.proxyPacRouteUnsupported)
         }
 
         guard let rawHost = first[kCFProxyHostNameKey as String] as? String,
               let host = ExternalProxyHost(rawHost), let port = first[kCFProxyPortNumberKey as String] as? Int,
               (1...65535).contains(port) else {
-            throw ExternalProxyError("PAC 返回了无效的代理主机或端口。")
+            throw ExternalProxyError(.proxyPacRouteInvalid)
         }
         var config = ExternalProxyConfig()
         config.enabled = true

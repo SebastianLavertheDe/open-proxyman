@@ -847,3 +847,142 @@
 "transparent_system_operation_failed" = "%@ (%@ %ld).";
 
 "transparent_capture_cleanup_failed" = "Capture failed: %@ Cleanup failed: %@";
+
+/* Stable captured network/device failures. */
+"device_command_timeout" = "The device command exceeded its time limit.";
+"device_command_cancelled" = "The device command was cancelled.";
+"device_command_output_limit" = "The device command output exceeded its size limit.";
+"device_command_failed" = "The device command failed (status %ld). %@";
+"network_request_cancelled" = "Request cancelled";
+"network_request_timeout" = "Request timed out";
+"network_response_headers_too_large" = "Response headers exceed %ld bytes";
+"network_redirect_limit" = "Too many redirects (maximum %ld)";
+"network_invalid_redirect" = "Invalid HTTP redirect destination";
+"network_invalid_request_headers" = "Invalid request headers: %@";
+"network_no_http_response" = "No HTTP response received";
+"network_tunnel_failed" = "Tunnel setup failed: %@";
+"network_upstream_connection_failed" = "Unable to connect to the upstream: %@";
+"network_client_write_failed" = "Unable to write the response to the client: %@";
+"network_ws_write_failed" = "WebSocket throttled write failed: %@";
+"network_throttled_write_failed" = "Throttled write failed: %@";
+"network_upstream_interrupted" = "The upstream connection was interrupted";
+"network_upstream_no_response" = "The upstream did not respond";
+"network_upstream_response_timeout" = "Timed out waiting for the upstream response";
+"network_invalid_response" = "Unable to parse the upstream response";
+"network_invalid_response_framing" = "Invalid response framing: %@";
+"network_invalid_chunked_response" = "Invalid chunked response";
+"network_ws_handshake_failed" = "WebSocket handshake failed";
+"network_client_closed" = "The client connection closed";
+"network_connection_error" = "Connection error: %@";
+"network_breakpoint_timeout" = "Timed out waiting for the breakpoint";
+"network_script_timeout" = "Timed out waiting for the scripted message";
+"network_breakpoint_upstream_interrupted" = "The upstream connection closed while waiting for the breakpoint";
+"network_local_file_failed" = "Unable to send the local file: %@";
+"network_request_body_too_large" = "The intercepted request body exceeds %ld bytes";
+"network_response_body_too_large" = "The intercepted response body exceeds %ld bytes";
+"network_session_cleared" = "The capture session was cleared";
+"network_h2_cancelled" = "The client cancelled the HTTP/2 stream";
+"network_random_disconnect" = "Network simulation: random disconnect";
+"network_http2_invalid_headers" = "Invalid HTTP/2 header fields";
+"network_http2_invalid_authority" = "The HTTP/2 target does not match the CONNECT host";
+"network_http2_invalid_message" = "Invalid HTTP/2 message order or length";
+"network_tls_negotiation_timeout" = "The upstream TLS negotiation timed out";
+"network_upstream_closed" = "The upstream connection closed prematurely";
+"network_push_unsupported" = "Server-initiated push streams are not supported";
+"network_connection_limit" = "The upstream connection pool is busy; try again";
+"network_proxy_shutdown" = "The proxy has stopped";
+"network_invalid_lan_access" = "Choose an explicit local LAN address and at least one valid device IP or CIDR range.";
+"network_unapproved_device" = "This device is not in the proxy access list";
+"network_ws_timeout" = "WebSocket request timed out";
+"network_ws_unknown_message" = "Unrecognized WebSocket message";
+"network_ws_closed" = "WebSocket closed (%ld)";
+"network_route_blocked" = "The request was blocked by a rule";
+"network_route_not_allowed" = "The request is not in the allow list";
+
+"proxy_pac_target_host" = "Unable to resolve the PAC request host.";
+
+"proxy_pac_invalid_url" = "Invalid PAC URL.";
+
+"proxy_pac_timeout" = "PAC resolution timed out.";
+
+"proxy_pac_busy" = "PAC resolution is busy; try again.";
+
+"proxy_pac_failed" = "PAC download or execution failed (%ld).";
+
+"proxy_pac_no_result" = "PAC returned no usable result.";
+
+"proxy_pac_file_invalid" = "The PAC file must be a regular file no larger than 256 KiB.";
+
+"proxy_pac_file_too_large" = "The PAC file exceeds 256 KiB.";
+
+"proxy_pac_file_encoding" = "The PAC file is not UTF-8 text.";
+
+"proxy_pac_no_route" = "PAC returned no usable route.";
+
+"proxy_pac_socks_version" = "PAC did not specify SOCKS5.";
+
+"proxy_pac_route_unsupported" = "The preferred PAC route type is unsupported.";
+
+"proxy_pac_route_invalid" = "PAC returned an invalid proxy host or port.";
+
+"proxy_target_url_invalid" = "Invalid external proxy target URL.";
+
+"proxy_tls_ip_unsupported" = "HTTPS through an external proxy requires a target hostname for certificate verification.";
+
+"proxy_pac_resolution_required" = "Resolve the PAC route first.";
+
+"proxy_target_invalid" = "Invalid external proxy target address.";
+
+"proxy_target_self" = "The target cannot be the ProxyMirror listener.";
+
+"proxy_target_is_proxy" = "The target is the external proxy address.";
+
+"proxy_endpoint_self" = "The external proxy cannot point to ProxyMirror itself.";
+
+"proxy_handshake_timeout" = "The external proxy handshake timed out.";
+
+"proxy_protocol_negotiation" = "The HTTPS proxy did not negotiate HTTP/1.1.";
+
+"proxy_tunnel_buffer_limit" = "The tunnel initialization buffer exceeds 256 KiB.";
+
+"proxy_handshake_closed" = "The external proxy closed the connection during the handshake.";
+
+"proxy_http_rejected" = "The external HTTP proxy rejected CONNECT (%ld).";
+
+"proxy_socks_auth_method" = "The SOCKS5 proxy rejected the configured authentication method.";
+
+"proxy_socks_credentials" = "SOCKS5 username or password authentication failed.";
+
+"proxy_http_status_invalid" = "The external HTTP proxy returned an invalid status line.";
+
+"proxy_http_headers_limit" = "The external HTTP proxy response headers exceed 32 KiB.";
+
+"proxy_socks_reply_invalid" = "Invalid SOCKS5 CONNECT response.";
+
+"proxy_socks_rejected" = "The SOCKS5 proxy rejected CONNECT (%@).";
+
+"proxy_socks_empty_address" = "SOCKS5 returned an empty address.";
+
+"proxy_socks_address_type" = "Invalid SOCKS5 CONNECT response address type.";
+
+"network_request_headers_invalid" = "Invalid request headers";
+
+"network_curl_failed" = "Send failed (curl %ld)";
+
+"network_request_buffer_full" = "The request send buffer is full.";
+
+"network_pipeline_buffer_full" = "The buffer for subsequent requests is full.";
+
+"network_tunnel_buffer_full" = "The tunnel upstream send buffer is full.";
+
+"network_breakpoint_buffer_limit" = "The breakpoint buffer exceeds %ld bytes.";
+
+"network_breakpoint_connection_closed" = "The connection closed while waiting for the breakpoint.";
+
+"network_local_file_busy" = "Local file responses are busy; try again.";
+
+"network_local_file_truncated" = "The local file was truncated while being sent.";
+
+"network_http_incomplete" = "The HTTP message is incomplete.";
+
+"network_http_malformed" = "Invalid HTTP message: %@";

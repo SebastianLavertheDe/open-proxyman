@@ -148,13 +148,14 @@ if (( TRANSPARENT )); then
   signature_args=(--force --sign "$fingerprint" --options runtime --timestamp)
 fi
 
-build_flags=()
-# The app imports the core module's internal UI and controller APIs via @testable.
-if [[ "$CONFIG" == release ]]; then
-  build_flags=(-Xswiftc -enable-testing)
-fi
 python3 Scripts/check_localization.py
-swift build -j "${PM_BUILD_JOBS:-2}" -c "$CONFIG" "${build_flags[@]}" 2>&1 | tail -10
+build_products=(ProxyMirror ProxyMirrorScriptWorker ProxyMirrorSystemProxyHelper)
+if [[ "$TRANSPARENT" == 1 ]]; then
+  build_products+=(ProxyMirrorTransparentExtension)
+fi
+for product in "${build_products[@]}"; do
+  swift build -j "${PM_BUILD_JOBS:-2}" -c "$CONFIG" --product "$product" 2>&1 | tail -10
+done
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 LOCALIZATION_BUNDLE="ProxyMirror_ProxyMirrorCore.bundle"
 if [[ ! -d "$BIN_DIR/$LOCALIZATION_BUNDLE" ]]; then

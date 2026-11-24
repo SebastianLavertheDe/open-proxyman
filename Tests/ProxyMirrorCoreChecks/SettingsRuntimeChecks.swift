@@ -23,29 +23,60 @@ func checkSettingsRuntime(_ test: CoreAssertions) throws {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    let engine = ProxyEngine.shared
-    guard !engine.isRunning else {
-        test.expect(false, "设置运行时回归需独占测试代理引擎")
-        return
-    }
-    let previousSink = engine.sink
-    let previousMITM = engine.mitmEnabled
-    let previousHTTP2 = engine.http2Enabled
-    let previousExcluded = engine.mitmExcludedHosts
-    let previousLimit = engine.captureLimit
-    let previousRecording = engine.recordingEnabled
-    let state = AppState(settings: settings, launchServices: false)
+    let shared = ProxyEngine.shared
+    let sharedSink = shared.sink
+    let sharedMITM = shared.mitmEnabled, sharedHTTP2 = shared.http2Enabled
+    let sharedExcluded = shared.mitmExcludedHosts, sharedLimit = shared.captureLimit
+    let sharedRecording = shared.recordingEnabled
+    let passive = AppState(settings: settings, launchServices: false)
+    test.expect(!passive.hasResolvedEngine, "A passive AppState does not allocate an engine or load a CA")
+    test.equal(passive.listenerPort, settings.port, "Reading a passive endpoint does not resolve runtime dependencies")
+    test.expect(!passive.hasResolvedEngine, "Reading passive preferences preserves lazy services")
+    test.expect(shared.sink === sharedSink && shared.mitmEnabled == sharedMITM && shared.http2Enabled == sharedHTTP2
+                && shared.mitmExcludedHosts == sharedExcluded && shared.captureLimit == sharedLimit
+                && shared.recordingEnabled == sharedRecording, "Constructing a passive AppState leaves shared engine state untouched")
+
+    let authority = CertificateAuthority(storageDirectory: directory.appendingPathComponent("isolated-ca"))
+    let engine = ProxyEngine(certificateAuthority: authority)
+    let state = AppState(settings: settings, engine: engine, certificateAuthority: authority, launchServices: false)
+    test.expect(!state.hasResolvedEngine && engine.sink == nil,
+                "Injecting an engine does not reconfigure it until an explicit runtime action")
+    state.applyAndRestartIfNeeded()
+    test.expect(state.engine === engine && state.engine.certificateAuthority === authority && engine.sink === state,
+                "Runtime actions use the injected engine and its matching certificate authority")
     test.expect(!state.recordingEnabled && !engine.recordingEnabled,
                 "启动录制偏好关闭时真实引擎和应用状态均从暂停开始")
     defer {
         state.stopProxy()
-        engine.sink = previousSink
-        engine.mitmEnabled = previousMITM
-        engine.http2Enabled = previousHTTP2
-        engine.mitmExcludedHosts = previousExcluded
-        engine.captureLimit = previousLimit
-        engine.recordingEnabled = previousRecording
+        try? engine.group.syncShutdownGracefully()
     }
+
+    // The same Transaction can be inspected in two independent fixtures. Only
+    // the state receiving its engine callback may refresh body-dependent views.
+    let body = Transaction()
+    body.host = "isolated-body.example.test"
+    body.responseBody = Data("before".utf8)
+    state.store.add(body)
+    passive.store.add(body)
+    state.toggleSplit()
+    let bodyFilter = TrafficConditionGroup(conditions: [TrafficCondition(field: .responseBody, value: "after")])
+    state.activeTab.filter.conditions = bodyFilter
+    state.splitStore?.filter.conditions = bodyFilter
+    passive.store.filter.conditions = bodyFilter
+    test.expect(state.activeTab.visible.isEmpty && state.splitStore?.visible.isEmpty == true
+                && passive.store.visible.isEmpty, "Independent body-filtered workspaces cache their initial unmatched rows")
+    body.responseBody = Data("after".utf8)
+    DispatchQueue.global().async { state.transactionBodyUpdated(body) }
+    let bodyDeadline = Date().addingTimeInterval(2)
+    while (state.activeTab.visible.isEmpty || state.splitStore?.visible.isEmpty == true) && Date() < bodyDeadline {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+    }
+    test.expect(state.activeTab.visible.contains(where: { $0 === body })
+                && state.splitStore?.visible.contains(where: { $0 === body }) == true,
+                "An off-main body callback refreshes its owning state's active and split workspaces")
+    test.expect(passive.store.visible.isEmpty && !passive.hasResolvedEngine,
+                "Another AppState receives no body refresh and does not resolve runtime services")
+    state.toggleSplit()
 
     state.setMITMExcludedHosts(" api.example.test \n\n*.private.test\r\n")
     test.equal(settings.mitmExcludedHosts, ["api.example.test", "*.private.test"],

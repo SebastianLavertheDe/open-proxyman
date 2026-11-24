@@ -524,3 +524,7 @@
 "state_disabled" = "Disabled";
 "rule_phase_status" = "%1$@ · %2$@";
 "gist_default_description" = "Captured with ProxyMirror";
+
+"csv_exporting" = "Exporting CSV…";
+
+"export_cancelled" = "Export cancelled.";

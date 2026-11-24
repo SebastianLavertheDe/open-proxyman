@@ -1,12 +1,20 @@
 import CryptoKit
 import Foundation
+import Combine
 import NIOCore
 @testable import ProxyMirrorCore
 
 private final class HTTP2LoopbackSink: TrafficSink {
     var records: [Transaction] = []
-    func transactionCreated(_ tx: Transaction) { records.append(tx) }
-    func transactionUpdated(_ tx: Transaction) {}
+    private var metadataSubscriptions: [AnyCancellable] = []
+    func transactionCreated(_ tx: Transaction) {
+        precondition(Thread.isMainThread, "HTTP/2 publication must run on the main thread")
+        records.append(tx)
+        metadataSubscriptions.append(tx.objectWillChange.sink { _ in
+            precondition(Thread.isMainThread, "Published HTTP/2 metadata, including cancellation, changed off main")
+        })
+    }
+    func transactionUpdated(_ tx: Transaction) { precondition(Thread.isMainThread) }
 }
 
 func runHTTP2LoopbackTests() {

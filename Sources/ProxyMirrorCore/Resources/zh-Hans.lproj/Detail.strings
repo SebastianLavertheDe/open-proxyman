@@ -338,3 +338,5 @@
 "json_type_number" = "数字";
 "json_type_boolean" = "布尔值";
 "json_type_null" = "空值";
+
+"message_pack_output_limit" = "MessagePack 转换结果超过 1 MiB，显示捕获字节。";

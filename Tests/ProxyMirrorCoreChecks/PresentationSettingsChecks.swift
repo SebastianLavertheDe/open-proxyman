@@ -62,6 +62,12 @@ func checkPresentationSettings(_ test: CoreAssertions) throws {
                "Formatter cache keys include time zone changes")
     test.equal(PresentationTime.string(from: date, uses24HourClock: true, includesDate: false, timeZone: utc, locale: english), "13:04:05.123",
                "Reusing an earlier format retrieves the correctly keyed formatter")
+    test.equal(PresentationNumbers.milliseconds(1234.5, locale: Locale(identifier: "de_DE")), "1.234,5 ms",
+               "Connection and summary durations use the region's decimal and grouping separators")
+    test.equal(PresentationNumbers.duration(seconds: 1.25, locale: Locale(identifier: "en_US")), "1.25 s",
+               "Duration display uses the shared presentation formatter")
+    test.equal(PresentationNumbers.integer(12345, locale: Locale(identifier: "en_US")), "12,345",
+               "Summary counts use the region's grouping separator")
 
     _ = NSApplication.shared
     settings.codeTabWidth = 4

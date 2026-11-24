@@ -281,7 +281,7 @@ enum ScriptingService {
     }
 
     /// 返回 nil = 未给出动作（放行）
-    private static func interpretFrameValue(_ value: FrameValue?) -> WSFrameAction? {
+    static func interpretFrameValue(_ value: FrameValue?) -> WSFrameAction? {
         guard let value else { return nil }
         switch value {
         case .bool(false): return .drop
@@ -296,7 +296,7 @@ enum ScriptingService {
                 default: return nil
                 }
             }
-            if case .bool(false)? = dict["drop"] { return .drop }
+            if case .bool(true)? = dict["drop"] { return .drop }
             if case .string(let base64)? = dict["base64"], let data = Data(base64Encoded: base64) {
                 return .modify(payload: data, note: "binary")
             }

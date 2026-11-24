@@ -1,4 +1,5 @@
 import Foundation
+import ProxyMirrorFoundation
 import NIOCore
 import NIOHTTP1
 import NIOHTTP2
@@ -6,7 +7,7 @@ import NIOHTTP2
 func configureHTTP2Proxy(_ channel: Channel, engine: ProxyEngine, host: String, port: Int,
                          clientApplication: ProcessAppInfo?,
                          transparentFlow: TransparentProxyFlow? = nil) -> EventLoopFuture<Void> {
-    let pool = HTTP2UpstreamPool(downstream: channel, listenerPort: engine.port)
+    let pool = HTTP2UpstreamPool(downstream: channel, listenerPort: engine.port, listenerAddresses: engine.listenerAddresses)
     let client = channel.remoteAddress
     return channel.configureHTTP2Pipeline(mode: .server,
         initialLocalSettings: nioDefaultSettings + [HTTP2Setting(parameter: .enableConnectProtocol, value: 1)],
@@ -36,6 +37,10 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     private var downstream: Channel?
     private var upstream: HTTP2UpstreamPool.Exchange?
     private var transaction: Transaction?
+    private var metadataPublication: MetadataPublication<Transaction>?
+    private var requestMetadata: RequestRouteMetadata?
+    private var routedUpstream: RequestRoutePlan.Upstream?
+    private var capturedRequestHeaders = HTTPHeaders()
     private var diagnosticHeaders = DiagnosticHeaders()
     private var capture = false
     private var bodyCapture: TransactionCapture?
@@ -128,10 +133,11 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             bodyCapture?.flush()
             if capture, let tx = transaction {
                 let headers = Self.capturedHeaders(trailers ?? .init())
-                onMain {
+                let sink = published ? engine.sink : nil
+                commitMetadata(tx) { tx in
                     tx.requestTrailers = headers
                     tx.requestBodyComplete = true
-                    self.engine.sink?.transactionUpdated(tx)
+                    sink?.transactionUpdated(tx)
                 }
             }
             if !responseEnded {
@@ -184,13 +190,20 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             bodyCapture = TransactionCapture(transaction: tx, on: loop, sink: engine.sink)
         }
         transaction = tx
+        metadataPublication = MetadataPublication(tx)
         diagnosticHeaders = DiagnosticHeaders(requestID: tx.id)
         let target = ScriptingTarget(method: tx.method, scheme: tx.scheme, host: tx.host, path: tx.path,
                                      query: tx.query, url: tx.fullURL)
         originalTarget = target
         var request = head
-        request.headers = Self.endToEndHeaders(head.headers)
+        var validated = Self.capturedHeaders(head.headers)
+        do { _ = try HTTPFraming.normalize(&validated, request: true) }
+        catch { fail(error, status: 400); return }
+        request.headers = Self.endToEndHeaders(NIOHTTP1.HTTPHeaders(validated.pairs.map { ($0.name, $0.value) }))
         tx.requestHeaders = Self.capturedHeaders(request.headers)
+        capturedRequestHeaders = tx.requestHeaders
+        requestMetadata = RequestRouteMetadata(method: tx.method, scheme: tx.scheme, host: tx.host, port: tx.port,
+                                               path: tx.path, query: tx.query, headers: capturedRequestHeaders)
         let candidate = BreakpointHead.request(HTTPRequestHead(method: tx.method, target: request.uri,
             version: "HTTP/2", headers: tx.requestHeaders))
         if startInterception(candidate, phase: .request) {
@@ -202,32 +215,32 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
 
     private func routeRequest(_ head: NIOHTTP1.HTTPRequestHead, tx: Transaction) {
         guard let downstream, downstream.isActive, !responseEnded else { return }
-        let rules = requestRules()
-        let original = tx.fullURL
         let headers = Self.endToEndHeaders(head.headers)
-        tx.requestHeaders = Self.capturedHeaders(headers)
-        if rules.isBlocked(url: original) || !rules.isAllowed(url: original) {
-            tx.matchedByBlock = true
+        guard var input = requestMetadata else { return }
+        input.headers = Self.capturedHeaders(headers)
+        capturedRequestHeaders = input.headers
+        let plan = RequestRoutePlan(request: input, rules: requestRules())
+        let captured = capturedRequestHeaders
+        commitMetadata(tx) { $0.requestHeaders = captured }
+        if let rejection = plan.rejection {
+            commitMetadata(tx) { $0.matchedByBlock = true }
             diagnosticHeaders.record(.block)
-            publish(tx)
-            sendLocal(status: 403, type: "text/plain", data: Data("ProxyMirror: blocked by rules".utf8))
+            sendLocal(status: 403, type: "text/plain", data: Data(rejection.diagnostic.utf8))
             return
         }
-        if let lookup = rules.prepareMapLocalResponse(for: original, includeBody: requestMethod != .HEAD,
-                                                      on: downstream.eventLoop) {
+        if let lookup = plan.prepareLocal(on: downstream.eventLoop) {
             waitingForUpstream = true
             setReading(downstream, false)
             lookup.whenComplete { [weak self] result in
                 guard let self, downstream.isActive, !self.responseEnded else { return }
                 switch result {
                 case .success(let local?):
-                    tx.matchedByMapLocal = true
+                    self.commitMetadata(tx) { $0.matchedByMapLocal = true }
                     self.diagnosticHeaders.record(.mapLocal)
-                    self.publish(tx)
                     self.sendLocal(status: local.status, type: local.contentType, body: ByteBuffer(),
                                    contentLength: local.contentLength, headers: local.headers, file: local.body)
                 case .success(nil):
-                    self.routeUpstream(head, headers: headers, tx: tx, rules: rules, original: original)
+                    self.routeUpstream(head, tx: tx, plan: plan)
                 case .failure(let error):
                     self.publish(tx)
                     self.fail(error, status: 503)
@@ -235,36 +248,38 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             }
             return
         }
-        routeUpstream(head, headers: headers, tx: tx, rules: rules, original: original)
+        routeUpstream(head, tx: tx, plan: plan)
     }
 
-    private func routeUpstream(_ head: NIOHTTP1.HTTPRequestHead, headers originalHeaders: NIOHTTP1.HTTPHeaders,
-                               tx: Transaction, rules: RulesSnapshot, original: String) {
+    private func routeUpstream(_ head: NIOHTTP1.HTTPRequestHead, tx: Transaction, plan: RequestRoutePlan) {
         guard let downstream, downstream.isActive, !responseEnded else { return }
-        var headers = originalHeaders
-        var path = head.uri
-        if let target = rules.mapRemoteTarget(for: original) {
-            tx.matchedByMapRemote = true
+        let route = plan.upstream()
+        routedUpstream = route
+        requestMetadata = route.request
+        let path = route.request.target
+        if route.mappedRemote {
             diagnosticHeaders.record(.mapRemote)
-            tx.originalURL = original
-            tx.host = target.host
-            tx.port = target.port
-            tx.scheme = target.scheme
-            path = target.requestTarget(path: tx.path, query: tx.query)
-            (tx.path, tx.query) = splitQueryPath(path)
         }
-        headers.replaceOrAdd(name: "host", value: URLParser.authority(host: tx.host, port: tx.port, scheme: tx.scheme))
-        if rules.noCaching {
-            for name in ["if-none-match", "if-modified-since", "if-unmodified-since"] { headers.remove(name: name) }
+        removeResponseCacheHeaders = route.noCaching
+        let headers = annotatedHeaders(NIOHTTP1.HTTPHeaders(route.request.headers.pairs.map { ($0.name, $0.value) }))
+        capturedRequestHeaders = Self.capturedHeaders(headers)
+        simulation = route.simulation
+        let captured = capturedRequestHeaders
+        commitMetadata(tx) { tx in
+            tx.matchedByMapRemote = route.mappedRemote
+            if route.mappedRemote, tx.originalURL == nil { tx.originalURL = route.originalURL }
+            tx.host = route.request.host
+            tx.port = route.request.port
+            tx.scheme = route.request.scheme
+            tx.path = route.request.path
+            tx.query = route.request.query
+            tx.requestHeaders = captured
+            tx.resolvedAddress = route.resolvedAddress
+            tx.simulatedLatencyMs = !route.simulation.disconnect && route.simulation.requestDelay > 0 ? route.simulation.requestDelay : nil
         }
-        removeResponseCacheHeaders = rules.noCaching
-        headers = annotatedHeaders(headers)
-        tx.requestHeaders = Self.capturedHeaders(headers)
-        tx.resolvedAddress = InterceptionConfig.shared.mappedIP(for: tx.host)
-        simulation = LatencyConditions.snapshot().sample(for: tx.host)
         if simulation.disconnect {
             publish(tx)
-            markAborted(LatencyConditions.disconnectReason)
+            markAborted(NetworkFailure.capture(NetworkFailure(.networkRandomDisconnect)))
             // Closing an active HTTP/2 stream emits RST_STREAM without affecting sibling streams.
             downstream.close(promise: nil)
             return
@@ -280,9 +295,8 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                 self?.resumeResponseReads()
             }, onFailure: { [weak self] error in self?.fail(error) })
         }
-        tx.simulatedLatencyMs = delay > 0 ? delay : nil
-        let dialHost = transparentFlow?.upstreamHost(for: tx) ?? tx.resolvedAddress ?? tx.host
-        let origin = HTTPOrigin(host: tx.host, dialHost: dialHost, port: tx.port, tls: tx.scheme == "https")
+        let dialHost = route.resolvedAddress ?? (route.mappedRemote ? route.request.host : transparentFlow?.dialHost ?? route.request.host)
+        let origin = HTTPOrigin(host: route.request.host, dialHost: dialHost, port: route.request.port, tls: route.request.scheme == "https")
         publish(tx)
 
         queuedRequest.insert(.head(NIOHTTP1.HTTPRequestHead(version: .http1_1, method: head.method, uri: path, headers: headers)), at: 0)
@@ -302,7 +316,12 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         guard capture, !published else { return }
         published = true
         let sink = engine.sink
-        onMain { sink?.transactionCreated(tx) }
+        metadataPublication?.publish { sink?.transactionCreated($0) }
+    }
+
+    private func commitMetadata(_ transaction: Transaction, _ update: @escaping (Transaction) -> Void) {
+        if let metadataPublication, metadataPublication.value === transaction { metadataPublication.update(update) }
+        else { MetadataPublication<Transaction>.onMain { update(transaction) } }
     }
 
     // MARK: Per-stream rule gates
@@ -325,7 +344,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             deadline: deadline)
         gate = stage
         stage.timer = downstream.eventLoop.scheduleTask(in: timeout) { [weak self] in
-            self?.fail(InterceptionFailure(rule == nil ? "等待脚本报文超时" : "断点等待超时"), status: 504)
+            self?.fail(NetworkFailure(rule == nil ? .networkScriptTimeout : .networkBreakpointTimeout), status: 504)
         }
         if (stage.length ?? 0) == 0 { submitInterception(stage) }
         return true
@@ -411,8 +430,8 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         guard let stage = gate, stage.id == id, !responseEnded, let downstream else { return }
         let edit: BreakpointMessage?
         switch decision {
-        case .drop(let reason): fail(InterceptionFailure(reason)); return
-        case .discard: fail(InterceptionFailure("会话已清空")); return
+        case .drop(let reason): fail(NetworkFailure(.technical(reason))); return
+        case .discard: fail(NetworkFailure(.networkSessionCleared)); return
         case .original: edit = nil
         case .apply(let message): edit = message
         }
@@ -442,9 +461,14 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
               case .request(let edited) = head else { return }
         if stage.script != nil { diagnosticHeaders.record(.scripting) }
         if stage.rule != nil { diagnosticHeaders.record(.breakpoint) }
-        if let label = stage.label { tx.breakpointRules.append(label) }
-        if !logs.isEmpty { tx.appendScriptingLogs(logs) }
-        tx.requestHeaders = edited.headers
+        capturedRequestHeaders = edited.headers
+        let ended = requestEnded
+        commitMetadata(tx) { tx in
+            if let label = stage.label { tx.breakpointRules.append(label) }
+            if !logs.isEmpty { tx.appendScriptingLogs(logs) }
+            tx.requestHeaders = edited.headers
+            tx.requestBodyComplete = ended
+        }
         if let body {
             if !body.isEmpty { recordRequestBody(ByteBuffer(bytes: body)) }
         } else {
@@ -452,7 +476,6 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                 if case .body(.byteBuffer(let bytes)) = part { recordRequestBody(bytes) }
             }
         }
-        tx.requestBodyComplete = requestEnded
         publish(tx)
         sendLocal(status: mock.status, type: mock.headers.value(of: "Content-Type") ?? "text/plain; charset=utf-8",
                   body: ByteBuffer(bytes: mock.body), contentLength: mock.body.count, headers: mock.headers)
@@ -464,8 +487,10 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         if stage.rule != nil { diagnosticHeaders.record(.breakpoint) }
         switch head {
         case .request(let edited):
-            if let label = stage.label { tx.breakpointRules.append(label) }
-            if !logs.isEmpty { tx.appendScriptingLogs(logs) }
+            commitMetadata(tx) { tx in
+                if let label = stage.label { tx.breakpointRules.append(label) }
+                if !logs.isEmpty { tx.appendScriptingLogs(logs) }
+            }
             if let body, body != stage.body {
                 queuedRequest.removeAll { if case .body = $0 { return true }; return false }
                 if !body.isEmpty { queuedRequest.insert(.body(.byteBuffer(ByteBuffer(bytes: body))), at: 0) }
@@ -518,7 +543,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         queuedResponseEnded = false
         if stage.phase == .request {
             if stage.rule != nil && stage.session != engine.breakpointSessionID { capture = false; return }
-            if let label = stage.label { tx.breakpointRules.append(label) }
+            commitMetadata(tx) { tx in if let label = stage.label { tx.breakpointRules.append(label) } }
             for part in queuedRequest {
                 if case .body(.byteBuffer(let bytes)) = part { recordRequestBody(bytes) }
             }
@@ -528,14 +553,9 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         }
     }
 
-    private struct InterceptionFailure: LocalizedError {
-        let errorDescription: String?
-        init(_ description: String) { errorDescription = description }
-    }
-
     private func open(origin: HTTPOrigin) {
         guard let downstream, downstream.isActive, !responseEnded else { return }
-        pool.exchange(to: origin, path: transaction?.urlText ?? "/", relay: HTTP2UpstreamRelay(owner: self)).whenComplete { [weak self] result in
+        pool.exchange(to: origin, path: routedUpstream?.request.target ?? "/", relay: HTTP2UpstreamRelay(owner: self)).whenComplete { [weak self] result in
             guard let self, downstream.isActive, !self.responseEnded else {
                 if case .success(let exchange) = result { exchange.channel.close(promise: nil) }
                 return
@@ -611,7 +631,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
             head.headers.replaceOrAdd(name: "connection", value: "close")
             data = .head(head)
         case .end(let trailers) where exchange.protocolName == "HTTP/1.1":
-            let hadLength = transaction?.requestHeaders.contains("Content-Length") ?? false
+            let hadLength = capturedRequestHeaders.contains("Content-Length")
             data = .end(hadLength ? nil : trailers)
         default: data = part
         }
@@ -647,15 +667,17 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         case .head(let head):
             let code = Int(head.status.code)
             var forwarded = head
-            forwarded.headers = Self.endToEndHeaders(head.headers)
+            var validated = Self.capturedHeaders(head.headers)
+            do { _ = try HTTPFraming.normalize(&validated, request: false) }
+            catch { fail(error); return }
+            forwarded.headers = Self.endToEndHeaders(NIOHTTP1.HTTPHeaders(validated.pairs.map { ($0.name, $0.value) }))
             if code >= 200 { forwarded.headers = annotatedHeaders(forwarded.headers) }
             if code >= 200 {
                 responseStarted = true
                 responseWait?.cancel()
                 responseWait = nil
-                if removeResponseCacheHeaders {
-                    for name in ["cache-control", "etag", "last-modified", "expires", "age"] { forwarded.headers.remove(name: name) }
-                }
+                let responseFields = RequestRoutePlan.responseHeaders(Self.capturedHeaders(forwarded.headers), noCaching: removeResponseCacheHeaders)
+                forwarded.headers = NIOHTTP1.HTTPHeaders(responseFields.pairs.map { ($0.name.lowercased(), $0.value) })
                 let fields = Self.capturedHeaders(forwarded.headers)
                 bodyCapture?.setResponseHeadersForSSE(fields)
                 let receivedAt = Date()
@@ -740,13 +762,13 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         }
     }
 
-    private func sendLocal(status: Int, type: String, data: Data, error: String? = nil) {
+    private func sendLocal(status: Int, type: String, data: Data, error: CapturedFailure? = nil) {
         let body = requestMethod == .HEAD ? ByteBuffer() : ByteBuffer(bytes: data)
         sendLocal(status: status, type: type, body: body, contentLength: data.count, headers: HTTPHeaders(), error: error)
     }
 
     private func sendLocal(status: Int, type: String, body: ByteBuffer, contentLength: Int,
-                           headers: HTTPHeaders, error: String? = nil, file: MapLocalFile? = nil) {
+                           headers: HTTPHeaders, error: CapturedFailure? = nil, file: MapLocalFile? = nil) {
         guard let downstream, !responseEnded else { return }
         let sendBody = requestMethod != .HEAD && ![204, 205, 304].contains(status)
         var fields = Self.endToEndHeaders(NIOHTTP1.HTTPHeaders(headers.pairs.map { ($0.name, $0.value) }))
@@ -757,7 +779,9 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         }
         fields = annotatedHeaders(fields)
         if let tx = transaction {
-            tx.requestHeaders = diagnosticHeaders.appending(to: tx.requestHeaders)
+            capturedRequestHeaders = diagnosticHeaders.appending(to: capturedRequestHeaders)
+            let headers = capturedRequestHeaders
+            commitMetadata(tx) { $0.requestHeaders = headers }
         }
         let head = NIOHTTP1.HTTPResponseHead(version: .init(major: 2, minor: 0),
                                              status: HTTPResponseStatus(statusCode: status), headers: fields)
@@ -765,6 +789,16 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         queuedRequest.removeAll()
         queuedBytes = 0
         responseStarted = true
+        if let tx = transaction {
+            let recorded = Self.capturedHeaders(fields)
+            commitMetadata(tx) { tx in
+                tx.statusCode = status
+                tx.statusReason = ""
+                tx.responseHeaders = recorded
+                tx.contentType = type
+            }
+            publish(tx)
+        }
         downstream.write(wrapOutboundOut(.head(head)), promise: nil)
         if let file {
             downstream.flush()
@@ -810,7 +844,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
                 tx.responseHeaders = recorded
                 tx.contentType = type
                 tx.responseBodyComplete = true
-                tx.errorText = error
+                tx.setFailure(error)
                 tx.state = error == nil ? .completed : .failed
                 tx.duration = Date().timeIntervalSince(tx.startedAt)
                 self.engine.sink?.transactionUpdated(tx)
@@ -821,12 +855,13 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
     fileprivate func fail(_ error: Error, status: Int = 502) {
         guard !responseEnded else { return }
         finishFailedInterception()
-        let message = error.localizedDescription
+        let failure = NetworkFailure.capture(error)
+        let message = failure.diagnostic
         if responseStarted {
-            markAborted(message)
+            markAborted(failure)
             downstream?.close(promise: nil)
         } else {
-            sendLocal(status: status, type: "text/plain", data: Data(message.utf8), error: message)
+            sendLocal(status: status, type: "text/plain", data: Data(message.utf8), error: failure)
         }
         simulatedDelay?.cancel()
         responseWait?.cancel()
@@ -836,7 +871,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         upstream?.channel.close(promise: nil)
     }
 
-    private func markAborted(_ message: String) {
+    private func markAborted(_ failure: CapturedFailure) {
         guard !responseEnded else { return }
         mapLocalSender?.cancel()
         mapLocalSender = nil
@@ -844,17 +879,19 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         bodyCapture?.finishSSE(complete: false)
         responseEnded = true
         if capture, let tx = transaction {
-            onMain {
+            let sink = published ? engine.sink : nil
+            let elapsed = Date().timeIntervalSince(tx.startedAt)
+            commitMetadata(tx) { tx in
                 tx.state = .failed
-                tx.errorText = message
-                tx.duration = Date().timeIntervalSince(tx.startedAt)
-                self.engine.sink?.transactionUpdated(tx)
+                tx.setFailure(failure)
+                tx.duration = elapsed
+                sink?.transactionUpdated(tx)
             }
         }
     }
 
     func channelInactive(context: ChannelHandlerContext) {
-        markAborted("客户端取消 HTTP/2 流")
+        markAborted(NetworkFailure.capture(NetworkFailure(.networkH2Cancelled)))
         bodyCapture?.finishSSE(complete: false)
         bodyCapture = nil
         simulatedDelay?.cancel()
@@ -869,7 +906,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
         // Malformed or reset downstream streams cannot receive an HTTP response.
-        markAborted(error.localizedDescription)
+        markAborted(NetworkFailure.capture(error))
         context.close(promise: nil)
     }
 

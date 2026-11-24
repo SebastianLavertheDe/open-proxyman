@@ -5,20 +5,15 @@ import Foundation
 @MainActor
 final class TrafficCleanupController: ObservableObject {
     static let shared = TrafficCleanupController()
-    static let maximumRemovalsPerPass = 1024
-
-    struct Configuration {
-        let enabled: Bool
-        let memoryLimitMB: Int
-        let intervalMinutes: Int
-    }
+    static let maximumRemovalsPerPass = TrafficCleanupPolicy.maximumRemovalsPerPass
+    typealias Configuration = TrafficCleanupPolicy.Configuration
 
     @Published private(set) var isMonitoring = false
     @Published private(set) var removedRequests = 0
     @Published private(set) var lastRun: Date?
     @Published private(set) var lastResidentBytes: UInt64?
     private var timer: Timer?
-    private var lastCheck: TimeInterval?
+    private var policy = TrafficCleanupPolicy()
     private let configuration: () -> Configuration
     private let now: () -> TimeInterval
     private let residentMemory: () -> UInt64?
@@ -64,34 +59,18 @@ final class TrafficCleanupController: ObservableObject {
     /// It never bypasses the enable switch or the resident-memory threshold.
     @discardableResult
     func runIfNeeded(forceTime: Bool = false) -> Int {
-        let policy = configuration()
-        guard policy.enabled else { lastCheck = nil; return 0 }
-        let timestamp = now()
-        let interval = TimeInterval(max(1, policy.intervalMinutes)) * 60
-        guard forceTime || (lastCheck.map({ timestamp - $0 >= interval }) ?? true) else { return 0 }
-        lastCheck = timestamp
-        lastRun = Date()
-        let threshold = UInt64(max(1, policy.memoryLimitMB)) * 1024 * 1024
-        guard var resident = residentMemory() else { lastResidentBytes = nil; return 0 }
-        lastResidentBytes = resident
-        guard resident >= threshold else { return 0 }
-        // ARC and the allocator may not return resident pages immediately. Bound one
-        // pass instead of draining all traffic while repeatedly sampling a sticky RSS.
-        let allowance = min(Self.maximumRemovalsPerPass, max(64, completedCount() / 4))
-        var removed = 0
-        while resident >= threshold && removed < allowance {
-            // Release local transaction references before resampling the actual resident size.
-            let count = autoreleasepool { removeCompleted(min(64, allowance - removed)) }
-            guard count > 0 else { break }
-            removed += count
-            guard let next = residentMemory() else { break }
-            resident = next
-            lastResidentBytes = next
+        let configuration = configuration()
+        let result = policy.run(configuration: configuration, now: now(), forceTime: forceTime,
+                                residentMemory: residentMemory, completedCount: completedCount,
+                                removeCompleted: { limit in autoreleasepool { self.removeCompleted(limit) } })
+        if result.checked {
+            lastRun = Date()
+            lastResidentBytes = result.residentBytes
         }
-        removedRequests += removed
-        if removed > 0 {
-            DiagnosticLog.record("automatic-traffic-cleanup removed=\(removed) resident=\(lastResidentBytes ?? resident) limitMB=\(policy.memoryLimitMB)")
+        removedRequests += result.removed
+        if result.removed > 0 {
+            DiagnosticLog.record("automatic-traffic-cleanup removed=\(result.removed) resident=\(result.residentBytes ?? 0) limitMB=\(configuration.memoryLimitMB)")
         }
-        return removed
+        return result.removed
     }
 }

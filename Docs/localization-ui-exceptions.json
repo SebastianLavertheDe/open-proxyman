@@ -2,28 +2,28 @@
   "scope": "Conservative direct SwiftUI/AppKit literal audit; each exception was reviewed during the bilingual migration. This does not replace macOS UI review.",
   "exceptions": [
     {
-      "path": "Sources/ProxyMirror/App/LocalControl.swift",
+      "path": "Sources/ProxyMirrorCore/DesktopApplication/LocalControl.swift",
       "line": 344,
       "category": "brand_or_protocol_term",
       "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
       "source": "alert.messageText = \"ProxyMirror MCP\""
     },
     {
-      "path": "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
+      "path": "Sources/ProxyMirrorCore/DesktopApplication/ProxyMirrorApp.swift",
       "line": 52,
       "category": "brand_or_protocol_term",
       "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",
       "source": "WindowGroup(\"ProxyMirror\") {"
     },
     {
-      "path": "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
+      "path": "Sources/ProxyMirrorCore/DesktopApplication/ProxyMirrorApp.swift",
       "line": 100,
       "category": "data_or_formatted_values",
       "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
       "source": "Text(\"127.0.0.1:\\(appState.listenerPort)\")"
     },
     {
-      "path": "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
+      "path": "Sources/ProxyMirrorCore/DesktopApplication/ProxyMirrorApp.swift",
       "line": 134,
       "category": "brand_or_protocol_term",
       "reason": "A product, library, platform identifier, or protocol term intentionally preserved in both languages (including Schema and Bundle ID).",

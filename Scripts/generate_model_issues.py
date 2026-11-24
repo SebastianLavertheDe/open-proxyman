@@ -25,13 +25,30 @@ def generated():
         literal = json.dumps(value, ensure_ascii=False)
         if types:
             parameters = ', '.join('_ p' + str(i) + ': ' + kind for i, kind in enumerate(types))
+            stored = ', '.join('p' + str(i) if kind == 'String' else 'String(p' + str(i) + ')'
+                               for i, kind in enumerate(types))
             output += [f'    static func {factory}({parameters}) -> Self {{',
-                       f'        Self(code: "models.{key}", diagnostic: String(format: {literal}, locale: Locale(identifier: "en_US_POSIX"), arguments: [{arguments}]),',
+                       f'        Self(code: "models.{key}", arguments: [{stored}], diagnostic: String(format: {literal}, locale: Locale(identifier: "en_US_POSIX"), arguments: [{arguments}]),',
                        f'             render: {{ Strings.Models.{name}({arguments}) }})', '    }', '']
         else:
             diagnostic = json.dumps(value.replace('%%', '%'), ensure_ascii=False)
             output += [f'    static var {factory}: Self {{',
                        f'        Self(code: "models.{key}", diagnostic: {diagnostic}, render: {{ Strings.Models.{name} }})', '    }', '']
+    output += ['    static func restoredModel(code: String, arguments: [String]) -> Self? {', '        switch code {']
+    for key, value in sorted(load_strings(source).items()):
+        name = camel(key)
+        factory = 'model' + name[:1].upper() + name[1:]
+        types = signature(value)
+        output.append(f'        case "models.{key}":')
+        guards = [f'arguments.count == {len(types)}']
+        for index, kind in enumerate(types):
+            if kind != 'String':
+                guards.append(f'let p{index} = {kind}(arguments[{index}])')
+                if kind == 'Double': guards.append(f'p{index}.isFinite')
+        output.append('            guard ' + ', '.join(guards) + ' else { return nil }')
+        arguments = ', '.join(f'arguments[{i}]' if kind == 'String' else f'p{i}' for i, kind in enumerate(types))
+        output.append(f'            return .{factory}' + (f'({arguments})' if types else ''))
+    output += ['        default: return nil', '        }', '    }', '']
     return '\n'.join(output + ['}']) + '\n'
 
 

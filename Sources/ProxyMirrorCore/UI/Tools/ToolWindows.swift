@@ -136,7 +136,7 @@ struct ComposeRequestView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(Strings.Tools.response).font(.headline)
                     if let result {
-                        Text(result.state == .failed ? result.errorText ?? Strings.Tools.sendFailed : result.statusText)
+                        Text(result.state == .failed ? result.localizedErrorText ?? Strings.Tools.sendFailed : result.statusText)
                             .font(.system(.body, design: .monospaced))
                         BodyContentView(data: result.responseBody, contentType: result.contentType, pretty: true,
                                         complete: result.responseBodyComplete, truncated: result.responseTruncated,

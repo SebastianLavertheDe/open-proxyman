@@ -3,7 +3,7 @@ import Foundation
 
 extension OperationIssue {
     static func modelBackupBreakpointRegexInvalid(_ p0: Int) -> Self {
-        Self(code: "models.backup_breakpoint_regex_invalid", diagnostic: String(format: "Breakpoint rule %ld has an invalid URL regular expression.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_breakpoint_regex_invalid", arguments: [String(p0)], diagnostic: String(format: "Breakpoint rule %ld has an invalid URL regular expression.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupBreakpointRegexInvalid(p0) })
     }
 
@@ -12,17 +12,17 @@ extension OperationIssue {
     }
 
     static func modelBackupCertificatePathUnavailable(_ p0: Int) -> Self {
-        Self(code: "models.backup_certificate_path_unavailable", diagnostic: String(format: "The chain or private key of custom certificate rule %ld is unreadable on this Mac. Update its paths after import.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_certificate_path_unavailable", arguments: [String(p0)], diagnostic: String(format: "The chain or private key of custom certificate rule %ld is unreadable on this Mac. Update its paths after import.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupCertificatePathUnavailable(p0) })
     }
 
     static func modelBackupDnsTargetInvalid(_ p0: Int) -> Self {
-        Self(code: "models.backup_dns_target_invalid", diagnostic: String(format: "DNS mapping rule %ld needs a host and valid IP address.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_dns_target_invalid", arguments: [String(p0)], diagnostic: String(format: "DNS mapping rule %ld needs a host and valid IP address.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupDnsTargetInvalid(p0) })
     }
 
     static func modelBackupDuplicateRuleIds(_ p0: String) -> Self {
-        Self(code: "models.backup_duplicate_rule_ids", diagnostic: String(format: "%@ contains duplicate rule IDs.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_duplicate_rule_ids", arguments: [p0], diagnostic: String(format: "%@ contains duplicate rule IDs.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupDuplicateRuleIds(p0) })
     }
 
@@ -47,22 +47,22 @@ extension OperationIssue {
     }
 
     static func modelBackupMapLocalHeadersInvalid(_ p0: Int) -> Self {
-        Self(code: "models.backup_map_local_headers_invalid", diagnostic: String(format: "Map Local rule %ld contains an invalid response header.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_map_local_headers_invalid", arguments: [String(p0)], diagnostic: String(format: "Map Local rule %ld contains an invalid response header.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupMapLocalHeadersInvalid(p0) })
     }
 
     static func modelBackupMapLocalPathUnavailable(_ p0: Int) -> Self {
-        Self(code: "models.backup_map_local_path_unavailable", diagnostic: String(format: "The target of Map Local rule %ld is unreadable on this Mac. Update its path after import.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_map_local_path_unavailable", arguments: [String(p0)], diagnostic: String(format: "The target of Map Local rule %ld is unreadable on this Mac. Update its path after import.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupMapLocalPathUnavailable(p0) })
     }
 
     static func modelBackupMapLocalStatusInvalid(_ p0: Int) -> Self {
-        Self(code: "models.backup_map_local_status_invalid", diagnostic: String(format: "Map Local rule %ld has an invalid response status.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_map_local_status_invalid", arguments: [String(p0)], diagnostic: String(format: "Map Local rule %ld has an invalid response status.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupMapLocalStatusInvalid(p0) })
     }
 
     static func modelBackupMapRemoteUrlInvalid(_ p0: Int) -> Self {
-        Self(code: "models.backup_map_remote_url_invalid", diagnostic: String(format: "Map Remote rule %ld has an invalid target URL.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_map_remote_url_invalid", arguments: [String(p0)], diagnostic: String(format: "Map Remote rule %ld has an invalid target URL.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupMapRemoteUrlInvalid(p0) })
     }
 
@@ -83,7 +83,7 @@ extension OperationIssue {
     }
 
     static func modelBackupScriptSize(_ p0: Int) -> Self {
-        Self(code: "models.backup_script_size", diagnostic: String(format: "A Rewrite script exceeds %ld KiB.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_script_size", arguments: [String(p0)], diagnostic: String(format: "A Rewrite script exceeds %ld KiB.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupScriptSize(p0) })
     }
 
@@ -140,7 +140,7 @@ extension OperationIssue {
     }
 
     static func modelBackupSectionRegexInvalid(_ p0: String) -> Self {
-        Self(code: "models.backup_section_regex_invalid", diagnostic: String(format: "%@ contains an invalid URL regular expression.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.backup_section_regex_invalid", arguments: [p0], diagnostic: String(format: "%@ contains an invalid URL regular expression.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.backupSectionRegexInvalid(p0) })
     }
 
@@ -173,7 +173,7 @@ extension OperationIssue {
     }
 
     static func modelBackupUnknownFields(_ p0: String, _ p1: String) -> Self {
-        Self(code: "models.backup_unknown_fields", diagnostic: String(format: "%@ contains unsupported rule fields: %@.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.backup_unknown_fields", arguments: [p0, p1], diagnostic: String(format: "%@ contains unsupported rule fields: %@.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.backupUnknownFields(p0, p1) })
     }
 
@@ -246,7 +246,7 @@ extension OperationIssue {
     }
 
     static func modelBreakpointHeaderInvalid(_ p0: String) -> Self {
-        Self(code: "models.breakpoint_header_invalid", diagnostic: String(format: "Invalid message header: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.breakpoint_header_invalid", arguments: [p0], diagnostic: String(format: "Invalid message header: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.breakpointHeaderInvalid(p0) })
     }
 
@@ -267,7 +267,7 @@ extension OperationIssue {
     }
 
     static func modelBreakpointProtectedHeader(_ p0: String) -> Self {
-        Self(code: "models.breakpoint_protected_header", diagnostic: String(format: "%@ controls connection or body encoding and must retain its original value.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.breakpoint_protected_header", arguments: [p0], diagnostic: String(format: "%@ controls connection or body encoding and must retain its original value.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.breakpointProtectedHeader(p0) })
     }
 
@@ -428,7 +428,7 @@ extension OperationIssue {
     }
 
     static func modelDiffLineLimit(_ p0: Int) -> Self {
-        Self(code: "models.diff_line_limit", diagnostic: String(format: "[… Comparison is limited to %ld lines]", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.diff_line_limit", arguments: [String(p0)], diagnostic: String(format: "[… Comparison is limited to %ld lines]", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.diffLineLimit(p0) })
     }
 
@@ -753,7 +753,7 @@ extension OperationIssue {
     }
 
     static func modelProtobufImported(_ p0: String, _ p1: Int) -> Self {
-        Self(code: "models.protobuf_imported", diagnostic: String(format: "Imported %@ with %ld message types.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.protobuf_imported", arguments: [p0, String(p1)], diagnostic: String(format: "Imported %@ with %ld message types.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.protobufImported(p0, p1) })
     }
 
@@ -802,7 +802,7 @@ extension OperationIssue {
     }
 
     static func modelProtobufTypeMissing(_ p0: String) -> Self {
-        Self(code: "models.protobuf_type_missing", diagnostic: String(format: "The schema contains no message type %@.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.protobuf_type_missing", arguments: [p0], diagnostic: String(format: "The schema contains no message type %@.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.protobufTypeMissing(p0) })
     }
 
@@ -811,42 +811,42 @@ extension OperationIssue {
     }
 
     static func modelRewriteRedirectSummary(_ p0: String) -> Self {
-        Self(code: "models.rewrite_redirect_summary", diagnostic: String(format: "Redirect → %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.rewrite_redirect_summary", arguments: [p0], diagnostic: String(format: "Redirect → %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.rewriteRedirectSummary(p0) })
     }
 
     static func modelRewriteRequestBodySummary(_ p0: String, _ p1: String) -> Self {
-        Self(code: "models.rewrite_request_body_summary", diagnostic: String(format: "Replace request body %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.rewrite_request_body_summary", arguments: [p0, p1], diagnostic: String(format: "Replace request body %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.rewriteRequestBodySummary(p0, p1) })
     }
 
     static func modelRewriteRequestHeaderSummary(_ p0: String, _ p1: String) -> Self {
-        Self(code: "models.rewrite_request_header_summary", diagnostic: String(format: "Request header %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.rewrite_request_header_summary", arguments: [p0, p1], diagnostic: String(format: "Request header %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.rewriteRequestHeaderSummary(p0, p1) })
     }
 
     static func modelRewriteResponseBodySummary(_ p0: String, _ p1: String) -> Self {
-        Self(code: "models.rewrite_response_body_summary", diagnostic: String(format: "Replace response body %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.rewrite_response_body_summary", arguments: [p0, p1], diagnostic: String(format: "Replace response body %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.rewriteResponseBodySummary(p0, p1) })
     }
 
     static func modelRewriteResponseHeaderSummary(_ p0: String, _ p1: String) -> Self {
-        Self(code: "models.rewrite_response_header_summary", diagnostic: String(format: "Response header %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.rewrite_response_header_summary", arguments: [p0, p1], diagnostic: String(format: "Response header %@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.rewriteResponseHeaderSummary(p0, p1) })
     }
 
     static func modelRewriteScriptSummary(_ p0: String) -> Self {
-        Self(code: "models.rewrite_script_summary", diagnostic: String(format: "%@ Script", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.rewrite_script_summary", arguments: [p0], diagnostic: String(format: "%@ Script", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.rewriteScriptSummary(p0) })
     }
 
     static func modelRewriteStatusSummary(_ p0: Int) -> Self {
-        Self(code: "models.rewrite_status_summary", diagnostic: String(format: "Status code → %ld", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.rewrite_status_summary", arguments: [String(p0)], diagnostic: String(format: "Status code → %ld", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.rewriteStatusSummary(p0) })
     }
 
     static func modelRuleCopyName(_ p0: String) -> Self {
-        Self(code: "models.rule_copy_name", diagnostic: String(format: "%@ Copy", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.rule_copy_name", arguments: [p0], diagnostic: String(format: "%@ Copy", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.ruleCopyName(p0) })
     }
 
@@ -867,7 +867,7 @@ extension OperationIssue {
     }
 
     static func modelRuleMatchBreakpoint(_ p0: String) -> Self {
-        Self(code: "models.rule_match_breakpoint", diagnostic: String(format: "Breakpoint · %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.rule_match_breakpoint", arguments: [p0], diagnostic: String(format: "Breakpoint · %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.ruleMatchBreakpoint(p0) })
     }
 
@@ -876,7 +876,7 @@ extension OperationIssue {
     }
 
     static func modelRuleMatchLatency(_ p0: Int) -> Self {
-        Self(code: "models.rule_match_latency", diagnostic: String(format: "Network delay %ld ms", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.rule_match_latency", arguments: [String(p0)], diagnostic: String(format: "Network delay %ld ms", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.ruleMatchLatency(p0) })
     }
 
@@ -933,7 +933,7 @@ extension OperationIssue {
     }
 
     static func modelSavedLoadFailed(_ p0: String) -> Self {
-        Self(code: "models.saved_load_failed", diagnostic: String(format: "Unable to load saved traffic: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.saved_load_failed", arguments: [p0], diagnostic: String(format: "Unable to load saved traffic: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.savedLoadFailed(p0) })
     }
 
@@ -954,7 +954,7 @@ extension OperationIssue {
     }
 
     static func modelSavedSaveFailed(_ p0: String) -> Self {
-        Self(code: "models.saved_save_failed", diagnostic: String(format: "Unable to save traffic: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.saved_save_failed", arguments: [p0], diagnostic: String(format: "Unable to save traffic: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.savedSaveFailed(p0) })
     }
 
@@ -1083,12 +1083,12 @@ extension OperationIssue {
     }
 
     static func modelScriptWallTime(_ p0: Int) -> Self {
-        Self(code: "models.script_wall_time", diagnostic: String(format: "Script network or execution exceeded %ld ms wall time.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.script_wall_time", arguments: [String(p0)], diagnostic: String(format: "Script network or execution exceeded %ld ms wall time.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.scriptWallTime(p0) })
     }
 
     static func modelScriptWorkerExit(_ p0: Int) -> Self {
-        Self(code: "models.script_worker_exit", diagnostic: String(format: "The script worker exited unexpectedly (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "models.script_worker_exit", arguments: [String(p0)], diagnostic: String(format: "The script worker exited unexpectedly (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Models.scriptWorkerExit(p0) })
     }
 
@@ -1189,8 +1189,884 @@ extension OperationIssue {
     }
 
     static func modelValidationRuleContext(_ p0: String, _ p1: String) -> Self {
-        Self(code: "models.validation_rule_context", diagnostic: String(format: "%@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "models.validation_rule_context", arguments: [p0, p1], diagnostic: String(format: "%@: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Models.validationRuleContext(p0, p1) })
+    }
+
+    static func restoredModel(code: String, arguments: [String]) -> Self? {
+        switch code {
+        case "models.backup_breakpoint_regex_invalid":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupBreakpointRegexInvalid(p0)
+        case "models.backup_certificate_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupCertificateInvalid
+        case "models.backup_certificate_path_unavailable":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupCertificatePathUnavailable(p0)
+        case "models.backup_dns_target_invalid":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupDnsTargetInvalid(p0)
+        case "models.backup_duplicate_rule_ids":
+            guard arguments.count == 1 else { return nil }
+            return .modelBackupDuplicateRuleIds(arguments[0])
+        case "models.backup_empty":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupEmpty
+        case "models.backup_export_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupExportLimit
+        case "models.backup_file_required":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupFileRequired
+        case "models.backup_h2c_host_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupH2cHostInvalid
+        case "models.backup_import_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupImportLimit
+        case "models.backup_map_local_headers_invalid":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupMapLocalHeadersInvalid(p0)
+        case "models.backup_map_local_path_unavailable":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupMapLocalPathUnavailable(p0)
+        case "models.backup_map_local_status_invalid":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupMapLocalStatusInvalid(p0)
+        case "models.backup_map_remote_url_invalid":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupMapRemoteUrlInvalid(p0)
+        case "models.backup_regular_file_required":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupRegularFileRequired
+        case "models.backup_reverse_duplicate_port":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupReverseDuplicatePort
+        case "models.backup_rewrite_header_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupRewriteHeaderInvalid
+        case "models.backup_rewrite_regex_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupRewriteRegexInvalid
+        case "models.backup_script_size":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelBackupScriptSize(p0)
+        case "models.backup_section_allow_list":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionAllowList
+        case "models.backup_section_block_list":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionBlockList
+        case "models.backup_section_breakpoints":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionBreakpoints
+        case "models.backup_section_custom_certificates":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionCustomCertificates
+        case "models.backup_section_dns":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionDns
+        case "models.backup_section_external":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionExternal
+        case "models.backup_section_h2c":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionH2c
+        case "models.backup_section_latency":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionLatency
+        case "models.backup_section_map_local":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionMapLocal
+        case "models.backup_section_map_remote":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionMapRemote
+        case "models.backup_section_no_caching":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionNoCaching
+        case "models.backup_section_organization":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionOrganization
+        case "models.backup_section_protobuf":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionProtobuf
+        case "models.backup_section_regex_invalid":
+            guard arguments.count == 1 else { return nil }
+            return .modelBackupSectionRegexInvalid(arguments[0])
+        case "models.backup_section_reverse":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionReverse
+        case "models.backup_section_rewrite":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionRewrite
+        case "models.backup_section_settings":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionSettings
+        case "models.backup_section_ssl_applications":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionSslApplications
+        case "models.backup_section_ssl_proxying_list":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSectionSslProxyingList
+        case "models.backup_settings_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSettingsInvalid
+        case "models.backup_ssl_bundle_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupSslBundleInvalid
+        case "models.backup_unknown_fields":
+            guard arguments.count == 2 else { return nil }
+            return .modelBackupUnknownFields(arguments[0], arguments[1])
+        case "models.backup_unsupported_version":
+            guard arguments.count == 0 else { return nil }
+            return .modelBackupUnsupportedVersion
+        case "models.body_kind_binary":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindBinary
+        case "models.body_kind_css":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindCss
+        case "models.body_kind_font":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindFont
+        case "models.body_kind_html":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindHtml
+        case "models.body_kind_image":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindImage
+        case "models.body_kind_javascript":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindJavascript
+        case "models.body_kind_json":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindJson
+        case "models.body_kind_plain":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindPlain
+        case "models.body_kind_stream":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindStream
+        case "models.body_kind_tunnel":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindTunnel
+        case "models.body_kind_unknown":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindUnknown
+        case "models.body_kind_xml":
+            guard arguments.count == 0 else { return nil }
+            return .modelBodyKindXml
+        case "models.breakpoint_body_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointBodySize
+        case "models.breakpoint_cancelled":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointCancelled
+        case "models.breakpoint_first_line_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointFirstLineInvalid
+        case "models.breakpoint_header_colon":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointHeaderColon
+        case "models.breakpoint_header_invalid":
+            guard arguments.count == 1 else { return nil }
+            return .modelBreakpointHeaderInvalid(arguments[0])
+        case "models.breakpoint_header_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointHeaderSize
+        case "models.breakpoint_headers_only":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointHeadersOnly
+        case "models.breakpoint_phase_request":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointPhaseRequest
+        case "models.breakpoint_phase_response":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointPhaseResponse
+        case "models.breakpoint_protected_header":
+            guard arguments.count == 1 else { return nil }
+            return .modelBreakpointProtectedHeader(arguments[0])
+        case "models.breakpoint_queue_full":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointQueueFull
+        case "models.breakpoint_request_line_immutable":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointRequestLineImmutable
+        case "models.breakpoint_response_status_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointResponseStatusInvalid
+        case "models.breakpoint_template_count":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointTemplateCount
+        case "models.breakpoint_template_phase":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointTemplatePhase
+        case "models.breakpoint_template_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelBreakpointTemplateSize
+        case "models.column_source_query":
+            guard arguments.count == 0 else { return nil }
+            return .modelColumnSourceQuery
+        case "models.column_source_request_header":
+            guard arguments.count == 0 else { return nil }
+            return .modelColumnSourceRequestHeader
+        case "models.column_source_request_j_s_o_n":
+            guard arguments.count == 0 else { return nil }
+            return .modelColumnSourceRequestJSON
+        case "models.column_source_response_header":
+            guard arguments.count == 0 else { return nil }
+            return .modelColumnSourceResponseHeader
+        case "models.column_source_response_j_s_o_n":
+            guard arguments.count == 0 else { return nil }
+            return .modelColumnSourceResponseJSON
+        case "models.comparison_at_least":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonAtLeast
+        case "models.comparison_at_most":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonAtMost
+        case "models.comparison_between":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonBetween
+        case "models.comparison_contains":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonContains
+        case "models.comparison_ends_with":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonEndsWith
+        case "models.comparison_equals":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonEquals
+        case "models.comparison_greater_than":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonGreaterThan
+        case "models.comparison_less_than":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonLessThan
+        case "models.comparison_not_contains":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonNotContains
+        case "models.comparison_not_ends_with":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonNotEndsWith
+        case "models.comparison_not_equals":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonNotEquals
+        case "models.comparison_not_regex":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonNotRegex
+        case "models.comparison_not_starts_with":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonNotStartsWith
+        case "models.comparison_not_wildcard":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonNotWildcard
+        case "models.comparison_regex":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonRegex
+        case "models.comparison_starts_with":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonStartsWith
+        case "models.comparison_wildcard":
+            guard arguments.count == 0 else { return nil }
+            return .modelComparisonWildcard
+        case "models.condition_group_all":
+            guard arguments.count == 0 else { return nil }
+            return .modelConditionGroupAll
+        case "models.condition_group_any":
+            guard arguments.count == 0 else { return nil }
+            return .modelConditionGroupAny
+        case "models.diff_body_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffBodyLimit
+        case "models.diff_body_undecodable":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffBodyUndecodable
+        case "models.diff_component_request":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentRequest
+        case "models.diff_component_request_body":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentRequestBody
+        case "models.diff_component_request_headers":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentRequestHeaders
+        case "models.diff_component_response":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentResponse
+        case "models.diff_component_response_body":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentResponseBody
+        case "models.diff_component_response_headers":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentResponseHeaders
+        case "models.diff_component_url":
+            guard arguments.count == 0 else { return nil }
+            return .modelDiffComponentUrl
+        case "models.diff_line_limit":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelDiffLineLimit(p0)
+        case "models.external_mode_http":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalModeHttp
+        case "models.external_mode_https":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalModeHttps
+        case "models.external_mode_pac":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalModePac
+        case "models.external_mode_socks5":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalModeSocks5
+        case "models.external_routing_all":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalRoutingAll
+        case "models.external_routing_bypass":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalRoutingBypass
+        case "models.external_routing_inclusive":
+            guard arguments.count == 0 else { return nil }
+            return .modelExternalRoutingInclusive
+        case "models.field_client":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldClient
+        case "models.field_comment":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldComment
+        case "models.field_content_type":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldContentType
+        case "models.field_duration":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldDuration
+        case "models.field_graphql":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldGraphql
+        case "models.field_host":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldHost
+        case "models.field_http_version":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldHttpVersion
+        case "models.field_ip":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldIp
+        case "models.field_method":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldMethod
+        case "models.field_query":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldQuery
+        case "models.field_request_body":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldRequestBody
+        case "models.field_request_header":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldRequestHeader
+        case "models.field_request_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldRequestSize
+        case "models.field_response_body":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldResponseBody
+        case "models.field_response_header":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldResponseHeader
+        case "models.field_response_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldResponseSize
+        case "models.field_scheme":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldScheme
+        case "models.field_status":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldStatus
+        case "models.field_url":
+            guard arguments.count == 0 else { return nil }
+            return .modelFieldUrl
+        case "models.filter_all":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterAll
+        case "models.filter_css":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterCss
+        case "models.filter_document":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterDocument
+        case "models.filter_form":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterForm
+        case "models.filter_graphql":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterGraphql
+        case "models.filter_http":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterHttp
+        case "models.filter_https":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterHttps
+        case "models.filter_js":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterJs
+        case "models.filter_json":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterJson
+        case "models.filter_media":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterMedia
+        case "models.filter_other":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterOther
+        case "models.filter_websocket":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterWebsocket
+        case "models.filter_xml":
+            guard arguments.count == 0 else { return nil }
+            return .modelFilterXml
+        case "models.folder_assignment_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderAssignmentInvalid
+        case "models.folder_count_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderCountInvalid
+        case "models.folder_depth_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderDepthLimit
+        case "models.folder_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderMissing
+        case "models.folder_name_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderNameInvalid
+        case "models.folder_parent_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderParentInvalid
+        case "models.folder_rule_id_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderRuleIdInvalid
+        case "models.folder_scope_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderScopeInvalid
+        case "models.folder_target_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderTargetInvalid
+        case "models.folder_tools_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelFolderToolsInvalid
+        case "models.header_operation_add":
+            guard arguments.count == 0 else { return nil }
+            return .modelHeaderOperationAdd
+        case "models.header_operation_remove":
+            guard arguments.count == 0 else { return nil }
+            return .modelHeaderOperationRemove
+        case "models.header_operation_replace_existing":
+            guard arguments.count == 0 else { return nil }
+            return .modelHeaderOperationReplaceExisting
+        case "models.header_operation_set":
+            guard arguments.count == 0 else { return nil }
+            return .modelHeaderOperationSet
+        case "models.network_bandwidth_range":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkBandwidthRange
+        case "models.network_delay_range":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkDelayRange
+        case "models.network_host_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkHostInvalid
+        case "models.network_preset_dial_up":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetDialUp
+        case "models.network_preset_five_g":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetFiveG
+        case "models.network_preset_four_g":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetFourG
+        case "models.network_preset_lte":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetLte
+        case "models.network_preset_medium":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetMedium
+        case "models.network_preset_slow":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetSlow
+        case "models.network_preset_three_g":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetThreeG
+        case "models.network_preset_total_loss":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetTotalLoss
+        case "models.network_preset_two_g":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetTwoG
+        case "models.network_preset_very_bad":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetVeryBad
+        case "models.network_preset_wifi":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetWifi
+        case "models.network_preset_wifi802":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkPresetWifi802
+        case "models.network_probability_range":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkProbabilityRange
+        case "models.network_random_disconnect":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkRandomDisconnect
+        case "models.network_rule_count":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkRuleCount
+        case "models.network_rule_name":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkRuleName
+        case "models.network_rule_name_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelNetworkRuleNameInvalid
+        case "models.protobuf_base64_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufBase64Invalid
+        case "models.protobuf_delimited_count":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufDelimitedCount
+        case "models.protobuf_delimited_incomplete_body":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufDelimitedIncompleteBody
+        case "models.protobuf_delimited_incomplete_prefix":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufDelimitedIncompletePrefix
+        case "models.protobuf_delimited_overflow":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufDelimitedOverflow
+        case "models.protobuf_encoding_delimited":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufEncodingDelimited
+        case "models.protobuf_encoding_single":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufEncodingSingle
+        case "models.protobuf_imported":
+            guard arguments.count == 2, let p1 = Int(arguments[1]) else { return nil }
+            return .modelProtobufImported(arguments[0], p1)
+        case "models.protobuf_input_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufInputSize
+        case "models.protobuf_mapping_name":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufMappingName
+        case "models.protobuf_message_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufMessageSize
+        case "models.protobuf_output_truncated":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufOutputTruncated
+        case "models.protobuf_rule_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufRuleInvalid
+        case "models.protobuf_schema_count":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufSchemaCount
+        case "models.protobuf_schema_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufSchemaInvalid
+        case "models.protobuf_schema_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufSchemaMissing
+        case "models.protobuf_schema_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufSchemaSize
+        case "models.protobuf_type_base64":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufTypeBase64
+        case "models.protobuf_type_binary":
+            guard arguments.count == 0 else { return nil }
+            return .modelProtobufTypeBinary
+        case "models.protobuf_type_missing":
+            guard arguments.count == 1 else { return nil }
+            return .modelProtobufTypeMissing(arguments[0])
+        case "models.reverse_proxy_default_name":
+            guard arguments.count == 0 else { return nil }
+            return .modelReverseProxyDefaultName
+        case "models.rewrite_redirect_summary":
+            guard arguments.count == 1 else { return nil }
+            return .modelRewriteRedirectSummary(arguments[0])
+        case "models.rewrite_request_body_summary":
+            guard arguments.count == 2 else { return nil }
+            return .modelRewriteRequestBodySummary(arguments[0], arguments[1])
+        case "models.rewrite_request_header_summary":
+            guard arguments.count == 2 else { return nil }
+            return .modelRewriteRequestHeaderSummary(arguments[0], arguments[1])
+        case "models.rewrite_response_body_summary":
+            guard arguments.count == 2 else { return nil }
+            return .modelRewriteResponseBodySummary(arguments[0], arguments[1])
+        case "models.rewrite_response_header_summary":
+            guard arguments.count == 2 else { return nil }
+            return .modelRewriteResponseHeaderSummary(arguments[0], arguments[1])
+        case "models.rewrite_script_summary":
+            guard arguments.count == 1 else { return nil }
+            return .modelRewriteScriptSummary(arguments[0])
+        case "models.rewrite_status_summary":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelRewriteStatusSummary(p0)
+        case "models.rule_copy_name":
+            guard arguments.count == 1 else { return nil }
+            return .modelRuleCopyName(arguments[0])
+        case "models.rule_copy_requires_uuid":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleCopyRequiresUuid
+        case "models.rule_default_name":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleDefaultName
+        case "models.rule_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleInvalid
+        case "models.rule_match_block":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleMatchBlock
+        case "models.rule_match_breakpoint":
+            guard arguments.count == 1 else { return nil }
+            return .modelRuleMatchBreakpoint(arguments[0])
+        case "models.rule_match_dns":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleMatchDns
+        case "models.rule_match_latency":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelRuleMatchLatency(p0)
+        case "models.rule_match_map_local":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleMatchMapLocal
+        case "models.rule_match_map_remote":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleMatchMapRemote
+        case "models.rule_match_script":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleMatchScript
+        case "models.rule_name_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleNameInvalid
+        case "models.rule_rename_unsupported":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleRenameUnsupported
+        case "models.rule_set_default_name":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleSetDefaultName
+        case "models.rule_url_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelRuleUrlMissing
+        case "models.saved_bucket_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedBucketInvalid
+        case "models.saved_copy_failed":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedCopyFailed
+        case "models.saved_duplicate_snapshot":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedDuplicateSnapshot
+        case "models.saved_folder_duplicate_request":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedFolderDuplicateRequest
+        case "models.saved_folder_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedFolderMissing
+        case "models.saved_format_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedFormatInvalid
+        case "models.saved_load_failed":
+            guard arguments.count == 1 else { return nil }
+            return .modelSavedLoadFailed(arguments[0])
+        case "models.saved_loading":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedLoading
+        case "models.saved_name_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedNameInvalid
+        case "models.saved_parent_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedParentInvalid
+        case "models.saved_read_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedReadLimit
+        case "models.saved_save_failed":
+            guard arguments.count == 1 else { return nil }
+            return .modelSavedSaveFailed(arguments[0])
+        case "models.saved_selection_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedSelectionMissing
+        case "models.saved_target_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedTargetMissing
+        case "models.saved_unavailable":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedUnavailable
+        case "models.saved_unfiled":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedUnfiled
+        case "models.saved_unsupported_version":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedUnsupportedVersion
+        case "models.saved_write_limit":
+            guard arguments.count == 0 else { return nil }
+            return .modelSavedWriteLimit
+        case "models.script_addon_encoding":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptAddonEncoding
+        case "models.script_addon_limits":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptAddonLimits
+        case "models.script_buffer_create_failed":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptBufferCreateFailed
+        case "models.script_buffer_isolation_failed":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptBufferIsolationFailed
+        case "models.script_environment_limits":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptEnvironmentLimits
+        case "models.script_environment_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptEnvironmentSize
+        case "models.script_format_failed":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptFormatFailed
+        case "models.script_headers_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptHeadersInvalid
+        case "models.script_headers_only":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptHeadersOnly
+        case "models.script_input_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptInputSize
+        case "models.script_level_error":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptLevelError
+        case "models.script_level_system":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptLevelSystem
+        case "models.script_level_user":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptLevelUser
+        case "models.script_level_warning":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptLevelWarning
+        case "models.script_message_required":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMessageRequired
+        case "models.script_mock_base64_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockBase64Invalid
+        case "models.script_mock_body_encoding":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockBodyEncoding
+        case "models.script_mock_body_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockBodyInvalid
+        case "models.script_mock_headers_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockHeadersInvalid
+        case "models.script_mock_headers_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockHeadersSize
+        case "models.script_mock_headers_type":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockHeadersType
+        case "models.script_mock_status_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptMockStatusInvalid
+        case "models.script_network_limits":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptNetworkLimits
+        case "models.script_source_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptSourceSize
+        case "models.script_state_size":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptStateSize
+        case "models.script_wall_time":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelScriptWallTime(p0)
+        case "models.script_worker_exit":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return nil }
+            return .modelScriptWorkerExit(p0)
+        case "models.script_worker_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptWorkerMissing
+        case "models.script_worker_output_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptWorkerOutputInvalid
+        case "models.scripting_phase_request":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptingPhaseRequest
+        case "models.scripting_phase_response":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptingPhaseResponse
+        case "models.scripting_phase_web_socket":
+            guard arguments.count == 0 else { return nil }
+            return .modelScriptingPhaseWebSocket
+        case "models.session_duplicate_ids":
+            guard arguments.count == 0 else { return nil }
+            return .modelSessionDuplicateIds
+        case "models.session_har_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSessionHarInvalid
+        case "models.session_unsupported_version":
+            guard arguments.count == 0 else { return nil }
+            return .modelSessionUnsupportedVersion
+        case "models.source_folder_duplicate":
+            guard arguments.count == 0 else { return nil }
+            return .modelSourceFolderDuplicate
+        case "models.source_folder_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSourceFolderInvalid
+        case "models.source_folder_missing":
+            guard arguments.count == 0 else { return nil }
+            return .modelSourceFolderMissing
+        case "models.source_folder_name_required":
+            guard arguments.count == 0 else { return nil }
+            return .modelSourceFolderNameRequired
+        case "models.ssl_action_decrypt":
+            guard arguments.count == 0 else { return nil }
+            return .modelSslActionDecrypt
+        case "models.ssl_action_passthrough":
+            guard arguments.count == 0 else { return nil }
+            return .modelSslActionPassthrough
+        case "models.ssl_copy_bundle_invalid":
+            guard arguments.count == 0 else { return nil }
+            return .modelSslCopyBundleInvalid
+        case "models.ssl_copy_bundle_required":
+            guard arguments.count == 0 else { return nil }
+            return .modelSslCopyBundleRequired
+        case "models.summary_bucket_client_error":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketClientError
+        case "models.summary_bucket_failed":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketFailed
+        case "models.summary_bucket_informational":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketInformational
+        case "models.summary_bucket_redirect":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketRedirect
+        case "models.summary_bucket_server_error":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketServerError
+        case "models.summary_bucket_success":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketSuccess
+        case "models.summary_bucket_unanswered":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryBucketUnanswered
+        case "models.summary_no_host":
+            guard arguments.count == 0 else { return nil }
+            return .modelSummaryNoHost
+        case "models.validation_rule_context":
+            guard arguments.count == 2 else { return nil }
+            return .modelValidationRuleContext(arguments[0], arguments[1])
+        default: return nil
+        }
     }
 
 }

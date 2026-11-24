@@ -108,7 +108,8 @@ extension ExternalProxyConfig {
         let format = GeneratedEnglishFallbacks.value(table: "Integration", key: key)
         let diagnostic = arguments.isEmpty ? format.replacingOccurrences(of: "%%", with: "%")
             : String(format: format, locale: Locale(identifier: "en_US_POSIX"), arguments: arguments)
-        return OperationIssue(code: "external_proxy." + key, diagnostic: diagnostic, render: render)
+        return OperationIssue(code: "external_proxy." + key, arguments: arguments.map { String(describing: $0) },
+                              diagnostic: diagnostic, render: render)
     }
 }
 
@@ -170,35 +171,45 @@ enum ExternalProxyConnector {
     /// application bytes and channelActive are delivered after the initializer succeeds.
     static func connect(via config: ExternalProxyConfig, host: String, port: Int, on loop: EventLoop,
                         timeout: TimeAmount = .seconds(20), localListenerPort: Int? = nil,
+                        localListenerAddresses: [String] = ["127.0.0.1"],
                         initialize: @escaping (Channel) -> EventLoopFuture<Void>) -> EventLoopFuture<Channel> {
-        guard config.mode != .pac else { return loop.makeFailedFuture(ExternalProxyError("请先解析 PAC 路由。")) }
-        if let reason = config.validationError { return loop.makeFailedFuture(ExternalProxyError(reason)) }
+        guard config.mode != .pac else { return loop.makeFailedFuture(ExternalProxyError(.proxyPacResolutionRequired)) }
+        if let reason = config.validationIssue { return loop.makeFailedFuture(ExternalProxyError(reason)) }
         guard let endpoint = ExternalProxyHost(config.host), let target = ExternalProxyHost(host),
               (1...65535).contains(port) else {
-            return loop.makeFailedFuture(ExternalProxyError("外部代理目标地址无效。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyTargetInvalid))
         }
         if target.isLoopback {
             guard port != localListenerPort else {
-                return loop.makeFailedFuture(ExternalProxyError("目标不能指向 ProxyMirror 自身监听端口。"))
+                return loop.makeFailedFuture(ExternalProxyError(.proxyTargetSelf))
             }
             return ClientBootstrap(group: loop).connectTimeout(timeout)
                 .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
-                .channelInitializer(initialize).connect(host: target.name, port: port)
+                .channelInitializer { channel in
+                    let guarded = localListenerPort.map { listener in
+                        channel.pipeline.addHandler(ProxySelfConnectionGuard(port: listener, addresses: localListenerAddresses))
+                    } ?? loop.makeSucceededVoidFuture()
+                    return guarded.flatMap { initialize(channel) }
+                }.connect(host: target.name, port: port)
         }
         if endpoint.name == target.name && config.port == port {
-            return loop.makeFailedFuture(ExternalProxyError("目标与外部代理地址相同。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyTargetIsProxy))
         }
         // Pause transport reads until both the handshake gate and optional proxy TLS are installed.
         let bootstrap = ClientBootstrap(group: loop)
             .connectTimeout(timeout)
             .channelOption(ChannelOptions.autoRead, value: false)
             .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            .channelInitializer { channel in
+                guard let listener = localListenerPort else { return loop.makeSucceededVoidFuture() }
+                return channel.pipeline.addHandler(ProxySelfConnectionGuard(port: listener, addresses: localListenerAddresses))
+            }
         return bootstrap.connect(host: endpoint.name, port: config.port).flatMap { channel in
             if config.port == localListenerPort,
                let address = channel.remoteAddress?.ipAddress,
                (ExternalProxyHost(address)?.isLoopback == true || address == channel.localAddress?.ipAddress) {
                 channel.close(promise: nil)
-                return loop.makeFailedFuture(ExternalProxyError("外部代理不能指向 ProxyMirror 自身。"))
+                return loop.makeFailedFuture(ExternalProxyError(.proxyEndpointSelf))
             }
             let gate = ExternalProxyHandshake(config: config, target: target, port: port, timeout: timeout,
                                               loop: loop, initialize: initialize)
@@ -224,11 +235,12 @@ enum ExternalProxyConnector {
     }
 }
 
-struct ExternalProxyError: LocalizedError {
-    let message: String
-
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+struct ExternalProxyError: LocalizedError, OperationIssueProviding {
+    let operationIssue: OperationIssue
+    init(_ issue: OperationIssue) { operationIssue = issue }
+    init(_ message: String) { operationIssue = .technical(message) }
+    var message: String { operationIssue.diagnostic }
+    var errorDescription: String? { operationIssue.diagnostic }
 }
 
 private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChannelHandler {
@@ -263,7 +275,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
 
     func handlerAdded(context: ChannelHandlerContext) {
         timer = context.eventLoop.scheduleTask(in: timeout) { [weak self] in
-            self?.fail(ExternalProxyError("外部代理握手超时。"), context: context)
+            self?.fail(ExternalProxyError(.proxyHandshakeTimeout), context: context)
         }
         switch config.mode {
         case .http: startHTTP(context)
@@ -271,7 +283,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
         case .socks5:
             stage = .socksMethod
             send([5, 1, config.useAuth ? 2 : 0], context)
-        case .pac: fail(ExternalProxyError("请先解析 PAC 路由。"), context: context)
+        case .pac: fail(ExternalProxyError(.proxyPacResolutionRequired), context: context)
         }
     }
 
@@ -280,7 +292,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
             if protocolName == nil || protocolName == "http/1.1" {
                 startHTTP(context)
             } else {
-                fail(ExternalProxyError("HTTPS 代理未协商 HTTP/1.1。"), context: context)
+                fail(ExternalProxyError(.proxyProtocolNegotiation), context: context)
             }
         } else if stage == .ready {
             context.fireUserInboundEventTriggered(event)
@@ -298,7 +310,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
         do {
             try advance(context)
             if buffer.readableBytes > 256 * 1024, stage == .installing {
-                throw ExternalProxyError("初始化期间的隧道缓存超过 256 KiB。")
+                throw ExternalProxyError(.proxyTunnelBufferLimit)
             }
         } catch {
             fail(error, context: context)
@@ -311,7 +323,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
 
     func channelInactive(context: ChannelHandlerContext) {
         if stage == .ready { context.fireChannelInactive() }
-        else { fail(ExternalProxyError("外部代理在握手时关闭连接。"), context: context, close: false) }
+        else { fail(ExternalProxyError(.proxyHandshakeClosed), context: context, close: false) }
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
@@ -345,7 +357,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
                     continue
                 }
                 guard (200..<300).contains(status) else {
-                    throw ExternalProxyError("外部 HTTP 代理拒绝 CONNECT（\(status)）。")
+                    throw ExternalProxyError(.proxyHttpRejected(status))
                 }
                 established(context)
                 return
@@ -354,7 +366,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
                       let method: UInt8 = buffer.getInteger(at: buffer.readerIndex + 1) else { return }
                 buffer.moveReaderIndex(forwardBy: 2)
                 guard version == 5, method == (config.useAuth ? 2 : 0) else {
-                    throw ExternalProxyError("SOCKS5 代理未接受配置的认证方式。")
+                    throw ExternalProxyError(.proxySocksAuthMethod)
                 }
                 if config.useAuth {
                     stage = .socksAuth
@@ -368,7 +380,7 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
                 guard let version: UInt8 = buffer.getInteger(at: buffer.readerIndex),
                       let status: UInt8 = buffer.getInteger(at: buffer.readerIndex + 1) else { return }
                 buffer.moveReaderIndex(forwardBy: 2)
-                guard version == 1, status == 0 else { throw ExternalProxyError("SOCKS5 用户名或密码验证失败。") }
+                guard version == 1, status == 0 else { throw ExternalProxyError(.proxySocksCredentials) }
                 startSOCKSConnect(context)
             case .socksConnect:
                 guard let length = try socksReplyLength() else { return }
@@ -396,14 +408,14 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
                     guard tokens.count >= 2, ["HTTP/1.0", "HTTP/1.1"].contains(tokens[0]),
                           tokens[1].utf8.count == 3, let status = Int(tokens[1]),
                           (100...599).contains(status) else {
-                        throw ExternalProxyError("外部 HTTP 代理返回了无效的状态行。")
+                        throw ExternalProxyError(.proxyHttpStatusInvalid)
                     }
                     return status
                 }
             }
             headerSearch = last + 1
         }
-        if length >= limit { throw ExternalProxyError("外部 HTTP 代理响应头超过 32 KiB。") }
+        if length >= limit { throw ExternalProxyError(.proxyHttpHeadersLimit) }
         return nil
     }
 
@@ -413,9 +425,9 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
         let version = buffer.getInteger(at: start, as: UInt8.self)
         let status = buffer.getInteger(at: start + 1, as: UInt8.self)
         let reserved = buffer.getInteger(at: start + 2, as: UInt8.self)
-        guard version == 5, reserved == 0 else { throw ExternalProxyError("SOCKS5 CONNECT 响应无效。") }
+        guard version == 5, reserved == 0 else { throw ExternalProxyError(.proxySocksReplyInvalid) }
         guard let status, status == 0 else {
-            throw ExternalProxyError("SOCKS5 代理拒绝 CONNECT（\(status.map(String.init) ?? "?")）。")
+            throw ExternalProxyError(.proxySocksRejected(status.map(String.init) ?? "?"))
         }
         let length: Int
         switch buffer.getInteger(at: start + 3, as: UInt8.self) {
@@ -423,9 +435,9 @@ private final class ExternalProxyHandshake: ChannelInboundHandler, RemovableChan
         case 4: length = 22
         case 3:
             guard let count: UInt8 = buffer.getInteger(at: start + 4) else { return nil }
-            guard count > 0 else { throw ExternalProxyError("SOCKS5 返回了空地址。") }
+            guard count > 0 else { throw ExternalProxyError(.proxySocksEmptyAddress) }
             length = 7 + Int(count)
-        default: throw ExternalProxyError("SOCKS5 CONNECT 响应地址类型无效。")
+        default: throw ExternalProxyError(.proxySocksAddressType)
         }
         return buffer.readableBytes >= length ? length : nil
     }

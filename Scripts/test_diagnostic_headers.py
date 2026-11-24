@@ -2,6 +2,7 @@
 """Compile the real diagnostic policy and HTTP wire models without macOS stubs."""
 import argparse
 from pathlib import Path
+from foundation_test_support import build_foundation_module
 import shutil
 import subprocess
 import tempfile
@@ -29,7 +30,7 @@ import Foundation
                 diagnostics.record(source)
                 let request = HTTPRequestHead(method: "POST", target: "http://fixture.invalid/path", version: "HTTP/1.1",
                     headers: diagnostics.appending(to: original))
-                let wire = sanitizedRequestHead(head: request, originFormTarget: "/path", keepAlive: true)
+                let wire = try sanitizedRequestHead(head: request, originFormTarget: "/path", keepAlive: true)
                 var parser = RequestHeadParser()
                 let parsed = try parser.feed(wire)!
                 check(parsed.headers.value(of: "X-ProxyMirror-Rule") == (enabled ? source.rawValue : nil),
@@ -98,11 +99,12 @@ def main():
     compiler = shutil.which(arguments.swiftc) or arguments.swiftc
     with tempfile.TemporaryDirectory(prefix="pm-diagnostic-headers-") as temporary:
         directory = Path(temporary)
+        module_flags = build_foundation_module(compiler, directory)
         entry = directory / "DiagnosticChecks.swift"
-        entry.write_text(MAIN, encoding="utf-8")
+        entry.write_text("@_exported import ProxyMirrorFoundation\n" + MAIN, encoding="utf-8")
         executable = directory / "diagnostic-checks"
         subprocess.run([compiler, "-swift-version", "5", "-module-cache-path", str(directory / "cache"),
-                        str(ROOT / "Sources/ProxyMirrorCore/Proxy/HTTPMessage.swift"),
+                        *module_flags,
                         str(ROOT / "Sources/ProxyMirrorCore/Interception/DiagnosticHeaders.swift"),
                         str(entry), "-o", str(executable)], check=True, timeout=120)
         subprocess.run([str(executable)], check=True, timeout=15)

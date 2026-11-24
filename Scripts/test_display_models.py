@@ -6,6 +6,7 @@ and require macOS. This runner deliberately tests only the portable model code.
 """
 import argparse
 from pathlib import Path
+from foundation_test_support import build_foundation_module
 import subprocess
 import tempfile
 
@@ -78,10 +79,11 @@ print("Display models: \(checks) checks passed")
 '''
     with tempfile.TemporaryDirectory(prefix="pm-display-models-") as directory:
         path = Path(directory)
+        module_flags = build_foundation_module(args.swiftc, path)
         source = path / "main.swift"
-        source.write_text(harness + geometry + "\n" + clock + "\n" + checks)
+        source.write_text("@_exported import ProxyMirrorFoundation\n" + harness + geometry + "\n" + clock + "\n" + checks)
         executable = path / "checks"
-        subprocess.run([args.swiftc, str(source), "-o", str(executable)], check=True)
+        subprocess.run([args.swiftc, *module_flags, str(source), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
 
 

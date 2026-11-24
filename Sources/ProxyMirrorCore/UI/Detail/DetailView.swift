@@ -1,4 +1,5 @@
 import SwiftUI
+import ProxyMirrorFoundation
 
 /// 详情面板（Proxyman 26.10 实测：顶栏 方法/状态/URL + 左右分栏 Request | Response，
 /// 每侧横向 tabs：头部|查看|原文|预览 (+ Connection Log)；Response 未解密时显示加密占位）
@@ -115,7 +116,7 @@ struct DetailContentView: View {
             if tx.state == .failed {
                 Text(tx.statusCode > 0 ? Strings.Detail.transferFailed(String(describing: tx.statusText)) : Strings.Detail.transportFailed)
                     .foregroundStyle(.red)
-                    .help(tx.errorText ?? "")
+                    .help(tx.localizedErrorText ?? "")
             } else if tx.statusCode > 0 {
                 let color = Color(nsColor: tx.statusColor)
                 Text(tx.statusText)
@@ -194,13 +195,17 @@ private struct ContentSideView: View {
     @State private var showingQuery = false
     @State private var showCapturedBytes = false
     @State private var decodedBody: (input: TreeInput, result: Result<(Data, String), ContentCoding.DecodeError>)?
+    @State private var bodyInspection: (input: InspectionInput, value: MessagePackBody.Inspection)?
+    @State private var inspectionEpoch: UInt64 = 0
     @ObservedObject private var previewers = CustomPreviewerStore.shared
     @ObservedObject private var protobufRules = ProtobufRuleStore.shared
     @State private var customPreviewerID: UUID?
 
-    private struct TreeInput: Equatable {
-        let transaction: ObjectIdentifier
-        let revision: UInt64
+    private typealias TreeInput = BodyInspectionKey
+    private typealias InspectionInput = BodyInspectionKey
+    private var currentBodyKey: BodyInspectionKey {
+        .init(transaction: ObjectIdentifier(tx), revision: bodyRevision, encodings: contentEncodings,
+              contentType: contentType, complete: complete, truncated: truncated, epoch: inspectionEpoch)
     }
 
     private var isRequest: Bool { side == .request }
@@ -217,7 +222,7 @@ private struct ContentSideView: View {
         guard tab == .body || tab == .preview || (tab == .raw && !showCapturedBytes),
               !tx.isWebSocket, !isEncryptedTunnel,
               isCompressed, !unsupportedEncodings, complete, !truncated, !capturedData.isEmpty else { return nil }
-        return TreeInput(transaction: ObjectIdentifier(tx), revision: bodyRevision)
+        return currentBodyKey
     }
     private var decodeResult: Result<(Data, String), ContentCoding.DecodeError>? {
         guard let input = decodeInput, decodedBody?.input == input else { return nil }
@@ -228,8 +233,21 @@ private struct ContentSideView: View {
         return decoded.1
     }
     private var inspectedBody: MessagePackBody.Inspection {
-        MessagePackBody.inspect(baseDecodedData, contentType: contentType)
+        guard let input = inspectionInput else {
+            return .init(data: baseDecodedData, contentType: contentType, decoded: false)
+        }
+        guard bodyInspection?.input == input, let value = bodyInspection?.value else {
+            return .init(data: Data(), contentType: contentType, decoded: false)
+        }
+        return value
     }
+    private var inspectionInput: InspectionInput? {
+        guard tab == .body || tab == .preview || (tab == .raw && !showCapturedBytes),
+              !tx.isWebSocket, !isEncryptedTunnel, complete, !truncated else { return nil }
+        if isCompressed, decodedLabel == nil { return nil }
+        return currentBodyKey
+    }
+    private var inspectionPending: Bool { inspectionInput.map { bodyInspection?.input != $0 } ?? false }
     private var messagePackApplied: Bool { inspectedBody.decoded }
     /// 仅 Content-Encoding 解码结果
     private var baseDecodedData: Data {
@@ -249,7 +267,7 @@ private struct ContentSideView: View {
     private var treeInput: TreeInput? {
         guard tab == .body, tree, !tx.isWebSocket, grpcMediaType == nil, !isHTTPProtobuf, search.isEmpty, !showingQuery, complete, !truncated,
               !data.isEmpty, data.count <= JSONTreeService.maxInput else { return nil }
-        return TreeInput(transaction: ObjectIdentifier(tx), revision: bodyRevision)
+        return currentBodyKey
     }
     private var headers: HTTPHeaders { isRequest ? tx.requestHeaders : tx.responseHeaders }
     private var trailers: HTTPHeaders { isRequest ? tx.requestTrailers : tx.responseTrailers }
@@ -298,7 +316,7 @@ private struct ContentSideView: View {
             if !isRequest && isEncryptedTunnel {
                 encryptedResponse
             } else {
-                if let error = tx.errorText, !isRequest {
+                if let error = tx.localizedErrorText, !isRequest {
                     Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(6)
                 }
@@ -324,6 +342,21 @@ private struct ContentSideView: View {
             showingQuery = false
             showCapturedBytes = false
             decodedBody = nil
+            bodyInspection = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in
+            bodyInspection = nil; decodedBody = nil; treeResult = nil; inspectionEpoch &+= 1
+        }
+        .task(id: inspectionInput) {
+            guard let input = inspectionInput, bodyInspection?.input != input else { return }
+            let bytes = baseDecodedData
+            let type = contentType
+            let worker = Task.detached(priority: .userInitiated) { MessagePackBody.inspect(bytes, contentType: type) }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled, inspectionInput == input else { return }
+            bodyInspection = (input, result)
         }
         .task(id: decodeInput) {
             guard let input = decodeInput, decodedBody?.input != input else { return }
@@ -338,7 +371,7 @@ private struct ContentSideView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { decodedBody = (input, result) }
+            if !Task.isCancelled, decodeInput == input { decodedBody = (input, result) }
         }
         .task(id: treeInput) {
             guard let input = treeInput else { treeResult = nil; return }
@@ -349,7 +382,7 @@ private struct ContentSideView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { treeResult = (input, result) }
+            if !Task.isCancelled, treeInput == input { treeResult = (input, result) }
         }
     }
 
@@ -384,7 +417,7 @@ private struct ContentSideView: View {
                 Spacer()
             }
             if receivedBytes > 0 {
-                Text(ByteCountFormatter.string(fromByteCount: Int64(receivedBytes), countStyle: .file))
+                Text(PresentationNumbers.byteCount(Int64(receivedBytes)))
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                     .fixedSize()
             }
@@ -527,8 +560,8 @@ private struct ContentSideView: View {
                     (Strings.Detail.connectionReuse, tx.connectionDetails?.reused == true ? Strings.Detail.reused : Strings.Detail.newOrNotAvailable),
                     (Strings.Detail.clientStreamId, tx.connectionDetails?.downstreamStream.map(String.init) ?? "–"),
                     (Strings.Detail.upstreamStreamId, tx.connectionDetails?.upstreamStream.map(String.init) ?? "–"),
-                    (Strings.Detail.connectionEstablished, tx.tConnected.map { $0.formatted() } ?? Strings.Detail.notAvailable),
-                    (Strings.Detail.responseHeadersReceived, tx.tHeaderAt.map { $0.formatted() } ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.connectionEstablished, tx.tConnected.map { PresentationTime.string(from: $0) } ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.responseHeadersReceived, tx.tHeaderAt.map { PresentationTime.string(from: $0) } ?? Strings.Detail.notAvailable),
                     (Strings.Detail.matchedRules, tx.ruleMatches.isEmpty ? Strings.Detail.none : tx.ruleMatches.joined(separator: " → ")),
                     (Strings.Detail.scriptExecution, tx.scriptingLogs.isEmpty ? Strings.Detail.none : tx.scriptingLogs.joined(separator: "\n")),
                 ]).padding(10)
@@ -549,13 +582,18 @@ private struct ContentSideView: View {
     }
 
     private func connectionDuration(_ milliseconds: Double?) -> String {
-        milliseconds.map { String(format: "%.1f ms", $0) } ?? "–"
+        milliseconds.map { PresentationNumbers.milliseconds($0) } ?? "–"
     }
 
     @ViewBuilder
     private func inspectBody<Content: View>(rawHead: RawMessageHead? = nil,
                                            @ViewBuilder _ content: () -> Content) -> some View {
-        if !isCompressed || capturedData.isEmpty || tx.isWebSocket {
+        if inspectionPending {
+            ProgressView(Strings.Detail.decoding).controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if inspectedBody.issue == .outputLimit {
+            compressedBody(Strings.Detail.messagePackOutputLimit, rawHead: rawHead)
+        } else if !isCompressed || capturedData.isEmpty || tx.isWebSocket {
             content()
         } else if truncated {
             compressedBody(Strings.Detail.theBodyWasTruncatedAndCannotBeDecompressed, rawHead: rawHead)

@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 func checkExportInteractions(_ test: CoreAssertions) throws {
+    try checkCapturedFailurePersistence(test)
     checkMCPPreferencesRuntime(test)
     let directory = try makeCheckDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

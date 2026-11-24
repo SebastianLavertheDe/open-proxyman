@@ -17,13 +17,30 @@ def generated():
         literal=json.dumps(value,ensure_ascii=False)
         if types:
             parameters=', '.join('_ p'+str(i)+': '+t for i,t in enumerate(types))
+            stored=', '.join('p'+str(i) if t == 'String' else 'String(p'+str(i)+')' for i,t in enumerate(types))
             out.append(f'    static func {name}({parameters}) -> Self {{')
-            out.append(f'        Self(code: "{key}", diagnostic: String(format: {literal}, locale: Locale(identifier: "en_US_POSIX"), arguments: [{args}]),')
+            out.append(f'        Self(code: "{key}", arguments: [{stored}], diagnostic: String(format: {literal}, locale: Locale(identifier: "en_US_POSIX"), arguments: [{args}]),')
             out.append(f'             render: {{ Strings.Errors.{name}({args}) }})')
         else:
             out.append(f'    static var {name}: Self {{')
             out.append(f'        Self(code: "{key}", diagnostic: {literal}, render: {{ Strings.Errors.{name} }})')
         out.extend(['    }',''])
+    out.extend(['    /// Restore known error identities without translating their persisted diagnostic.',
+                '    static func restored(code: String, arguments: [String], diagnostic: String) -> Self {',
+                '        let fallback = Self(code: code, arguments: arguments, diagnostic: diagnostic, render: { diagnostic })',
+                '        switch code {'])
+    for key,value in sorted(entries):
+        types=signature(value); name=camel(key)
+        out.append(f'        case "{key}":')
+        guards=[f'arguments.count == {len(types)}']
+        for i,t in enumerate(types):
+            if t != 'String':
+                guards.append(f'let p{i} = {t}(arguments[{i}])')
+                if t == 'Double': guards.append(f'p{i}.isFinite')
+        out.append('            guard '+', '.join(guards)+' else { return fallback }')
+        args=', '.join(f'arguments[{i}]' if t == 'String' else f'p{i}' for i,t in enumerate(types))
+        out.append(f'            return .{name}'+(f'({args})' if types else ''))
+    out.extend(['        default: return restoredModel(code: code, arguments: arguments) ?? fallback','        }','    }',''])
     out.append('}'); return '\n'.join(out)+'\n'
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--check',action='store_true');args=parser.parse_args()

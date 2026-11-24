@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import NIOCore
+import ProxyMirrorFoundation
 
 // MARK: - 过滤器（对齐 Proxyman 语义：某类条件为空 = 不限制）
 
@@ -87,6 +88,7 @@ final class TrafficStore: ObservableObject {
     private let data: TrafficData
     private var mutations: AnyCancellable?
     private var preferenceChanges: AnyCancellable?
+    private var jsonCacheChanges: AnyCancellable?
     private var hideAppleTraffic = UserDefaults.standard.bool(forKey: "ui.hideAppleTraffic")
     // Cache Combine's synthesized publisher so manual notifications don't repeat
     // field discovery. This also keeps @Published properties on the same publisher.
@@ -94,11 +96,16 @@ final class TrafficStore: ObservableObject {
     private var workspaceVisible = true
     private var receivedWhileHidden = false
     private var visibleRows: [Transaction]? {
-        didSet { sortedRows = nil }
+        didSet { sortedRows = nil; cancelJSONSorting(); sortRevision &+= 1 }
     }
     private var visiblePins: [String]?
     private var sortedRows: (column: TrafficColumn, ascending: Bool, rows: [Transaction])?
     private var sortRevision: UInt64 = 0
+    private var jsonSorting: Task<Void, Never>?
+    private var jsonSortRequest: (column: TrafficColumn, ascending: Bool)?
+    private var jsonSortGeneration = UUID()
+    private var jsonSortRetryAfter: TimeInterval = 0
+    private var jsonSortPressureGeneration = UUID()
     var sortsByCapturedBody = false
     private var pendingBodies: Set<UUID> = []
     var transactions: [Transaction] { data.transactions }
@@ -243,6 +250,8 @@ final class TrafficStore: ObservableObject {
          savedFile: URL = CertificateAuthority.applicationSupport.appendingPathComponent("Saved.proxymirror")) {
         data = original?.data ?? TrafficData(sourceFolderFile: sourceFolderFile, savedFile: savedFile)
         mutations = data.changed.sink { [weak self] change in self?.refreshSharedData(change) }
+        jsonCacheChanges = NotificationCenter.default.publisher(for: .pmJSONColumnCacheWillClear)
+            .sink { [weak self] _ in self?.clearJSONSortingForPressure() }
         preferenceChanges = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: UserDefaults.standard)
             .receive(on: RunLoop.main).sink { [weak self] _ in
                 guard let self else { return }
@@ -432,10 +441,74 @@ final class TrafficStore: ObservableObject {
         if let sortedRows, sortedRows.column == column, sortedRows.ascending == ascending {
             return (sortedRows.rows, sortRevision)
         }
+        let backgroundColumn: Bool
+        if case .custom(let field) = column { backgroundColumn = field.readsJSON }
+        else { backgroundColumn = column == .graphql }
+        if backgroundColumn {
+            guard ProcessInfo.processInfo.systemUptime >= jsonSortRetryAfter else { return (rows, sortRevision) }
+            if jsonSortRequest?.column != column || jsonSortRequest?.ascending != ascending {
+                cancelJSONSorting()
+                jsonSortRequest = (column, ascending)
+                let generation = jsonSortGeneration
+                let snapshots = rows.map { transaction -> BackgroundColumnSnapshot in
+                    if case .custom(let field) = column { return .json(field.snapshot(for: transaction), path: field.key) }
+                    return .graphql(CustomColumnValues.shared.graphqlSnapshot(for: transaction))
+                }
+                let sequences = rows.map(\.seq)
+                let ticket = JSONColumnSort.Ticket(generation: generation, keys: snapshots.map(\.key))
+                let inputs = zip(snapshots, sequences).map { snapshot, sequence in
+                    JSONColumnSort.ValueInput(sequence: sequence) { await snapshot.value() }
+                }
+                let worker = Task.detached(priority: .userInitiated) { () -> [Int]? in
+                    await JSONColumnSort.indices(values: inputs, ascending: ascending)
+                }
+                jsonSorting = Task { [weak self] in
+                    let indices = await withTaskCancellationHandler {
+                        await worker.value
+                    } onCancel: { worker.cancel() }
+                    guard !Task.isCancelled, let self, self.jsonSortGeneration == generation else { return }
+                    self.jsonSorting = nil
+                    let currentKeys = rows.map { transaction in
+                        if case .custom(let field) = column {
+                            return CustomColumnValues.shared.key(for: transaction, request: field.source == .requestJSON)
+                        }
+                        return CustomColumnValues.shared.graphqlKey(for: transaction)
+                    }
+                    guard let indices, ticket.isCurrent(generation: self.jsonSortGeneration, keys: currentKeys) else {
+                        self.jsonSortRequest = nil
+                        self.changePublisher.send()
+                        return
+                    }
+                    self.sortedRows = (column, ascending, indices.map { rows[$0] })
+                    self.sortRevision &+= 1
+                    self.changePublisher.send()
+                }
+                sortRevision &+= 1
+            }
+            return (rows, sortRevision)
+        }
+        cancelJSONSorting()
         let ordered = column.sorted(rows, ascending: ascending)
         sortedRows = (column, ascending, ordered)
         sortRevision &+= 1
         return (ordered, sortRevision)
+    }
+
+    private func cancelJSONSorting() {
+        jsonSorting?.cancel(); jsonSorting = nil; jsonSortRequest = nil
+        jsonSortGeneration = UUID()
+    }
+
+    private func clearJSONSortingForPressure() {
+        cancelJSONSorting()
+        jsonSortRetryAfter = ProcessInfo.processInfo.systemUptime + 2
+        let generation = UUID()
+        jsonSortPressureGeneration = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) { [weak self] in
+            guard let self, self.jsonSortPressureGeneration == generation else { return }
+            self.jsonSortRetryAfter = 0
+            self.changePublisher.send()
+        }
     }
 
     private func isVisible(_ tx: Transaction) -> Bool {
@@ -460,13 +533,7 @@ final class TrafficStore: ObservableObject {
     }
 
     static func isSimulatorAppleBackgroundTraffic(_ tx: Transaction) -> Bool {
-        guard tx.isIOSSimulator else { return false }
-        let host = tx.host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        // Only known service endpoints; an app deliberately visiting apple.com remains visible.
-        let domains = ["mesu.apple.com", "gdmf.apple.com", "configuration.apple.com", "xp.apple.com",
-                       "push.apple.com", "gateway.icloud.com", "pancake.apple.com", "captive.apple.com",
-                       "time.apple.com", "time-ios.apple.com", "apple-dns.net"]
-        return domains.contains { host == $0 || host.hasSuffix("." + $0) }
+        SimulatorTrafficPolicy.isBackgroundTraffic(host: tx.host, isSimulator: tx.isIOSSimulator)
     }
 
     func isChipSelected(_ chip: FilterChip) -> Bool {
@@ -1026,9 +1093,9 @@ private final class TrafficData {
     @discardableResult
     func removeOldestCompleted(count: Int) -> Int {
         guard count > 0 else { return 0 }
-        let ids = Set(live.filter { $0.state == .completed || $0.state == .failed }
-            .sorted { $0.startedAt == $1.startedAt ? $0.seq < $1.seq : $0.startedAt < $1.startedAt }
-            .prefix(count).map(\.id))
+        let candidates = live.map { TrafficRetention.Candidate(id: $0.id, startedAt: $0.startedAt,
+            sequence: $0.seq, completed: $0.state == .completed || $0.state == .failed) }
+        let ids = TrafficRetention.oldestCompleted(candidates, count: count)
         guard !ids.isEmpty else { return 0 }
         remove(ids)
         return ids.count

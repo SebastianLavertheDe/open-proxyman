@@ -7,7 +7,7 @@ extension OperationIssue {
     }
 
     static func appStateAndroidEmulatorSetupFailed(_ p0: String) -> Self {
-        Self(code: "app_state_android_emulator_setup_failed", diagnostic: String(format: "Android emulator setup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_android_emulator_setup_failed", arguments: [p0], diagnostic: String(format: "Android emulator setup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateAndroidEmulatorSetupFailed(p0) })
     }
 
@@ -16,7 +16,7 @@ extension OperationIssue {
     }
 
     static func appStateCaInstallationFailed(_ p0: String) -> Self {
-        Self(code: "app_state_ca_installation_failed", diagnostic: String(format: "CA installation failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_ca_installation_failed", arguments: [p0], diagnostic: String(format: "CA installation failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateCaInstallationFailed(p0) })
     }
 
@@ -37,7 +37,7 @@ extension OperationIssue {
     }
 
     static func appStateDevice(_ p0: String) -> Self {
-        Self(code: "app_state_device", diagnostic: String(format: "Device %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_device", arguments: [p0], diagnostic: String(format: "Device %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateDevice(p0) })
     }
 
@@ -50,7 +50,7 @@ extension OperationIssue {
     }
 
     static func appStateEnableTheSystemProxyManually(_ p0: String) -> Self {
-        Self(code: "app_state_enable_the_system_proxy_manually", diagnostic: String(format: "Enable the system proxy manually. %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_enable_the_system_proxy_manually", arguments: [p0], diagnostic: String(format: "Enable the system proxy manually. %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateEnableTheSystemProxyManually(p0) })
     }
 
@@ -67,7 +67,7 @@ extension OperationIssue {
     }
 
     static func appStateNewConnectionsFromWillUsePassthrough(_ p0: String) -> Self {
-        Self(code: "app_state_new_connections_from_will_use_passthrough", diagnostic: String(format: "New connections from “%@” will use passthrough.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_new_connections_from_will_use_passthrough", arguments: [p0], diagnostic: String(format: "New connections from “%@” will use passthrough.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateNewConnectionsFromWillUsePassthrough(p0) })
     }
 
@@ -88,7 +88,7 @@ extension OperationIssue {
     }
 
     static func appStateRestoredThePreviousListenerPort(_ p0: Int) -> Self {
-        Self(code: "app_state_restored_the_previous_listener_port", diagnostic: String(format: "\nRestored the previous listener port %ld.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_restored_the_previous_listener_port", arguments: [String(p0)], diagnostic: String(format: "\nRestored the previous listener port %ld.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateRestoredThePreviousListenerPort(p0) })
     }
 
@@ -105,7 +105,7 @@ extension OperationIssue {
     }
 
     static func appStateSimulatorSetupFailed(_ p0: String) -> Self {
-        Self(code: "app_state_simulator_setup_failed", diagnostic: String(format: "Simulator setup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_simulator_setup_failed", arguments: [p0], diagnostic: String(format: "Simulator setup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateSimulatorSetupFailed(p0) })
     }
 
@@ -142,7 +142,7 @@ extension OperationIssue {
     }
 
     static func appStateSystemProxyEnabled127001(_ p0: Int) -> Self {
-        Self(code: "app_state_system_proxy_enabled_127_0_0_1", diagnostic: String(format: "System proxy enabled (127.0.0.1:%ld)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_system_proxy_enabled_127_0_0_1", arguments: [String(p0)], diagnostic: String(format: "System proxy enabled (127.0.0.1:%ld)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateSystemProxyEnabled127001(p0) })
     }
 
@@ -167,12 +167,12 @@ extension OperationIssue {
     }
 
     static func appStateTheSelectedRequestsCannotBeCopiedAsCheck(_ p0: String) -> Self {
-        Self(code: "app_state_the_selected_requests_cannot_be_copied_as_check", diagnostic: String(format: "The selected requests cannot be copied as %@. Check that capture is complete, or choose another default copy format in Settings.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_the_selected_requests_cannot_be_copied_as_check", arguments: [p0], diagnostic: String(format: "The selected requests cannot be copied as %@. Check that capture is complete, or choose another default copy format in Settings.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateTheSelectedRequestsCannotBeCopiedAsCheck(p0) })
     }
 
     static func appStateTheSslRuleWasNotSaved(_ p0: String) -> Self {
-        Self(code: "app_state_the_ssl_rule_was_not_saved", diagnostic: String(format: "The SSL rule was not saved: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_the_ssl_rule_was_not_saved", arguments: [p0], diagnostic: String(format: "The SSL rule was not saved: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateTheSslRuleWasNotSaved(p0) })
     }
 
@@ -185,7 +185,7 @@ extension OperationIssue {
     }
 
     static func appStateTransactionsCanBeImportedSkipped(_ p0: String, _ p1: Int, _ p2: Int) -> Self {
-        Self(code: "app_state_transactions_can_be_imported_skipped", diagnostic: String(format: "%@\n%ld transactions can be imported · %ld skipped", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
+        Self(code: "app_state_transactions_can_be_imported_skipped", arguments: [p0, String(p1), String(p2)], diagnostic: String(format: "%@\n%ld transactions can be imported · %ld skipped", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
              render: { Strings.Errors.appStateTransactionsCanBeImportedSkipped(p0, p1, p2) })
     }
 
@@ -198,47 +198,47 @@ extension OperationIssue {
     }
 
     static func appStateUnableToCopyTheCertificate(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_copy_the_certificate", diagnostic: String(format: "Unable to copy the certificate: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_copy_the_certificate", arguments: [p0], diagnostic: String(format: "Unable to copy the certificate: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToCopyTheCertificate(p0) })
     }
 
     static func appStateUnableToDisableTheSystemProxy(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_disable_the_system_proxy", diagnostic: String(format: "Unable to disable the system proxy: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_disable_the_system_proxy", arguments: [p0], diagnostic: String(format: "Unable to disable the system proxy: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToDisableTheSystemProxy(p0) })
     }
 
     static func appStateUnableToEnableTheSystemProxy(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_enable_the_system_proxy", diagnostic: String(format: "Unable to enable the system proxy: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_enable_the_system_proxy", arguments: [p0], diagnostic: String(format: "Unable to enable the system proxy: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToEnableTheSystemProxy(p0) })
     }
 
     static func appStateUnableToOpenTheSession(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_open_the_session", diagnostic: String(format: "Unable to open the session: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_open_the_session", arguments: [p0], diagnostic: String(format: "Unable to open the session: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToOpenTheSession(p0) })
     }
 
     static func appStateUnableToOpenTheTlsKeyLog(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_open_the_tls_key_log", diagnostic: String(format: "Unable to open the TLS key log: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_open_the_tls_key_log", arguments: [p0], diagnostic: String(format: "Unable to open the TLS key log: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToOpenTheTlsKeyLog(p0) })
     }
 
     static func appStateUnableToRemoveSystemProxyAuthorization(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_remove_system_proxy_authorization", diagnostic: String(format: "Unable to remove system proxy authorization: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_remove_system_proxy_authorization", arguments: [p0], diagnostic: String(format: "Unable to remove system proxy authorization: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToRemoveSystemProxyAuthorization(p0) })
     }
 
     static func appStateUnableToSaveThePassthroughRule(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_save_the_passthrough_rule", diagnostic: String(format: "Unable to save the passthrough rule: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_save_the_passthrough_rule", arguments: [p0], diagnostic: String(format: "Unable to save the passthrough rule: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToSaveThePassthroughRule(p0) })
     }
 
     static func appStateUnableToStartCheckThePortAndLan(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_start_check_the_port_and_lan", diagnostic: String(format: "Unable to start: %@\nCheck the port and LAN address in Settings.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_start_check_the_port_and_lan", arguments: [p0], diagnostic: String(format: "Unable to start: %@\nCheck the port and LAN address in Settings.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToStartCheckThePortAndLan(p0) })
     }
 
     static func appStateUnableToStartTheInAppCaptureListener(_ p0: String) -> Self {
-        Self(code: "app_state_unable_to_start_the_in_app_capture_listener", diagnostic: String(format: "Unable to start the in-app capture listener: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_state_unable_to_start_the_in_app_capture_listener", arguments: [p0], diagnostic: String(format: "Unable to start the in-app capture listener: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appStateUnableToStartTheInAppCaptureListener(p0) })
     }
 
@@ -275,7 +275,7 @@ extension OperationIssue {
     }
 
     static func appUpdateControllerSignedUpdatesAreCurrentlyUnavailable(_ p0: String) -> Self {
-        Self(code: "app_update_controller_signed_updates_are_currently_unavailable", diagnostic: String(format: "Signed updates are currently unavailable: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_update_controller_signed_updates_are_currently_unavailable", arguments: [p0], diagnostic: String(format: "Signed updates are currently unavailable: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appUpdateControllerSignedUpdatesAreCurrentlyUnavailable(p0) })
     }
 
@@ -304,12 +304,12 @@ extension OperationIssue {
     }
 
     static func appUpdateControllerUpdateCheckFailed(_ p0: String) -> Self {
-        Self(code: "app_update_controller_update_check_failed", diagnostic: String(format: "Update check failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_update_controller_update_check_failed", arguments: [p0], diagnostic: String(format: "Update check failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appUpdateControllerUpdateCheckFailed(p0) })
     }
 
     static func appUpdateControllerVersionIsAvailable(_ p0: String) -> Self {
-        Self(code: "app_update_controller_version_is_available", diagnostic: String(format: "Version %@ is available", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "app_update_controller_version_is_available", arguments: [p0], diagnostic: String(format: "Version %@ is available", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.appUpdateControllerVersionIsAvailable(p0) })
     }
 
@@ -454,7 +454,7 @@ extension OperationIssue {
     }
 
     static func charlesImportAConnectionTerminationActionCannotBeConvertedTo(_ p0: String) -> Self {
-        Self(code: "charles_import_a_connection_termination_action_cannot_be_converted_to", diagnostic: String(format: "%@: a connection termination action cannot be converted to HTTP 403", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "charles_import_a_connection_termination_action_cannot_be_converted_to", arguments: [p0], diagnostic: String(format: "%@: a connection termination action cannot be converted to HTTP 403", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.charlesImportAConnectionTerminationActionCannotBeConvertedTo(p0) })
     }
 
@@ -463,7 +463,7 @@ extension OperationIssue {
     }
 
     static func charlesImportDirectoryMappingCannotBeConvertedEquivalently(_ p0: String) -> Self {
-        Self(code: "charles_import_directory_mapping_cannot_be_converted_equivalently", diagnostic: String(format: "%@: directory mapping cannot be converted equivalently", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "charles_import_directory_mapping_cannot_be_converted_equivalently", arguments: [p0], diagnostic: String(format: "%@: directory mapping cannot be converted equivalently", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.charlesImportDirectoryMappingCannotBeConvertedEquivalently(p0) })
     }
 
@@ -472,17 +472,17 @@ extension OperationIssue {
     }
 
     static func charlesImportLocationTheMatchConditionCannotBeConverted(_ p0: String, _ p1: String) -> Self {
-        Self(code: "charles_import_location_the_match_condition_cannot_be_converted", diagnostic: String(format: "%@ location %@: the match condition cannot be converted", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "charles_import_location_the_match_condition_cannot_be_converted", arguments: [p0, p1], diagnostic: String(format: "%@ location %@: the match condition cannot be converted", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.charlesImportLocationTheMatchConditionCannotBeConverted(p0, p1) })
     }
 
     static func charlesImportNoEnabledLocationsCanBeImportedRules(_ p0: String, _ p1: Int) -> Self {
-        Self(code: "charles_import_no_enabled_locations_can_be_imported_rules", diagnostic: String(format: "%@: no enabled locations can be imported (%ld rules)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "charles_import_no_enabled_locations_can_be_imported_rules", arguments: [p0, String(p1)], diagnostic: String(format: "%@: no enabled locations can be imported (%ld rules)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.charlesImportNoEnabledLocationsCanBeImportedRules(p0, p1) })
     }
 
     static func charlesImportRuleUnsupportedRewriteActionOrMatchCondition(_ p0: String, _ p1: String) -> Self {
-        Self(code: "charles_import_rule_unsupported_rewrite_action_or_match_condition", diagnostic: String(format: "%@ rule %@: unsupported Rewrite action or match condition", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "charles_import_rule_unsupported_rewrite_action_or_match_condition", arguments: [p0, p1], diagnostic: String(format: "%@ rule %@: unsupported Rewrite action or match condition", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.charlesImportRuleUnsupportedRewriteActionOrMatchCondition(p0, p1) })
     }
 
@@ -523,27 +523,27 @@ extension OperationIssue {
     }
 
     static func charlesImportTheLocationMatchExpressionIsTooLongOr(_ p0: String) -> Self {
-        Self(code: "charles_import_the_location_match_expression_is_too_long_or", diagnostic: String(format: "%@: the location match expression is too long or invalid", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "charles_import_the_location_match_expression_is_too_long_or", arguments: [p0], diagnostic: String(format: "%@: the location match expression is too long or invalid", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.charlesImportTheLocationMatchExpressionIsTooLongOr(p0) })
     }
 
     static func charlesImportTheMatchConditionCannotBeConverted(_ p0: String) -> Self {
-        Self(code: "charles_import_the_match_condition_cannot_be_converted", diagnostic: String(format: "%@: the match condition cannot be converted", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "charles_import_the_match_condition_cannot_be_converted", arguments: [p0], diagnostic: String(format: "%@: the match condition cannot be converted", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.charlesImportTheMatchConditionCannotBeConverted(p0) })
     }
 
     static func charlesImportTheMatchConditionOrLocalFilePathCannot(_ p0: String) -> Self {
-        Self(code: "charles_import_the_match_condition_or_local_file_path_cannot", diagnostic: String(format: "%@: the match condition or local file path cannot be converted", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "charles_import_the_match_condition_or_local_file_path_cannot", arguments: [p0], diagnostic: String(format: "%@: the match condition or local file path cannot be converted", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.charlesImportTheMatchConditionOrLocalFilePathCannot(p0) })
     }
 
     static func charlesImportTheTargetFileIsUnreadableOnThisMac(_ p0: String, _ p1: String) -> Self {
-        Self(code: "charles_import_the_target_file_is_unreadable_on_this_mac", diagnostic: String(format: "%@: the target file is unreadable on this Mac and was disabled.\n%@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "charles_import_the_target_file_is_unreadable_on_this_mac", arguments: [p0, p1], diagnostic: String(format: "%@: the target file is unreadable on this Mac and was disabled.\n%@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.charlesImportTheTargetFileIsUnreadableOnThisMac(p0, p1) })
     }
 
     static func charlesImportTool(_ p0: String) -> Self {
-        Self(code: "charles_import_tool", diagnostic: String(format: "Tool %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "charles_import_tool", arguments: [p0], diagnostic: String(format: "Tool %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.charlesImportTool(p0) })
     }
 
@@ -568,7 +568,7 @@ extension OperationIssue {
     }
 
     static func clientTlsidentitiesAMaximumOfClientIdentitiesCanBeSaved(_ p0: Int) -> Self {
-        Self(code: "client_tlsidentities_a_maximum_of_client_identities_can_be_saved", diagnostic: String(format: "A maximum of %ld client identities can be saved.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "client_tlsidentities_a_maximum_of_client_identities_can_be_saved", arguments: [String(p0)], diagnostic: String(format: "A maximum of %ld client identities can be saved.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.clientTlsidentitiesAMaximumOfClientIdentitiesCanBeSaved(p0) })
     }
 
@@ -633,7 +633,7 @@ extension OperationIssue {
     }
 
     static func clientTlsidentitiesUnableToReadUpstreamClientIdentities(_ p0: String) -> Self {
-        Self(code: "client_tlsidentities_unable_to_read_upstream_client_identities", diagnostic: String(format: "Unable to read upstream client identities. %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "client_tlsidentities_unable_to_read_upstream_client_identities", arguments: [p0], diagnostic: String(format: "Unable to read upstream client identities. %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.clientTlsidentitiesUnableToReadUpstreamClientIdentities(p0) })
     }
 
@@ -646,12 +646,12 @@ extension OperationIssue {
     }
 
     static func deviceAutomationInstalledCa(_ p0: String, _ p1: String) -> Self {
-        Self(code: "device_automation_installed_ca", diagnostic: String(format: "Installed CA: %@ (%@)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "device_automation_installed_ca", arguments: [p0, p1], diagnostic: String(format: "Installed CA: %@ (%@)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.deviceAutomationInstalledCa(p0, p1) })
     }
 
     static func deviceAutomationInstalledTheSystemCaOnAndroidEmulatorApi(_ p0: String, _ p1: Int) -> Self {
-        Self(code: "device_automation_installed_the_system_ca_on_android_emulator_api", diagnostic: String(format: "Installed the system CA on Android emulator %@ (API %ld). Restart as required by the emulator image and verify the result.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "device_automation_installed_the_system_ca_on_android_emulator_api", arguments: [p0, String(p1)], diagnostic: String(format: "Installed the system CA on Android emulator %@ (API %ld). Restart as required by the emulator image and verify the result.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.deviceAutomationInstalledTheSystemCaOnAndroidEmulatorApi(p0, p1) })
     }
 
@@ -668,7 +668,7 @@ extension OperationIssue {
     }
 
     static func deviceAutomationTheCommandFailed(_ p0: String) -> Self {
-        Self(code: "device_automation_the_command_failed", diagnostic: String(format: "The command failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "device_automation_the_command_failed", arguments: [p0], diagnostic: String(format: "The command failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.deviceAutomationTheCommandFailed(p0) })
     }
 
@@ -676,8 +676,25 @@ extension OperationIssue {
         Self(code: "device_automation_unable_to_parse_the_device_list_check_your", diagnostic: "Unable to parse the device list. Check your Xcode and Command Line Tools configuration.", render: { Strings.Errors.deviceAutomationUnableToParseTheDeviceListCheckYour })
     }
 
+    static var deviceCommandCancelled: Self {
+        Self(code: "device_command_cancelled", diagnostic: "The device command was cancelled.", render: { Strings.Errors.deviceCommandCancelled })
+    }
+
+    static func deviceCommandFailed(_ p0: Int, _ p1: String) -> Self {
+        Self(code: "device_command_failed", arguments: [String(p0), p1], diagnostic: String(format: "The device command failed (status %ld). %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+             render: { Strings.Errors.deviceCommandFailed(p0, p1) })
+    }
+
+    static var deviceCommandOutputLimit: Self {
+        Self(code: "device_command_output_limit", diagnostic: "The device command output exceeded its size limit.", render: { Strings.Errors.deviceCommandOutputLimit })
+    }
+
+    static var deviceCommandTimeout: Self {
+        Self(code: "device_command_timeout", diagnostic: "The device command exceeded its time limit.", render: { Strings.Errors.deviceCommandTimeout })
+    }
+
     static func exportServiceExportFailed(_ p0: String, _ p1: String) -> Self {
-        Self(code: "export_service_export_failed", diagnostic: String(format: "%@ export failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "export_service_export_failed", arguments: [p0, p1], diagnostic: String(format: "%@ export failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.exportServiceExportFailed(p0, p1) })
     }
 
@@ -686,7 +703,7 @@ extension OperationIssue {
     }
 
     static func externalProxyPacvalidationPacLoadedAndExecutedTheRouteForExample2(_ p0: String, _ p1: String, _ p2: Int) -> Self {
-        Self(code: "external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example_2", diagnostic: String(format: "PAC loaded and executed. The route for example.com is %@ %@:%ld.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
+        Self(code: "external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example_2", arguments: [p0, p1, String(p2)], diagnostic: String(format: "PAC loaded and executed. The route for example.com is %@ %@:%ld.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
              render: { Strings.Errors.externalProxyPacvalidationPacLoadedAndExecutedTheRouteForExample2(p0, p1, p2) })
     }
 
@@ -703,7 +720,7 @@ extension OperationIssue {
     }
 
     static func gistServiceGithubPublishingFailedHttpCheckTokenPermissionsAnd(_ p0: Int) -> Self {
-        Self(code: "gist_service_github_publishing_failed_http_check_token_permissions_and", diagnostic: String(format: "GitHub publishing failed (HTTP %ld). Check token permissions and the API rate limit.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "gist_service_github_publishing_failed_http_check_token_permissions_and", arguments: [String(p0)], diagnostic: String(format: "GitHub publishing failed (HTTP %ld). Check token permissions and the API rate limit.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.gistServiceGithubPublishingFailedHttpCheckTokenPermissionsAnd(p0) })
     }
 
@@ -724,7 +741,7 @@ extension OperationIssue {
     }
 
     static func gistServiceUnableToAccessTheKeychain(_ p0: Int) -> Self {
-        Self(code: "gist_service_unable_to_access_the_keychain", diagnostic: String(format: "Unable to access the keychain (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "gist_service_unable_to_access_the_keychain", arguments: [String(p0)], diagnostic: String(format: "Unable to access the keychain (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.gistServiceUnableToAccessTheKeychain(p0) })
     }
 
@@ -737,7 +754,7 @@ extension OperationIssue {
     }
 
     static func helperBypassInvalid(_ p0: String) -> Self {
-        Self(code: "helper_bypass_invalid", diagnostic: String(format: "Invalid bypass entry: %@. Enter a host, IP address, CIDR or wildcard without a URL or whitespace.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "helper_bypass_invalid", arguments: [p0], diagnostic: String(format: "Invalid bypass entry: %@. Enter a host, IP address, CIDR or wildcard without a URL or whitespace.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.helperBypassInvalid(p0) })
     }
 
@@ -810,7 +827,7 @@ extension OperationIssue {
     }
 
     static func memoryPressureControllerClearedTypesOfRebuildableCachesCapturedTrafficAnd(_ p0: String, _ p1: String, _ p2: Int) -> Self {
-        Self(code: "memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and", diagnostic: String(format: "%@ · %@ · Cleared %ld types of rebuildable caches. Captured traffic and user files were preserved.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
+        Self(code: "memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and", arguments: [p0, p1, String(p2)], diagnostic: String(format: "%@ · %@ · Cleared %ld types of rebuildable caches. Captured traffic and user files were preserved.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
              render: { Strings.Errors.memoryPressureControllerClearedTypesOfRebuildableCachesCapturedTrafficAnd(p0, p1, p2) })
     }
 
@@ -827,13 +844,254 @@ extension OperationIssue {
     }
 
     static func networkAccessPolicyInvalidIpAddressOrCidr(_ p0: String) -> Self {
-        Self(code: "network_access_policy_invalid_ip_address_or_cidr", diagnostic: String(format: "Invalid IP address or CIDR: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "network_access_policy_invalid_ip_address_or_cidr", arguments: [p0], diagnostic: String(format: "Invalid IP address or CIDR: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.networkAccessPolicyInvalidIpAddressOrCidr(p0) })
     }
 
     static func networkAccessPolicyTheAccessListSupportsUpToEntries(_ p0: Int) -> Self {
-        Self(code: "network_access_policy_the_access_list_supports_up_to_entries", diagnostic: String(format: "The access list supports up to %ld entries.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "network_access_policy_the_access_list_supports_up_to_entries", arguments: [String(p0)], diagnostic: String(format: "The access list supports up to %ld entries.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.networkAccessPolicyTheAccessListSupportsUpToEntries(p0) })
+    }
+
+    static func networkBreakpointBufferLimit(_ p0: Int) -> Self {
+        Self(code: "network_breakpoint_buffer_limit", arguments: [String(p0)], diagnostic: String(format: "The breakpoint buffer exceeds %ld bytes.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkBreakpointBufferLimit(p0) })
+    }
+
+    static var networkBreakpointConnectionClosed: Self {
+        Self(code: "network_breakpoint_connection_closed", diagnostic: "The connection closed while waiting for the breakpoint.", render: { Strings.Errors.networkBreakpointConnectionClosed })
+    }
+
+    static var networkBreakpointTimeout: Self {
+        Self(code: "network_breakpoint_timeout", diagnostic: "Timed out waiting for the breakpoint", render: { Strings.Errors.networkBreakpointTimeout })
+    }
+
+    static var networkBreakpointUpstreamInterrupted: Self {
+        Self(code: "network_breakpoint_upstream_interrupted", diagnostic: "The upstream connection closed while waiting for the breakpoint", render: { Strings.Errors.networkBreakpointUpstreamInterrupted })
+    }
+
+    static var networkClientClosed: Self {
+        Self(code: "network_client_closed", diagnostic: "The client connection closed", render: { Strings.Errors.networkClientClosed })
+    }
+
+    static func networkClientWriteFailed(_ p0: String) -> Self {
+        Self(code: "network_client_write_failed", arguments: [p0], diagnostic: String(format: "Unable to write the response to the client: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkClientWriteFailed(p0) })
+    }
+
+    static func networkConnectionError(_ p0: String) -> Self {
+        Self(code: "network_connection_error", arguments: [p0], diagnostic: String(format: "Connection error: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkConnectionError(p0) })
+    }
+
+    static var networkConnectionLimit: Self {
+        Self(code: "network_connection_limit", diagnostic: "The upstream connection pool is busy; try again", render: { Strings.Errors.networkConnectionLimit })
+    }
+
+    static func networkCurlFailed(_ p0: Int) -> Self {
+        Self(code: "network_curl_failed", arguments: [String(p0)], diagnostic: String(format: "Send failed (curl %ld)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkCurlFailed(p0) })
+    }
+
+    static var networkH2Cancelled: Self {
+        Self(code: "network_h2_cancelled", diagnostic: "The client cancelled the HTTP/2 stream", render: { Strings.Errors.networkH2Cancelled })
+    }
+
+    static var networkHttp2InvalidAuthority: Self {
+        Self(code: "network_http2_invalid_authority", diagnostic: "The HTTP/2 target does not match the CONNECT host", render: { Strings.Errors.networkHttp2InvalidAuthority })
+    }
+
+    static var networkHttp2InvalidHeaders: Self {
+        Self(code: "network_http2_invalid_headers", diagnostic: "Invalid HTTP/2 header fields", render: { Strings.Errors.networkHttp2InvalidHeaders })
+    }
+
+    static var networkHttp2InvalidMessage: Self {
+        Self(code: "network_http2_invalid_message", diagnostic: "Invalid HTTP/2 message order or length", render: { Strings.Errors.networkHttp2InvalidMessage })
+    }
+
+    static var networkHttpIncomplete: Self {
+        Self(code: "network_http_incomplete", diagnostic: "The HTTP message is incomplete.", render: { Strings.Errors.networkHttpIncomplete })
+    }
+
+    static func networkHttpMalformed(_ p0: String) -> Self {
+        Self(code: "network_http_malformed", arguments: [p0], diagnostic: String(format: "Invalid HTTP message: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkHttpMalformed(p0) })
+    }
+
+    static var networkInvalidChunkedResponse: Self {
+        Self(code: "network_invalid_chunked_response", diagnostic: "Invalid chunked response", render: { Strings.Errors.networkInvalidChunkedResponse })
+    }
+
+    static var networkInvalidLanAccess: Self {
+        Self(code: "network_invalid_lan_access", diagnostic: "Choose an explicit local LAN address and at least one valid device IP or CIDR range.", render: { Strings.Errors.networkInvalidLanAccess })
+    }
+
+    static var networkInvalidRedirect: Self {
+        Self(code: "network_invalid_redirect", diagnostic: "Invalid HTTP redirect destination", render: { Strings.Errors.networkInvalidRedirect })
+    }
+
+    static func networkInvalidRequestHeaders(_ p0: String) -> Self {
+        Self(code: "network_invalid_request_headers", arguments: [p0], diagnostic: String(format: "Invalid request headers: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkInvalidRequestHeaders(p0) })
+    }
+
+    static var networkInvalidResponse: Self {
+        Self(code: "network_invalid_response", diagnostic: "Unable to parse the upstream response", render: { Strings.Errors.networkInvalidResponse })
+    }
+
+    static func networkInvalidResponseFraming(_ p0: String) -> Self {
+        Self(code: "network_invalid_response_framing", arguments: [p0], diagnostic: String(format: "Invalid response framing: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkInvalidResponseFraming(p0) })
+    }
+
+    static var networkLocalFileBusy: Self {
+        Self(code: "network_local_file_busy", diagnostic: "Local file responses are busy; try again.", render: { Strings.Errors.networkLocalFileBusy })
+    }
+
+    static func networkLocalFileFailed(_ p0: String) -> Self {
+        Self(code: "network_local_file_failed", arguments: [p0], diagnostic: String(format: "Unable to send the local file: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkLocalFileFailed(p0) })
+    }
+
+    static var networkLocalFileTruncated: Self {
+        Self(code: "network_local_file_truncated", diagnostic: "The local file was truncated while being sent.", render: { Strings.Errors.networkLocalFileTruncated })
+    }
+
+    static var networkNoHttpResponse: Self {
+        Self(code: "network_no_http_response", diagnostic: "No HTTP response received", render: { Strings.Errors.networkNoHttpResponse })
+    }
+
+    static var networkPipelineBufferFull: Self {
+        Self(code: "network_pipeline_buffer_full", diagnostic: "The buffer for subsequent requests is full.", render: { Strings.Errors.networkPipelineBufferFull })
+    }
+
+    static var networkProxyShutdown: Self {
+        Self(code: "network_proxy_shutdown", diagnostic: "The proxy has stopped", render: { Strings.Errors.networkProxyShutdown })
+    }
+
+    static var networkPushUnsupported: Self {
+        Self(code: "network_push_unsupported", diagnostic: "Server-initiated push streams are not supported", render: { Strings.Errors.networkPushUnsupported })
+    }
+
+    static var networkRandomDisconnect: Self {
+        Self(code: "network_random_disconnect", diagnostic: "Network simulation: random disconnect", render: { Strings.Errors.networkRandomDisconnect })
+    }
+
+    static func networkRedirectLimit(_ p0: Int) -> Self {
+        Self(code: "network_redirect_limit", arguments: [String(p0)], diagnostic: String(format: "Too many redirects (maximum %ld)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkRedirectLimit(p0) })
+    }
+
+    static func networkRequestBodyTooLarge(_ p0: Int) -> Self {
+        Self(code: "network_request_body_too_large", arguments: [String(p0)], diagnostic: String(format: "The intercepted request body exceeds %ld bytes", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkRequestBodyTooLarge(p0) })
+    }
+
+    static var networkRequestBufferFull: Self {
+        Self(code: "network_request_buffer_full", diagnostic: "The request send buffer is full.", render: { Strings.Errors.networkRequestBufferFull })
+    }
+
+    static var networkRequestCancelled: Self {
+        Self(code: "network_request_cancelled", diagnostic: "Request cancelled", render: { Strings.Errors.networkRequestCancelled })
+    }
+
+    static var networkRequestHeadersInvalid: Self {
+        Self(code: "network_request_headers_invalid", diagnostic: "Invalid request headers", render: { Strings.Errors.networkRequestHeadersInvalid })
+    }
+
+    static var networkRequestTimeout: Self {
+        Self(code: "network_request_timeout", diagnostic: "Request timed out", render: { Strings.Errors.networkRequestTimeout })
+    }
+
+    static func networkResponseBodyTooLarge(_ p0: Int) -> Self {
+        Self(code: "network_response_body_too_large", arguments: [String(p0)], diagnostic: String(format: "The intercepted response body exceeds %ld bytes", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkResponseBodyTooLarge(p0) })
+    }
+
+    static func networkResponseHeadersTooLarge(_ p0: Int) -> Self {
+        Self(code: "network_response_headers_too_large", arguments: [String(p0)], diagnostic: String(format: "Response headers exceed %ld bytes", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkResponseHeadersTooLarge(p0) })
+    }
+
+    static var networkRouteBlocked: Self {
+        Self(code: "network_route_blocked", diagnostic: "The request was blocked by a rule", render: { Strings.Errors.networkRouteBlocked })
+    }
+
+    static var networkRouteNotAllowed: Self {
+        Self(code: "network_route_not_allowed", diagnostic: "The request is not in the allow list", render: { Strings.Errors.networkRouteNotAllowed })
+    }
+
+    static var networkScriptTimeout: Self {
+        Self(code: "network_script_timeout", diagnostic: "Timed out waiting for the scripted message", render: { Strings.Errors.networkScriptTimeout })
+    }
+
+    static var networkSessionCleared: Self {
+        Self(code: "network_session_cleared", diagnostic: "The capture session was cleared", render: { Strings.Errors.networkSessionCleared })
+    }
+
+    static func networkThrottledWriteFailed(_ p0: String) -> Self {
+        Self(code: "network_throttled_write_failed", arguments: [p0], diagnostic: String(format: "Throttled write failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkThrottledWriteFailed(p0) })
+    }
+
+    static var networkTlsNegotiationTimeout: Self {
+        Self(code: "network_tls_negotiation_timeout", diagnostic: "The upstream TLS negotiation timed out", render: { Strings.Errors.networkTlsNegotiationTimeout })
+    }
+
+    static var networkTunnelBufferFull: Self {
+        Self(code: "network_tunnel_buffer_full", diagnostic: "The tunnel upstream send buffer is full.", render: { Strings.Errors.networkTunnelBufferFull })
+    }
+
+    static func networkTunnelFailed(_ p0: String) -> Self {
+        Self(code: "network_tunnel_failed", arguments: [p0], diagnostic: String(format: "Tunnel setup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkTunnelFailed(p0) })
+    }
+
+    static var networkUnapprovedDevice: Self {
+        Self(code: "network_unapproved_device", diagnostic: "This device is not in the proxy access list", render: { Strings.Errors.networkUnapprovedDevice })
+    }
+
+    static var networkUpstreamClosed: Self {
+        Self(code: "network_upstream_closed", diagnostic: "The upstream connection closed prematurely", render: { Strings.Errors.networkUpstreamClosed })
+    }
+
+    static func networkUpstreamConnectionFailed(_ p0: String) -> Self {
+        Self(code: "network_upstream_connection_failed", arguments: [p0], diagnostic: String(format: "Unable to connect to the upstream: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkUpstreamConnectionFailed(p0) })
+    }
+
+    static var networkUpstreamInterrupted: Self {
+        Self(code: "network_upstream_interrupted", diagnostic: "The upstream connection was interrupted", render: { Strings.Errors.networkUpstreamInterrupted })
+    }
+
+    static var networkUpstreamNoResponse: Self {
+        Self(code: "network_upstream_no_response", diagnostic: "The upstream did not respond", render: { Strings.Errors.networkUpstreamNoResponse })
+    }
+
+    static var networkUpstreamResponseTimeout: Self {
+        Self(code: "network_upstream_response_timeout", diagnostic: "Timed out waiting for the upstream response", render: { Strings.Errors.networkUpstreamResponseTimeout })
+    }
+
+    static func networkWsClosed(_ p0: Int) -> Self {
+        Self(code: "network_ws_closed", arguments: [String(p0)], diagnostic: String(format: "WebSocket closed (%ld)", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkWsClosed(p0) })
+    }
+
+    static var networkWsHandshakeFailed: Self {
+        Self(code: "network_ws_handshake_failed", diagnostic: "WebSocket handshake failed", render: { Strings.Errors.networkWsHandshakeFailed })
+    }
+
+    static var networkWsTimeout: Self {
+        Self(code: "network_ws_timeout", diagnostic: "WebSocket request timed out", render: { Strings.Errors.networkWsTimeout })
+    }
+
+    static var networkWsUnknownMessage: Self {
+        Self(code: "network_ws_unknown_message", diagnostic: "Unrecognized WebSocket message", render: { Strings.Errors.networkWsUnknownMessage })
+    }
+
+    static func networkWsWriteFailed(_ p0: String) -> Self {
+        Self(code: "network_ws_write_failed", arguments: [p0], diagnostic: String(format: "WebSocket throttled write failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.networkWsWriteFailed(p0) })
     }
 
     static var proxyAutomationInstallFirefoxFirst: Self {
@@ -845,7 +1103,7 @@ extension OperationIssue {
     }
 
     static func proxyAutomationLaunchFailed(_ p0: Int, _ p1: String) -> Self {
-        Self(code: "proxy_automation_launch_failed", diagnostic: String(format: "Launch failed (%ld): %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "proxy_automation_launch_failed", arguments: [String(p0), p1], diagnostic: String(format: "Launch failed (%ld): %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.proxyAutomationLaunchFailed(p0, p1) })
     }
 
@@ -854,7 +1112,7 @@ extension OperationIssue {
     }
 
     static func proxyAutomationSelectAnInstalledApp(_ p0: String) -> Self {
-        Self(code: "proxy_automation_select_an_installed_app", diagnostic: String(format: "Select an installed %@ .app.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "proxy_automation_select_an_installed_app", arguments: [p0], diagnostic: String(format: "Select an installed %@ .app.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.proxyAutomationSelectAnInstalledApp(p0) })
     }
 
@@ -875,7 +1133,7 @@ extension OperationIssue {
     }
 
     static func proxyAutomationSubmittedTheLaunchRequestLaunchLog(_ p0: String, _ p1: String) -> Self {
-        Self(code: "proxy_automation_submitted_the_launch_request_launch_log", diagnostic: String(format: "Submitted the %@ launch request. Launch log: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "proxy_automation_submitted_the_launch_request_launch_log", arguments: [p0, p1], diagnostic: String(format: "Submitted the %@ launch request. Launch log: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.proxyAutomationSubmittedTheLaunchRequestLaunchLog(p0, p1) })
     }
 
@@ -883,8 +1141,143 @@ extension OperationIssue {
         Self(code: "proxy_automation_the_selected_terminal_must_support_the_e_command", diagnostic: "The selected terminal must support the -e command argument.", render: { Strings.Errors.proxyAutomationTheSelectedTerminalMustSupportTheECommand })
     }
 
+    static var proxyEndpointSelf: Self {
+        Self(code: "proxy_endpoint_self", diagnostic: "The external proxy cannot point to ProxyMirror itself.", render: { Strings.Errors.proxyEndpointSelf })
+    }
+
+    static var proxyHandshakeClosed: Self {
+        Self(code: "proxy_handshake_closed", diagnostic: "The external proxy closed the connection during the handshake.", render: { Strings.Errors.proxyHandshakeClosed })
+    }
+
+    static var proxyHandshakeTimeout: Self {
+        Self(code: "proxy_handshake_timeout", diagnostic: "The external proxy handshake timed out.", render: { Strings.Errors.proxyHandshakeTimeout })
+    }
+
+    static var proxyHttpHeadersLimit: Self {
+        Self(code: "proxy_http_headers_limit", diagnostic: "The external HTTP proxy response headers exceed 32 KiB.", render: { Strings.Errors.proxyHttpHeadersLimit })
+    }
+
+    static func proxyHttpRejected(_ p0: Int) -> Self {
+        Self(code: "proxy_http_rejected", arguments: [String(p0)], diagnostic: String(format: "The external HTTP proxy rejected CONNECT (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.proxyHttpRejected(p0) })
+    }
+
+    static var proxyHttpStatusInvalid: Self {
+        Self(code: "proxy_http_status_invalid", diagnostic: "The external HTTP proxy returned an invalid status line.", render: { Strings.Errors.proxyHttpStatusInvalid })
+    }
+
+    static var proxyPacBusy: Self {
+        Self(code: "proxy_pac_busy", diagnostic: "PAC resolution is busy; try again.", render: { Strings.Errors.proxyPacBusy })
+    }
+
+    static func proxyPacFailed(_ p0: Int) -> Self {
+        Self(code: "proxy_pac_failed", arguments: [String(p0)], diagnostic: String(format: "PAC download or execution failed (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.proxyPacFailed(p0) })
+    }
+
+    static var proxyPacFileEncoding: Self {
+        Self(code: "proxy_pac_file_encoding", diagnostic: "The PAC file is not UTF-8 text.", render: { Strings.Errors.proxyPacFileEncoding })
+    }
+
+    static var proxyPacFileInvalid: Self {
+        Self(code: "proxy_pac_file_invalid", diagnostic: "The PAC file must be a regular file no larger than 256 KiB.", render: { Strings.Errors.proxyPacFileInvalid })
+    }
+
+    static var proxyPacFileTooLarge: Self {
+        Self(code: "proxy_pac_file_too_large", diagnostic: "The PAC file exceeds 256 KiB.", render: { Strings.Errors.proxyPacFileTooLarge })
+    }
+
+    static var proxyPacInvalidUrl: Self {
+        Self(code: "proxy_pac_invalid_url", diagnostic: "Invalid PAC URL.", render: { Strings.Errors.proxyPacInvalidUrl })
+    }
+
+    static var proxyPacNoResult: Self {
+        Self(code: "proxy_pac_no_result", diagnostic: "PAC returned no usable result.", render: { Strings.Errors.proxyPacNoResult })
+    }
+
+    static var proxyPacNoRoute: Self {
+        Self(code: "proxy_pac_no_route", diagnostic: "PAC returned no usable route.", render: { Strings.Errors.proxyPacNoRoute })
+    }
+
+    static var proxyPacResolutionRequired: Self {
+        Self(code: "proxy_pac_resolution_required", diagnostic: "Resolve the PAC route first.", render: { Strings.Errors.proxyPacResolutionRequired })
+    }
+
+    static var proxyPacRouteInvalid: Self {
+        Self(code: "proxy_pac_route_invalid", diagnostic: "PAC returned an invalid proxy host or port.", render: { Strings.Errors.proxyPacRouteInvalid })
+    }
+
+    static var proxyPacRouteUnsupported: Self {
+        Self(code: "proxy_pac_route_unsupported", diagnostic: "The preferred PAC route type is unsupported.", render: { Strings.Errors.proxyPacRouteUnsupported })
+    }
+
+    static var proxyPacSocksVersion: Self {
+        Self(code: "proxy_pac_socks_version", diagnostic: "PAC did not specify SOCKS5.", render: { Strings.Errors.proxyPacSocksVersion })
+    }
+
+    static var proxyPacTargetHost: Self {
+        Self(code: "proxy_pac_target_host", diagnostic: "Unable to resolve the PAC request host.", render: { Strings.Errors.proxyPacTargetHost })
+    }
+
+    static var proxyPacTimeout: Self {
+        Self(code: "proxy_pac_timeout", diagnostic: "PAC resolution timed out.", render: { Strings.Errors.proxyPacTimeout })
+    }
+
+    static var proxyProtocolNegotiation: Self {
+        Self(code: "proxy_protocol_negotiation", diagnostic: "The HTTPS proxy did not negotiate HTTP/1.1.", render: { Strings.Errors.proxyProtocolNegotiation })
+    }
+
+    static var proxySocksAddressType: Self {
+        Self(code: "proxy_socks_address_type", diagnostic: "Invalid SOCKS5 CONNECT response address type.", render: { Strings.Errors.proxySocksAddressType })
+    }
+
+    static var proxySocksAuthMethod: Self {
+        Self(code: "proxy_socks_auth_method", diagnostic: "The SOCKS5 proxy rejected the configured authentication method.", render: { Strings.Errors.proxySocksAuthMethod })
+    }
+
+    static var proxySocksCredentials: Self {
+        Self(code: "proxy_socks_credentials", diagnostic: "SOCKS5 username or password authentication failed.", render: { Strings.Errors.proxySocksCredentials })
+    }
+
+    static var proxySocksEmptyAddress: Self {
+        Self(code: "proxy_socks_empty_address", diagnostic: "SOCKS5 returned an empty address.", render: { Strings.Errors.proxySocksEmptyAddress })
+    }
+
+    static func proxySocksRejected(_ p0: String) -> Self {
+        Self(code: "proxy_socks_rejected", arguments: [p0], diagnostic: String(format: "The SOCKS5 proxy rejected CONNECT (%@).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+             render: { Strings.Errors.proxySocksRejected(p0) })
+    }
+
+    static var proxySocksReplyInvalid: Self {
+        Self(code: "proxy_socks_reply_invalid", diagnostic: "Invalid SOCKS5 CONNECT response.", render: { Strings.Errors.proxySocksReplyInvalid })
+    }
+
+    static var proxyTargetInvalid: Self {
+        Self(code: "proxy_target_invalid", diagnostic: "Invalid external proxy target address.", render: { Strings.Errors.proxyTargetInvalid })
+    }
+
+    static var proxyTargetIsProxy: Self {
+        Self(code: "proxy_target_is_proxy", diagnostic: "The target is the external proxy address.", render: { Strings.Errors.proxyTargetIsProxy })
+    }
+
+    static var proxyTargetSelf: Self {
+        Self(code: "proxy_target_self", diagnostic: "The target cannot be the ProxyMirror listener.", render: { Strings.Errors.proxyTargetSelf })
+    }
+
+    static var proxyTargetUrlInvalid: Self {
+        Self(code: "proxy_target_url_invalid", diagnostic: "Invalid external proxy target URL.", render: { Strings.Errors.proxyTargetUrlInvalid })
+    }
+
+    static var proxyTlsIpUnsupported: Self {
+        Self(code: "proxy_tls_ip_unsupported", diagnostic: "HTTPS through an external proxy requires a target hostname for certificate verification.", render: { Strings.Errors.proxyTlsIpUnsupported })
+    }
+
+    static var proxyTunnelBufferLimit: Self {
+        Self(code: "proxy_tunnel_buffer_limit", diagnostic: "The tunnel initialization buffer exceeds 256 KiB.", render: { Strings.Errors.proxyTunnelBufferLimit })
+    }
+
     static func releaseUpdateTheUpdateCheckFailedHttp(_ p0: String) -> Self {
-        Self(code: "release_update_the_update_check_failed_http", diagnostic: String(format: "The update check failed (HTTP %@).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "release_update_the_update_check_failed_http", arguments: [p0], diagnostic: String(format: "The update check failed (HTTP %@).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.releaseUpdateTheUpdateCheckFailedHttp(p0) })
     }
 
@@ -893,12 +1286,12 @@ extension OperationIssue {
     }
 
     static func simulatorCertificateInstallerFailedExitCode(_ p0: String, _ p1: Int, _ p2: String) -> Self {
-        Self(code: "simulator_certificate_installer_failed_exit_code", diagnostic: String(format: "%@ failed (exit code %ld). %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
+        Self(code: "simulator_certificate_installer_failed_exit_code", arguments: [p0, String(p1), p2], diagnostic: String(format: "%@ failed (exit code %ld). %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
              render: { Strings.Errors.simulatorCertificateInstallerFailedExitCode(p0, p1, p2) })
     }
 
     static func simulatorCertificateInstallerInstallTheCaOn(_ p0: String) -> Self {
-        Self(code: "simulator_certificate_installer_install_the_ca_on", diagnostic: String(format: "Install the CA on %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "simulator_certificate_installer_install_the_ca_on", arguments: [p0], diagnostic: String(format: "Install the CA on %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.simulatorCertificateInstallerInstallTheCaOn(p0) })
     }
 
@@ -911,7 +1304,7 @@ extension OperationIssue {
     }
 
     static func simulatorCertificateInstallerSimctlExceededSecondsAndWasStoppedCheckXcode(_ p0: Int) -> Self {
-        Self(code: "simulator_certificate_installer_simctl_exceeded_seconds_and_was_stopped_check_xcode", diagnostic: String(format: "simctl exceeded %ld seconds and was stopped. Check Xcode and the target runtime.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "simulator_certificate_installer_simctl_exceeded_seconds_and_was_stopped_check_xcode", arguments: [String(p0)], diagnostic: String(format: "simctl exceeded %ld seconds and was stopped. Check Xcode and the target runtime.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.simulatorCertificateInstallerSimctlExceededSecondsAndWasStoppedCheckXcode(p0) })
     }
 
@@ -928,7 +1321,7 @@ extension OperationIssue {
     }
 
     static func simulatorCertificateInstallerStartInXcodeOrSimulatorThenRefreshThe(_ p0: String) -> Self {
-        Self(code: "simulator_certificate_installer_start_in_xcode_or_simulator_then_refresh_the", diagnostic: String(format: "Start %@ in Xcode or Simulator, then refresh the list. The installer does not start devices automatically.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "simulator_certificate_installer_start_in_xcode_or_simulator_then_refresh_the", arguments: [p0], diagnostic: String(format: "Start %@ in Xcode or Simulator, then refresh the list. The installer does not start devices automatically.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.simulatorCertificateInstallerStartInXcodeOrSimulatorThenRefreshThe(p0) })
     }
 
@@ -969,7 +1362,7 @@ extension OperationIssue {
     }
 
     static func systemProxyAuthorizationMacosCouldNotAuthorizeTheSystemProxyService(_ p0: Int) -> Self {
-        Self(code: "system_proxy_authorization_macos_could_not_authorize_the_system_proxy_service", diagnostic: String(format: "macOS could not authorize the system proxy service update (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_authorization_macos_could_not_authorize_the_system_proxy_service", arguments: [String(p0)], diagnostic: String(format: "macOS could not authorize the system proxy service update (%ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyAuthorizationMacosCouldNotAuthorizeTheSystemProxyService(p0) })
     }
 
@@ -1002,7 +1395,7 @@ extension OperationIssue {
     }
 
     static func systemProxyImportedIntoTheLoginKeychain(_ p0: String) -> Self {
-        Self(code: "system_proxy_imported_into_the_login_keychain", diagnostic: String(format: "Imported %@ into the login keychain.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_imported_into_the_login_keychain", arguments: [p0], diagnostic: String(format: "Imported %@ into the login keychain.", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyImportedIntoTheLoginKeychain(p0) })
     }
 
@@ -1031,7 +1424,7 @@ extension OperationIssue {
     }
 
     static func systemProxyProxyHelperCheckFailed(_ p0: String) -> Self {
-        Self(code: "system_proxy_proxy_helper_check_failed", diagnostic: String(format: "Proxy helper check failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_proxy_helper_check_failed", arguments: [p0], diagnostic: String(format: "Proxy helper check failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyProxyHelperCheckFailed(p0) })
     }
 
@@ -1052,7 +1445,7 @@ extension OperationIssue {
     }
 
     static func systemProxyTheCertificateCommandFailedExitCode(_ p0: Int) -> Self {
-        Self(code: "system_proxy_the_certificate_command_failed_exit_code", diagnostic: String(format: "The certificate command failed (exit code %ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_the_certificate_command_failed_exit_code", arguments: [String(p0)], diagnostic: String(format: "The certificate command failed (exit code %ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyTheCertificateCommandFailedExitCode(p0) })
     }
 
@@ -1093,7 +1486,7 @@ extension OperationIssue {
     }
 
     static func systemProxyUnableToCheckTheCurrentCa(_ p0: String) -> Self {
-        Self(code: "system_proxy_unable_to_check_the_current_ca", diagnostic: String(format: "Unable to check the current CA: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_unable_to_check_the_current_ca", arguments: [p0], diagnostic: String(format: "Unable to check the current CA: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyUnableToCheckTheCurrentCa(p0) })
     }
 
@@ -1102,22 +1495,22 @@ extension OperationIssue {
     }
 
     static func systemProxyUnableToImportTheCustomCertificate(_ p0: String) -> Self {
-        Self(code: "system_proxy_unable_to_import_the_custom_certificate", diagnostic: String(format: "Unable to import the custom certificate: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_unable_to_import_the_custom_certificate", arguments: [p0], diagnostic: String(format: "Unable to import the custom certificate: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyUnableToImportTheCustomCertificate(p0) })
     }
 
     static func systemProxyUnableToImportTheRootCa(_ p0: String) -> Self {
-        Self(code: "system_proxy_unable_to_import_the_root_ca", diagnostic: String(format: "Unable to import the root CA: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_unable_to_import_the_root_ca", arguments: [p0], diagnostic: String(format: "Unable to import the root CA: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyUnableToImportTheRootCa(p0) })
     }
 
     static func systemProxyUnableToOpenTheKeychain(_ p0: String) -> Self {
-        Self(code: "system_proxy_unable_to_open_the_keychain", diagnostic: String(format: "Unable to open the keychain: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_unable_to_open_the_keychain", arguments: [p0], diagnostic: String(format: "Unable to open the keychain: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyUnableToOpenTheKeychain(p0) })
     }
 
     static func systemProxyUnableToReadKeychainCertificates(_ p0: String) -> Self {
-        Self(code: "system_proxy_unable_to_read_keychain_certificates", diagnostic: String(format: "Unable to read keychain certificates: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_unable_to_read_keychain_certificates", arguments: [p0], diagnostic: String(format: "Unable to read keychain certificates: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyUnableToReadKeychainCertificates(p0) })
     }
 
@@ -1126,7 +1519,7 @@ extension OperationIssue {
     }
 
     static func systemProxyUnableToReadTheKeychainErrorCode(_ p0: Int) -> Self {
-        Self(code: "system_proxy_unable_to_read_the_keychain_error_code", diagnostic: String(format: "Unable to read the keychain (error code %ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "system_proxy_unable_to_read_the_keychain_error_code", arguments: [String(p0)], diagnostic: String(format: "Unable to read the keychain (error code %ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.systemProxyUnableToReadTheKeychainErrorCode(p0) })
     }
 
@@ -1139,7 +1532,7 @@ extension OperationIssue {
     }
 
     static func transparentCaptureCleanupFailed(_ p0: String, _ p1: String) -> Self {
-        Self(code: "transparent_capture_cleanup_failed", diagnostic: String(format: "Capture failed: %@ Cleanup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
+        Self(code: "transparent_capture_cleanup_failed", arguments: [p0, p1], diagnostic: String(format: "Capture failed: %@ Cleanup failed: %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1]),
              render: { Strings.Errors.transparentCaptureCleanupFailed(p0, p1) })
     }
 
@@ -1184,7 +1577,7 @@ extension OperationIssue {
     }
 
     static func transparentProxyControllerUnableToActivateTheTransparentProxySystemExtension(_ p0: String) -> Self {
-        Self(code: "transparent_proxy_controller_unable_to_activate_the_transparent_proxy_system_extension", diagnostic: String(format: "Unable to activate the transparent proxy system extension. %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
+        Self(code: "transparent_proxy_controller_unable_to_activate_the_transparent_proxy_system_extension", arguments: [p0], diagnostic: String(format: "Unable to activate the transparent proxy system extension. %@", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0]),
              render: { Strings.Errors.transparentProxyControllerUnableToActivateTheTransparentProxySystemExtension(p0) })
     }
 
@@ -1201,8 +1594,1147 @@ extension OperationIssue {
     }
 
     static func transparentSystemOperationFailed(_ p0: String, _ p1: String, _ p2: Int) -> Self {
-        Self(code: "transparent_system_operation_failed", diagnostic: String(format: "%@ (%@ %ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
+        Self(code: "transparent_system_operation_failed", arguments: [p0, p1, String(p2)], diagnostic: String(format: "%@ (%@ %ld).", locale: Locale(identifier: "en_US_POSIX"), arguments: [p0, p1, p2]),
              render: { Strings.Errors.transparentSystemOperationFailed(p0, p1, p2) })
+    }
+
+    /// Restore known error identities without translating their persisted diagnostic.
+    static func restored(code: String, arguments: [String], diagnostic: String) -> Self {
+        let fallback = Self(code: code, arguments: arguments, diagnostic: diagnostic, render: { diagnostic })
+        switch code {
+        case "app_state_allow_the_proxymirror_network_extension_in_macos_system":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateAllowTheProxymirrorNetworkExtensionInMacosSystem
+        case "app_state_android_emulator_setup_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateAndroidEmulatorSetupFailed(arguments[0])
+        case "app_state_applying_settings_and_restarting_the_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateApplyingSettingsAndRestartingTheProxy
+        case "app_state_ca_installation_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateCaInstallationFailed(arguments[0])
+        case "app_state_cancel":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateCancel
+        case "app_state_cancel_transparent_capture_activation":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateCancelTransparentCaptureActivation
+        case "app_state_cancel_transparent_capture_awaiting_approval":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateCancelTransparentCaptureAwaitingApproval
+        case "app_state_cancel_transparent_proxy_connection":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateCancelTransparentProxyConnection
+        case "app_state_device":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateDevice(arguments[0])
+        case "app_state_disabling_the_system_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateDisablingTheSystemProxy
+        case "app_state_enable_lan_access_in_settings_general_configure_the":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateEnableLanAccessInSettingsGeneralConfigureThe
+        case "app_state_enable_the_system_proxy_manually":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateEnableTheSystemProxyManually(arguments[0])
+        case "app_state_enabling_the_system_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateEnablingTheSystemProxy
+        case "app_state_import":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateImport
+        case "app_state_import_charles_session":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateImportCharlesSession
+        case "app_state_new_connections_from_will_use_passthrough":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateNewConnectionsFromWillUsePassthrough(arguments[0])
+        case "app_state_ok":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateOk
+        case "app_state_record_proxymirror_tls_session_keys":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateRecordProxymirrorTlsSessionKeys
+        case "app_state_removing_system_proxy_authorization":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateRemovingSystemProxyAuthorization
+        case "app_state_restore_the_system_proxy_before_changing_the_listen":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateRestoreTheSystemProxyBeforeChangingTheListen
+        case "app_state_restored_the_previous_listener_port":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .appStateRestoredThePreviousListenerPort(p0)
+        case "app_state_retry_stopping_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateRetryStoppingTransparentCapture
+        case "app_state_settings_applied_the_listener_is_not_running":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateSettingsAppliedTheListenerIsNotRunning
+        case "app_state_settings_applied_the_proxy_has_restarted":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateSettingsAppliedTheProxyHasRestarted
+        case "app_state_simulator_setup_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateSimulatorSetupFailed(arguments[0])
+        case "app_state_start_listening_before_enabling_the_system_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateStartListeningBeforeEnablingTheSystemProxy
+        case "app_state_start_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateStartTransparentCapture
+        case "app_state_stop_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateStopTransparentCapture
+        case "app_state_stop_transparent_capture_before_changing_the_listen_address":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateStopTransparentCaptureBeforeChangingTheListenAddress
+        case "app_state_stop_transparent_capture_before_enabling_the_system_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateStopTransparentCaptureBeforeEnablingTheSystemProxy
+        case "app_state_stopping_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateStoppingTransparentCapture
+        case "app_state_system_proxy_authorization_removed":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateSystemProxyAuthorizationRemoved
+        case "app_state_system_proxy_enabled":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateSystemProxyEnabled
+        case "app_state_system_proxy_enabled_127_0_0_1":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .appStateSystemProxyEnabled127001(p0)
+        case "app_state_system_proxy_restored":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateSystemProxyRestored
+        case "app_state_the_ca_is_installed_and_trusted_system_wide":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateTheCaIsInstalledAndTrustedSystemWide
+        case "app_state_the_certificate_was_imported_but_the_current_ca":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateTheCertificateWasImportedButTheCurrentCa
+        case "app_state_the_comparison_pool_holds_up_to_100_requests":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateTheComparisonPoolHoldsUpTo100Requests
+        case "app_state_the_keys_can_decrypt_network_data_for_corresponding":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateTheKeysCanDecryptNetworkDataForCorresponding
+        case "app_state_the_selected_requests_cannot_be_copied_as_check":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateTheSelectedRequestsCannotBeCopiedAsCheck(arguments[0])
+        case "app_state_the_ssl_rule_was_not_saved":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateTheSslRuleWasNotSaved(arguments[0])
+        case "app_state_the_system_proxy_service_disconnected_the_background_service":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateTheSystemProxyServiceDisconnectedTheBackgroundService
+        case "app_state_this_build_has_no_transparent_proxy_extension_use":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateThisBuildHasNoTransparentProxyExtensionUse
+        case "app_state_transactions_can_be_imported_skipped":
+            guard arguments.count == 3, let p1 = Int(arguments[1]), let p2 = Int(arguments[2]) else { return fallback }
+            return .appStateTransactionsCanBeImportedSkipped(arguments[0], p1, p2)
+        case "app_state_transparent_capture_unavailable":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateTransparentCaptureUnavailable
+        case "app_state_unable_to_copy_select_the_requests_again_and":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateUnableToCopySelectTheRequestsAgainAnd
+        case "app_state_unable_to_copy_the_certificate":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToCopyTheCertificate(arguments[0])
+        case "app_state_unable_to_disable_the_system_proxy":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToDisableTheSystemProxy(arguments[0])
+        case "app_state_unable_to_enable_the_system_proxy":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToEnableTheSystemProxy(arguments[0])
+        case "app_state_unable_to_open_the_session":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToOpenTheSession(arguments[0])
+        case "app_state_unable_to_open_the_tls_key_log":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToOpenTheTlsKeyLog(arguments[0])
+        case "app_state_unable_to_remove_system_proxy_authorization":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToRemoveSystemProxyAuthorization(arguments[0])
+        case "app_state_unable_to_save_the_passthrough_rule":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToSaveThePassthroughRule(arguments[0])
+        case "app_state_unable_to_start_check_the_port_and_lan":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToStartCheckThePortAndLan(arguments[0])
+        case "app_state_unable_to_start_the_in_app_capture_listener":
+            guard arguments.count == 1 else { return fallback }
+            return .appStateUnableToStartTheInAppCaptureListener(arguments[0])
+        case "app_state_wait_for_the_proxy_restart_to_finish":
+            guard arguments.count == 0 else { return fallback }
+            return .appStateWaitForTheProxyRestartToFinish
+        case "app_update_controller_check_for_updates":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerCheckForUpdates
+        case "app_update_controller_check_project_releases_and_notify_you_about_new":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerCheckProjectReleasesAndNotifyYouAboutNew
+        case "app_update_controller_check_project_releases_for_new_versions":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerCheckProjectReleasesForNewVersions
+        case "app_update_controller_checking_for_updates":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerCheckingForUpdates
+        case "app_update_controller_download":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerDownload
+        case "app_update_controller_later":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerLater
+        case "app_update_controller_ok":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerOk
+        case "app_update_controller_signed_updates_are_currently_unavailable":
+            guard arguments.count == 1 else { return fallback }
+            return .appUpdateControllerSignedUpdatesAreCurrentlyUnavailable(arguments[0])
+        case "app_update_controller_software_updates":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerSoftwareUpdates
+        case "app_update_controller_sparkle_verifies_signed_updates_automatic_checks_do_not":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerSparkleVerifiesSignedUpdatesAutomaticChecksDoNot
+        case "app_update_controller_the_signed_update_feed_must_use_a_valid":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerTheSignedUpdateFeedMustUseAValid
+        case "app_update_controller_the_update_public_key_must_be_a_base64":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerTheUpdatePublicKeyMustBeABase64
+        case "app_update_controller_there_are_no_downloadable_releases_yet":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerThereAreNoDownloadableReleasesYet
+        case "app_update_controller_unable_to_open_the_browser_visit_the_project":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerUnableToOpenTheBrowserVisitTheProject
+        case "app_update_controller_update_check_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .appUpdateControllerUpdateCheckFailed(arguments[0])
+        case "app_update_controller_version_is_available":
+            guard arguments.count == 1 else { return fallback }
+            return .appUpdateControllerVersionIsAvailable(arguments[0])
+        case "app_update_controller_you_are_up_to_date":
+            guard arguments.count == 0 else { return fallback }
+            return .appUpdateControllerYouAreUpToDate
+        case "automation_other_terminal":
+            guard arguments.count == 0 else { return fallback }
+            return .automationOtherTerminal
+        case "certificate_export_der":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateExportDer
+        case "certificate_export_key":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateExportKey
+        case "certificate_export_p12":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateExportP12
+        case "certificate_export_pem":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateExportPem
+        case "certificate_formats_a_ca_certificate_must_declare_ca_basic_constraints":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsACaCertificateMustDeclareCaBasicConstraints
+        case "certificate_formats_certificate_conversion_failed_check_the_password_file_format":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsCertificateConversionFailedCheckThePasswordFileFormat
+        case "certificate_formats_certificate_format_conversion_timed_out":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsCertificateFormatConversionTimedOut
+        case "certificate_formats_enter_a_valid_target_host_or_example_com":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsEnterAValidTargetHostOrExampleCom
+        case "certificate_formats_mtls_and_server_identities_require_a_leaf_certificate":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsMtlsAndServerIdentitiesRequireALeafCertificate
+        case "certificate_formats_no_usable_certificate_was_found":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsNoUsableCertificateWasFound
+        case "certificate_formats_select_a_regular_file_between_1_byte_and":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsSelectARegularFileBetween1ByteAnd
+        case "certificate_formats_select_a_valid_pem_or_der_cer_certificate":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsSelectAValidPemOrDerCerCertificate
+        case "certificate_formats_set_a_nonempty_password_for_the_private_key":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsSetANonemptyPasswordForThePrivateKey
+        case "certificate_formats_the_ca_certificate_key_usage_does_not_permit":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCaCertificateKeyUsageDoesNotPermit
+        case "certificate_formats_the_certificate_chain_contains_a_certificate_that_is":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateChainContainsACertificateThatIs
+        case "certificate_formats_the_certificate_chain_is_empty":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateChainIsEmpty
+        case "certificate_formats_the_certificate_does_not_match_the_private_key":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateDoesNotMatchThePrivateKey
+        case "certificate_formats_the_certificate_extended_key_usage_does_not_permit":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateExtendedKeyUsageDoesNotPermit
+        case "certificate_formats_the_certificate_extended_key_usage_does_not_permit_2":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateExtendedKeyUsageDoesNotPermit2
+        case "certificate_formats_the_certificate_key_usage_does_not_support_the":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateKeyUsageDoesNotSupportThe
+        case "certificate_formats_the_certificate_san_does_not_match_the_server":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheCertificateSanDoesNotMatchTheServer
+        case "certificate_formats_the_file_exceeds_8_mib":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheFileExceeds8Mib
+        case "certificate_formats_the_file_is_empty":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheFileIsEmpty
+        case "certificate_formats_the_first_certificate_in_the_chain_does_not":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheFirstCertificateInTheChainDoesNot
+        case "certificate_formats_the_password_cannot_contain_a_newline_or_nul":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsThePasswordCannotContainANewlineOrNul
+        case "certificate_formats_the_pem_certificate_chain_is_invalid_or_contains":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsThePemCertificateChainIsInvalidOrContains
+        case "certificate_formats_the_root_ca_changed_during_export_export_it":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheRootCaChangedDuringExportExportIt
+        case "certificate_formats_the_server_certificate_has_no_subject_alternative_name":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsTheServerCertificateHasNoSubjectAlternativeName
+        case "certificate_formats_this_purpose_requires_a_matching_private_key_select":
+            guard arguments.count == 0 else { return fallback }
+            return .certificateFormatsThisPurposeRequiresAMatchingPrivateKeySelect
+        case "certificate_purpose_client":
+            guard arguments.count == 0 else { return fallback }
+            return .certificatePurposeClient
+        case "certificate_purpose_root":
+            guard arguments.count == 0 else { return fallback }
+            return .certificatePurposeRoot
+        case "certificate_purpose_server":
+            guard arguments.count == 0 else { return fallback }
+            return .certificatePurposeServer
+        case "certificate_purpose_upstream":
+            guard arguments.count == 0 else { return fallback }
+            return .certificatePurposeUpstream
+        case "charles_import_a_connection_termination_action_cannot_be_converted_to":
+            guard arguments.count == 1 else { return fallback }
+            return .charlesImportAConnectionTerminationActionCannotBeConvertedTo(arguments[0])
+        case "charles_import_charles_rules_exceed_2_mib_split_the_export":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportCharlesRulesExceed2MibSplitTheExport
+        case "charles_import_directory_mapping_cannot_be_converted_equivalently":
+            guard arguments.count == 1 else { return fallback }
+            return .charlesImportDirectoryMappingCannotBeConvertedEquivalently(arguments[0])
+        case "charles_import_export_the_native_session_as_xml_or_json":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportExportTheNativeSessionAsXmlOrJson
+        case "charles_import_location_the_match_condition_cannot_be_converted":
+            guard arguments.count == 2 else { return fallback }
+            return .charlesImportLocationTheMatchConditionCannotBeConverted(arguments[0], arguments[1])
+        case "charles_import_no_enabled_locations_can_be_imported_rules":
+            guard arguments.count == 2, let p1 = Int(arguments[1]) else { return fallback }
+            return .charlesImportNoEnabledLocationsCanBeImportedRules(arguments[0], p1)
+        case "charles_import_rule_unsupported_rewrite_action_or_match_condition":
+            guard arguments.count == 2 else { return fallback }
+            return .charlesImportRuleUnsupportedRewriteActionOrMatchCondition(arguments[0], arguments[1])
+        case "charles_import_select_a_charles_rewrite_map_local_block_list":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportSelectACharlesRewriteMapLocalBlockList
+        case "charles_import_select_a_charles_xml_session_export":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportSelectACharlesXmlSessionExport
+        case "charles_import_select_a_regular_file":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportSelectARegularFile
+        case "charles_import_the_charles_body_contains_invalid_base64":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportTheCharlesBodyContainsInvalidBase64
+        case "charles_import_the_charles_body_uses_an_unreadable_character_encoding":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportTheCharlesBodyUsesAnUnreadableCharacterEncoding
+        case "charles_import_the_charles_export_exceeds_the_size_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportTheCharlesExportExceedsTheSizeLimit
+        case "charles_import_the_charles_json_body_uses_an_unreadable_encoding":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportTheCharlesJsonBodyUsesAnUnreadableEncoding
+        case "charles_import_the_charles_session_exceeds_128_mib_split_it":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportTheCharlesSessionExceeds128MibSplitIt
+        case "charles_import_the_charles_xml_body_uses_an_unreadable_encoding":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportTheCharlesXmlBodyUsesAnUnreadableEncoding
+        case "charles_import_the_location_match_expression_is_too_long_or":
+            guard arguments.count == 1 else { return fallback }
+            return .charlesImportTheLocationMatchExpressionIsTooLongOr(arguments[0])
+        case "charles_import_the_match_condition_cannot_be_converted":
+            guard arguments.count == 1 else { return fallback }
+            return .charlesImportTheMatchConditionCannotBeConverted(arguments[0])
+        case "charles_import_the_match_condition_or_local_file_path_cannot":
+            guard arguments.count == 1 else { return fallback }
+            return .charlesImportTheMatchConditionOrLocalFilePathCannot(arguments[0])
+        case "charles_import_the_target_file_is_unreadable_on_this_mac":
+            guard arguments.count == 2 else { return fallback }
+            return .charlesImportTheTargetFileIsUnreadableOnThisMac(arguments[0], arguments[1])
+        case "charles_import_tool":
+            guard arguments.count == 1 else { return fallback }
+            return .charlesImportTool(arguments[0])
+        case "charles_import_unable_to_read_charles_xml_select_a_session":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesImportUnableToReadCharlesXmlSelectASession
+        case "charles_session_converter_charles_conversion_failed_or_exceeded_60_seconds_open":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesSessionConverterCharlesConversionFailedOrExceeded60SecondsOpen
+        case "charles_session_converter_the_converted_har_exceeds_128_mib_split_the":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesSessionConverterTheConvertedHarExceeds128MibSplitThe
+        case "charles_session_converter_this_is_a_native_charles_binary_session_install":
+            guard arguments.count == 0 else { return fallback }
+            return .charlesSessionConverterThisIsANativeCharlesBinarySessionInstall
+        case "client_tlsidentities_a_client_identity_must_use_a_leaf_certificate":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesAClientIdentityMustUseALeafCertificate
+        case "client_tlsidentities_a_maximum_of_client_identities_can_be_saved":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .clientTlsidentitiesAMaximumOfClientIdentitiesCanBeSaved(p0)
+        case "client_tlsidentities_enter_a_hostname_ip_address_or_example_com":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesEnterAHostnameIpAddressOrExampleCom
+        case "client_tlsidentities_the_certificate_chain_is_empty":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheCertificateChainIsEmpty
+        case "client_tlsidentities_the_certificate_chain_or_private_key_exceeds_the":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheCertificateChainOrPrivateKeyExceedsThe
+        case "client_tlsidentities_the_certificate_extended_key_usage_does_not_permit":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheCertificateExtendedKeyUsageDoesNotPermit
+        case "client_tlsidentities_the_client_certificate_is_not_yet_valid_or":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheClientCertificateIsNotYetValidOr
+        case "client_tlsidentities_the_client_certificate_key_usage_does_not_permit":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheClientCertificateKeyUsageDoesNotPermit
+        case "client_tlsidentities_the_client_identity_count_exceeds_the_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheClientIdentityCountExceedsTheLimit
+        case "client_tlsidentities_the_client_identity_file_is_too_large":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheClientIdentityFileIsTooLarge
+        case "client_tlsidentities_the_client_identity_host_is_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheClientIdentityHostIsInvalid
+        case "client_tlsidentities_the_client_identity_is_missing_its_private_key":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheClientIdentityIsMissingItsPrivateKey
+        case "client_tlsidentities_the_file_exceeds_the_size_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheFileExceedsTheSizeLimit
+        case "client_tlsidentities_the_file_is_empty_too_large_or_not":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheFileIsEmptyTooLargeOrNot
+        case "client_tlsidentities_the_first_certificate_in_the_chain_does_not":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheFirstCertificateInTheChainDoesNot
+        case "client_tlsidentities_the_identity_file_permissions_must_be_0600":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesTheIdentityFilePermissionsMustBe0600
+        case "client_tlsidentities_unable_to_parse_the_client_certificate_or_private":
+            guard arguments.count == 0 else { return fallback }
+            return .clientTlsidentitiesUnableToParseTheClientCertificateOrPrivate
+        case "client_tlsidentities_unable_to_read_upstream_client_identities":
+            guard arguments.count == 1 else { return fallback }
+            return .clientTlsidentitiesUnableToReadUpstreamClientIdentities(arguments[0])
+        case "device_automation_a_connected_writable_android_emulator_running_android_13":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceAutomationAConnectedWritableAndroidEmulatorRunningAndroid13
+        case "device_automation_connect_only_one_android_device_with_usb_debugging":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceAutomationConnectOnlyOneAndroidDeviceWithUsbDebugging
+        case "device_automation_installed_ca":
+            guard arguments.count == 2 else { return fallback }
+            return .deviceAutomationInstalledCa(arguments[0], arguments[1])
+        case "device_automation_installed_the_system_ca_on_android_emulator_api":
+            guard arguments.count == 2, let p1 = Int(arguments[1]) else { return fallback }
+            return .deviceAutomationInstalledTheSystemCaOnAndroidEmulatorApi(arguments[0], p1)
+        case "device_automation_no_ios_simulator_is_running_start_at_least":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceAutomationNoIosSimulatorIsRunningStartAtLeast
+        case "device_automation_simulator_apps_use_the_host_network_stack_keep":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceAutomationSimulatorAppsUseTheHostNetworkStackKeep
+        case "device_automation_the_certificate_was_copied_to_the_device_download":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceAutomationTheCertificateWasCopiedToTheDeviceDownload
+        case "device_automation_the_command_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .deviceAutomationTheCommandFailed(arguments[0])
+        case "device_automation_unable_to_parse_the_device_list_check_your":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceAutomationUnableToParseTheDeviceListCheckYour
+        case "device_command_cancelled":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceCommandCancelled
+        case "device_command_failed":
+            guard arguments.count == 2, let p0 = Int(arguments[0]) else { return fallback }
+            return .deviceCommandFailed(p0, arguments[1])
+        case "device_command_output_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceCommandOutputLimit
+        case "device_command_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .deviceCommandTimeout
+        case "export_service_export_failed":
+            guard arguments.count == 2 else { return fallback }
+            return .exportServiceExportFailed(arguments[0], arguments[1])
+        case "external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example":
+            guard arguments.count == 0 else { return fallback }
+            return .externalProxyPacvalidationPacLoadedAndExecutedTheRouteForExample
+        case "external_proxy_pacvalidation_pac_loaded_and_executed_the_route_for_example_2":
+            guard arguments.count == 3, let p2 = Int(arguments[2]) else { return fallback }
+            return .externalProxyPacvalidationPacLoadedAndExecutedTheRouteForExample2(arguments[0], arguments[1], p2)
+        case "external_proxy_pacvalidation_select_pac_mode_first":
+            guard arguments.count == 0 else { return fallback }
+            return .externalProxyPacvalidationSelectPacModeFirst
+        case "gist_service_enter_a_github_token_with_gists_write_permission":
+            guard arguments.count == 0 else { return fallback }
+            return .gistServiceEnterAGithubTokenWithGistsWritePermission
+        case "gist_service_github_did_not_return_an_http_response":
+            guard arguments.count == 0 else { return fallback }
+            return .gistServiceGithubDidNotReturnAnHttpResponse
+        case "gist_service_github_publishing_failed_http_check_token_permissions_and":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .gistServiceGithubPublishingFailedHttpCheckTokenPermissionsAnd(p0)
+        case "gist_service_github_returned_an_invalid_gist_url":
+            guard arguments.count == 0 else { return fallback }
+            return .gistServiceGithubReturnedAnInvalidGistUrl
+        case "gist_service_select_the_requests_to_publish":
+            guard arguments.count == 0 else { return fallback }
+            return .gistServiceSelectTheRequestsToPublish
+        case "gist_service_the_preview_must_be_valid_har_json":
+            guard arguments.count == 0 else { return fallback }
+            return .gistServiceThePreviewMustBeValidHarJson
+        case "gist_service_this_gist_exceeds_8_mib_reduce_the_selection":
+            guard arguments.count == 0 else { return fallback }
+            return .gistServiceThisGistExceeds8MibReduceTheSelection
+        case "gist_service_unable_to_access_the_keychain":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .gistServiceUnableToAccessTheKeychain(p0)
+        case "helper_authorization_required":
+            guard arguments.count == 0 else { return fallback }
+            return .helperAuthorizationRequired
+        case "helper_busy":
+            guard arguments.count == 0 else { return fallback }
+            return .helperBusy
+        case "helper_bypass_invalid":
+            guard arguments.count == 1 else { return fallback }
+            return .helperBypassInvalid(arguments[0])
+        case "helper_bypass_record_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .helperBypassRecordInvalid
+        case "helper_bypass_too_large":
+            guard arguments.count == 0 else { return fallback }
+            return .helperBypassTooLarge
+        case "helper_bypass_update_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .helperBypassUpdateLimit
+        case "helper_installation_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .helperInstallationFailed
+        case "helper_invalid_arguments":
+            guard arguments.count == 0 else { return fallback }
+            return .helperInvalidArguments
+        case "helper_invalid_directory":
+            guard arguments.count == 0 else { return fallback }
+            return .helperInvalidDirectory
+        case "helper_invalid_port":
+            guard arguments.count == 0 else { return fallback }
+            return .helperInvalidPort
+        case "helper_load_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .helperLoadFailed
+        case "helper_lock_unavailable":
+            guard arguments.count == 0 else { return fallback }
+            return .helperLockUnavailable
+        case "helper_no_owned_services":
+            guard arguments.count == 0 else { return fallback }
+            return .helperNoOwnedServices
+        case "helper_not_owner":
+            guard arguments.count == 0 else { return fallback }
+            return .helperNotOwner
+        case "helper_permissions_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .helperPermissionsFailed
+        case "helper_restore_record_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .helperRestoreRecordInvalid
+        case "helper_signature_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .helperSignatureInvalid
+        case "helper_stop_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .helperStopFailed
+        case "helper_takeover_required":
+            guard arguments.count == 0 else { return fallback }
+            return .helperTakeoverRequired
+        case "memory_critical":
+            guard arguments.count == 0 else { return fallback }
+            return .memoryCritical
+        case "memory_pressure_controller_cleared_types_of_rebuildable_caches_captured_traffic_and":
+            guard arguments.count == 3, let p2 = Int(arguments[2]) else { return fallback }
+            return .memoryPressureControllerClearedTypesOfRebuildableCachesCapturedTrafficAnd(arguments[0], arguments[1], p2)
+        case "memory_pressure_controller_simulate_memory_warning":
+            guard arguments.count == 0 else { return fallback }
+            return .memoryPressureControllerSimulateMemoryWarning
+        case "memory_pressure_controller_system_memory_pressure":
+            guard arguments.count == 0 else { return fallback }
+            return .memoryPressureControllerSystemMemoryPressure
+        case "memory_warning":
+            guard arguments.count == 0 else { return fallback }
+            return .memoryWarning
+        case "network_access_policy_invalid_ip_address_or_cidr":
+            guard arguments.count == 1 else { return fallback }
+            return .networkAccessPolicyInvalidIpAddressOrCidr(arguments[0])
+        case "network_access_policy_the_access_list_supports_up_to_entries":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkAccessPolicyTheAccessListSupportsUpToEntries(p0)
+        case "network_breakpoint_buffer_limit":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkBreakpointBufferLimit(p0)
+        case "network_breakpoint_connection_closed":
+            guard arguments.count == 0 else { return fallback }
+            return .networkBreakpointConnectionClosed
+        case "network_breakpoint_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .networkBreakpointTimeout
+        case "network_breakpoint_upstream_interrupted":
+            guard arguments.count == 0 else { return fallback }
+            return .networkBreakpointUpstreamInterrupted
+        case "network_client_closed":
+            guard arguments.count == 0 else { return fallback }
+            return .networkClientClosed
+        case "network_client_write_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkClientWriteFailed(arguments[0])
+        case "network_connection_error":
+            guard arguments.count == 1 else { return fallback }
+            return .networkConnectionError(arguments[0])
+        case "network_connection_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .networkConnectionLimit
+        case "network_curl_failed":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkCurlFailed(p0)
+        case "network_h2_cancelled":
+            guard arguments.count == 0 else { return fallback }
+            return .networkH2Cancelled
+        case "network_http2_invalid_authority":
+            guard arguments.count == 0 else { return fallback }
+            return .networkHttp2InvalidAuthority
+        case "network_http2_invalid_headers":
+            guard arguments.count == 0 else { return fallback }
+            return .networkHttp2InvalidHeaders
+        case "network_http2_invalid_message":
+            guard arguments.count == 0 else { return fallback }
+            return .networkHttp2InvalidMessage
+        case "network_http_incomplete":
+            guard arguments.count == 0 else { return fallback }
+            return .networkHttpIncomplete
+        case "network_http_malformed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkHttpMalformed(arguments[0])
+        case "network_invalid_chunked_response":
+            guard arguments.count == 0 else { return fallback }
+            return .networkInvalidChunkedResponse
+        case "network_invalid_lan_access":
+            guard arguments.count == 0 else { return fallback }
+            return .networkInvalidLanAccess
+        case "network_invalid_redirect":
+            guard arguments.count == 0 else { return fallback }
+            return .networkInvalidRedirect
+        case "network_invalid_request_headers":
+            guard arguments.count == 1 else { return fallback }
+            return .networkInvalidRequestHeaders(arguments[0])
+        case "network_invalid_response":
+            guard arguments.count == 0 else { return fallback }
+            return .networkInvalidResponse
+        case "network_invalid_response_framing":
+            guard arguments.count == 1 else { return fallback }
+            return .networkInvalidResponseFraming(arguments[0])
+        case "network_local_file_busy":
+            guard arguments.count == 0 else { return fallback }
+            return .networkLocalFileBusy
+        case "network_local_file_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkLocalFileFailed(arguments[0])
+        case "network_local_file_truncated":
+            guard arguments.count == 0 else { return fallback }
+            return .networkLocalFileTruncated
+        case "network_no_http_response":
+            guard arguments.count == 0 else { return fallback }
+            return .networkNoHttpResponse
+        case "network_pipeline_buffer_full":
+            guard arguments.count == 0 else { return fallback }
+            return .networkPipelineBufferFull
+        case "network_proxy_shutdown":
+            guard arguments.count == 0 else { return fallback }
+            return .networkProxyShutdown
+        case "network_push_unsupported":
+            guard arguments.count == 0 else { return fallback }
+            return .networkPushUnsupported
+        case "network_random_disconnect":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRandomDisconnect
+        case "network_redirect_limit":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkRedirectLimit(p0)
+        case "network_request_body_too_large":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkRequestBodyTooLarge(p0)
+        case "network_request_buffer_full":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRequestBufferFull
+        case "network_request_cancelled":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRequestCancelled
+        case "network_request_headers_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRequestHeadersInvalid
+        case "network_request_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRequestTimeout
+        case "network_response_body_too_large":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkResponseBodyTooLarge(p0)
+        case "network_response_headers_too_large":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkResponseHeadersTooLarge(p0)
+        case "network_route_blocked":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRouteBlocked
+        case "network_route_not_allowed":
+            guard arguments.count == 0 else { return fallback }
+            return .networkRouteNotAllowed
+        case "network_script_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .networkScriptTimeout
+        case "network_session_cleared":
+            guard arguments.count == 0 else { return fallback }
+            return .networkSessionCleared
+        case "network_throttled_write_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkThrottledWriteFailed(arguments[0])
+        case "network_tls_negotiation_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .networkTlsNegotiationTimeout
+        case "network_tunnel_buffer_full":
+            guard arguments.count == 0 else { return fallback }
+            return .networkTunnelBufferFull
+        case "network_tunnel_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkTunnelFailed(arguments[0])
+        case "network_unapproved_device":
+            guard arguments.count == 0 else { return fallback }
+            return .networkUnapprovedDevice
+        case "network_upstream_closed":
+            guard arguments.count == 0 else { return fallback }
+            return .networkUpstreamClosed
+        case "network_upstream_connection_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkUpstreamConnectionFailed(arguments[0])
+        case "network_upstream_interrupted":
+            guard arguments.count == 0 else { return fallback }
+            return .networkUpstreamInterrupted
+        case "network_upstream_no_response":
+            guard arguments.count == 0 else { return fallback }
+            return .networkUpstreamNoResponse
+        case "network_upstream_response_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .networkUpstreamResponseTimeout
+        case "network_ws_closed":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .networkWsClosed(p0)
+        case "network_ws_handshake_failed":
+            guard arguments.count == 0 else { return fallback }
+            return .networkWsHandshakeFailed
+        case "network_ws_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .networkWsTimeout
+        case "network_ws_unknown_message":
+            guard arguments.count == 0 else { return fallback }
+            return .networkWsUnknownMessage
+        case "network_ws_write_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .networkWsWriteFailed(arguments[0])
+        case "proxy_automation_install_firefox_first":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationInstallFirefoxFirst
+        case "proxy_automation_install_iterm2_first":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationInstallIterm2First
+        case "proxy_automation_launch_failed":
+            guard arguments.count == 2, let p0 = Int(arguments[0]) else { return fallback }
+            return .proxyAutomationLaunchFailed(p0, arguments[1])
+        case "proxy_automation_opened_a_terminal_with_proxy_and_ca_environment":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationOpenedATerminalWithProxyAndCaEnvironment
+        case "proxy_automation_select_an_installed_app":
+            guard arguments.count == 1 else { return fallback }
+            return .proxyAutomationSelectAnInstalledApp(arguments[0])
+        case "proxy_automation_select_an_installed_terminal_app":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationSelectAnInstalledTerminalApp
+        case "proxy_automation_start_the_proxy_listener_first":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationStartTheProxyListenerFirst
+        case "proxy_automation_started_an_isolated_firefox_profile_with_the_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationStartedAnIsolatedFirefoxProfileWithTheProxy
+        case "proxy_automation_started_an_isolated_profile_using_the_proxymirror_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationStartedAnIsolatedProfileUsingTheProxymirrorProxy
+        case "proxy_automation_submitted_the_launch_request_launch_log":
+            guard arguments.count == 2 else { return fallback }
+            return .proxyAutomationSubmittedTheLaunchRequestLaunchLog(arguments[0], arguments[1])
+        case "proxy_automation_the_selected_terminal_must_support_the_e_command":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyAutomationTheSelectedTerminalMustSupportTheECommand
+        case "proxy_endpoint_self":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyEndpointSelf
+        case "proxy_handshake_closed":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyHandshakeClosed
+        case "proxy_handshake_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyHandshakeTimeout
+        case "proxy_http_headers_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyHttpHeadersLimit
+        case "proxy_http_rejected":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .proxyHttpRejected(p0)
+        case "proxy_http_status_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyHttpStatusInvalid
+        case "proxy_pac_busy":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacBusy
+        case "proxy_pac_failed":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .proxyPacFailed(p0)
+        case "proxy_pac_file_encoding":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacFileEncoding
+        case "proxy_pac_file_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacFileInvalid
+        case "proxy_pac_file_too_large":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacFileTooLarge
+        case "proxy_pac_invalid_url":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacInvalidUrl
+        case "proxy_pac_no_result":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacNoResult
+        case "proxy_pac_no_route":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacNoRoute
+        case "proxy_pac_resolution_required":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacResolutionRequired
+        case "proxy_pac_route_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacRouteInvalid
+        case "proxy_pac_route_unsupported":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacRouteUnsupported
+        case "proxy_pac_socks_version":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacSocksVersion
+        case "proxy_pac_target_host":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacTargetHost
+        case "proxy_pac_timeout":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyPacTimeout
+        case "proxy_protocol_negotiation":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyProtocolNegotiation
+        case "proxy_socks_address_type":
+            guard arguments.count == 0 else { return fallback }
+            return .proxySocksAddressType
+        case "proxy_socks_auth_method":
+            guard arguments.count == 0 else { return fallback }
+            return .proxySocksAuthMethod
+        case "proxy_socks_credentials":
+            guard arguments.count == 0 else { return fallback }
+            return .proxySocksCredentials
+        case "proxy_socks_empty_address":
+            guard arguments.count == 0 else { return fallback }
+            return .proxySocksEmptyAddress
+        case "proxy_socks_rejected":
+            guard arguments.count == 1 else { return fallback }
+            return .proxySocksRejected(arguments[0])
+        case "proxy_socks_reply_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .proxySocksReplyInvalid
+        case "proxy_target_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyTargetInvalid
+        case "proxy_target_is_proxy":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyTargetIsProxy
+        case "proxy_target_self":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyTargetSelf
+        case "proxy_target_url_invalid":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyTargetUrlInvalid
+        case "proxy_tls_ip_unsupported":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyTlsIpUnsupported
+        case "proxy_tunnel_buffer_limit":
+            guard arguments.count == 0 else { return fallback }
+            return .proxyTunnelBufferLimit
+        case "release_update_the_update_check_failed_http":
+            guard arguments.count == 1 else { return fallback }
+            return .releaseUpdateTheUpdateCheckFailedHttp(arguments[0])
+        case "release_update_the_update_service_returned_invalid_release_information":
+            guard arguments.count == 0 else { return fallback }
+            return .releaseUpdateTheUpdateServiceReturnedInvalidReleaseInformation
+        case "simulator_certificate_installer_failed_exit_code":
+            guard arguments.count == 3, let p1 = Int(arguments[1]) else { return fallback }
+            return .simulatorCertificateInstallerFailedExitCode(arguments[0], p1, arguments[2])
+        case "simulator_certificate_installer_install_the_ca_on":
+            guard arguments.count == 1 else { return fallback }
+            return .simulatorCertificateInstallerInstallTheCaOn(arguments[0])
+        case "simulator_certificate_installer_read_the_device_list":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerReadTheDeviceList
+        case "simulator_certificate_installer_select_an_existing_simulator_device_set_directory_containing":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerSelectAnExistingSimulatorDeviceSetDirectoryContaining
+        case "simulator_certificate_installer_simctl_exceeded_seconds_and_was_stopped_check_xcode":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .simulatorCertificateInstallerSimctlExceededSecondsAndWasStoppedCheckXcode(p0)
+        case "simulator_certificate_installer_simctl_returned_a_duplicate_device_identifier":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerSimctlReturnedADuplicateDeviceIdentifier
+        case "simulator_certificate_installer_simctl_returned_an_invalid_device_identifier_or_name":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerSimctlReturnedAnInvalidDeviceIdentifierOrName
+        case "simulator_certificate_installer_simctl_standard_output_exceeds_4_mib":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerSimctlStandardOutputExceeds4Mib
+        case "simulator_certificate_installer_start_in_xcode_or_simulator_then_refresh_the":
+            guard arguments.count == 1 else { return fallback }
+            return .simulatorCertificateInstallerStartInXcodeOrSimulatorThenRefreshThe(arguments[0])
+        case "simulator_certificate_installer_the_device_count_exceeds_1_000_select_a":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerTheDeviceCountExceeds1000SelectA
+        case "simulator_certificate_installer_the_simctl_device_list_exceeds_4_mib":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerTheSimctlDeviceListExceeds4Mib
+        case "simulator_certificate_installer_unable_to_parse_the_simctl_device_list_check":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCertificateInstallerUnableToParseTheSimctlDeviceListCheck
+        case "simulator_check_runtime":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorCheckRuntime
+        case "simulator_state_booted":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorStateBooted
+        case "simulator_state_booting":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorStateBooting
+        case "simulator_state_shutdown":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorStateShutdown
+        case "simulator_state_stopping":
+            guard arguments.count == 0 else { return fallback }
+            return .simulatorStateStopping
+        case "system_proxy_authorization_administrator_authorization_was_cancelled":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationAdministratorAuthorizationWasCancelled
+        case "system_proxy_authorization_macos_could_not_authorize_the_system_proxy_service":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .systemProxyAuthorizationMacosCouldNotAuthorizeTheSystemProxyService(p0)
+        case "system_proxy_authorization_proxymirror_needs_administrator_authorization_to_install_the_system":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationProxymirrorNeedsAdministratorAuthorizationToInstallTheSystem
+        case "system_proxy_authorization_proxymirror_needs_administrator_authorization_to_remove_the_system":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationProxymirrorNeedsAdministratorAuthorizationToRemoveTheSystem
+        case "system_proxy_authorization_unable_to_create_a_macos_authorization_session":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationUnableToCreateAMacosAuthorizationSession
+        case "system_proxy_authorization_unable_to_prepare_the_system_proxy_service_installation":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationUnableToPrepareTheSystemProxyServiceInstallation
+        case "system_proxy_authorization_unable_to_read_the_system_proxy_service_installation":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationUnableToReadTheSystemProxyServiceInstallation
+        case "system_proxy_authorization_unable_to_update_the_system_proxy_background_service":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyAuthorizationUnableToUpdateTheSystemProxyBackgroundService
+        case "system_proxy_enable_the_system_proxy_first":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyEnableTheSystemProxyFirst
+        case "system_proxy_imported_into_the_login_keychain":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyImportedIntoTheLoginKeychain(arguments[0])
+        case "system_proxy_importing_the_custom_certificate":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyImportingTheCustomCertificate
+        case "system_proxy_installed_authorization_is_required_for_this_application_version":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyInstalledAuthorizationIsRequiredForThisApplicationVersion
+        case "system_proxy_installed_but_the_launchd_service_is_not_loaded":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyInstalledButTheLaunchdServiceIsNotLoaded
+        case "system_proxy_installed_launchd_service_loaded_and_code_signature_verified":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyInstalledLaunchdServiceLoadedAndCodeSignatureVerified
+        case "system_proxy_legacy_version_no_version_information":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyLegacyVersionNoVersionInformation
+        case "system_proxy_not_installed":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyNotInstalled
+        case "system_proxy_proxy_helper_check_failed":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyProxyHelperCheckFailed(arguments[0])
+        case "system_proxy_restore_the_system_proxy_before_removing_its_authorization":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyRestoreTheSystemProxyBeforeRemovingItsAuthorization
+        case "system_proxy_select_the_certificate_to_import_pem_cer_or":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxySelectTheCertificateToImportPemCerOr
+        case "system_proxy_select_the_matching_private_key_pem_p_256":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxySelectTheMatchingPrivateKeyPemP256
+        case "system_proxy_select_the_root_ca_certificate_pem":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxySelectTheRootCaCertificatePem
+        case "system_proxy_the_certificate_command_failed_exit_code":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .systemProxyTheCertificateCommandFailedExitCode(p0)
+        case "system_proxy_the_current_ca_is_installed_and_trusted_for":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheCurrentCaIsInstalledAndTrustedFor
+        case "system_proxy_the_current_ca_is_installed_but_is_not":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheCurrentCaIsInstalledButIsNot
+        case "system_proxy_the_current_ca_is_not_installed":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheCurrentCaIsNotInstalled
+        case "system_proxy_the_custom_root_ca_was_imported_reinstall_and":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheCustomRootCaWasImportedReinstallAnd
+        case "system_proxy_the_system_proxy_helper_is_not_installed":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheSystemProxyHelperIsNotInstalled
+        case "system_proxy_the_system_proxy_is_enabled_restore_the_original":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheSystemProxyIsEnabledRestoreTheOriginal
+        case "system_proxy_the_system_proxy_service_did_not_respond_try":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheSystemProxyServiceDidNotRespondTry
+        case "system_proxy_the_system_proxy_service_interface_is_unavailable":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheSystemProxyServiceInterfaceIsUnavailable
+        case "system_proxy_the_system_proxy_service_is_missing_use_a":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyTheSystemProxyServiceIsMissingUseA
+        case "system_proxy_unable_to_check_the_current_ca":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyUnableToCheckTheCurrentCa(arguments[0])
+        case "system_proxy_unable_to_connect_to_the_system_proxy_service":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyUnableToConnectToTheSystemProxyService
+        case "system_proxy_unable_to_import_the_custom_certificate":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyUnableToImportTheCustomCertificate(arguments[0])
+        case "system_proxy_unable_to_import_the_root_ca":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyUnableToImportTheRootCa(arguments[0])
+        case "system_proxy_unable_to_open_the_keychain":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyUnableToOpenTheKeychain(arguments[0])
+        case "system_proxy_unable_to_read_keychain_certificates":
+            guard arguments.count == 1 else { return fallback }
+            return .systemProxyUnableToReadKeychainCertificates(arguments[0])
+        case "system_proxy_unable_to_read_the_installed_certificate_list":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyUnableToReadTheInstalledCertificateList
+        case "system_proxy_unable_to_read_the_keychain_error_code":
+            guard arguments.count == 1, let p0 = Int(arguments[0]) else { return fallback }
+            return .systemProxyUnableToReadTheKeychainErrorCode(p0)
+        case "system_proxy_unknown":
+            guard arguments.count == 0 else { return fallback }
+            return .systemProxyUnknown
+        case "system_trust_anchors_the_client_certificate_configured_for_the_target_host":
+            guard arguments.count == 0 else { return fallback }
+            return .systemTrustAnchorsTheClientCertificateConfiguredForTheTargetHost
+        case "transparent_capture_cleanup_failed":
+            guard arguments.count == 2 else { return fallback }
+            return .transparentCaptureCleanupFailed(arguments[0], arguments[1])
+        case "transparent_proxy_controller_proxymirror_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerProxymirrorTransparentCapture
+        case "transparent_proxy_controller_restart_your_mac_to_finish_activating_the_transparent":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerRestartYourMacToFinishActivatingTheTransparent
+        case "transparent_proxy_controller_stop_the_current_transparent_capture_first":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerStopTheCurrentTransparentCaptureFirst
+        case "transparent_proxy_controller_the_local_listener_configuration_for_transparent_capture_is":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerTheLocalListenerConfigurationForTransparentCaptureIs
+        case "transparent_proxy_controller_the_system_extension_returned_an_unknown_activation_state":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerTheSystemExtensionReturnedAnUnknownActivationState
+        case "transparent_proxy_controller_the_transparent_proxy_connection_was_disconnected":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerTheTransparentProxyConnectionWasDisconnected
+        case "transparent_proxy_controller_this_app_bundle_does_not_contain_the_transparent":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerThisAppBundleDoesNotContainTheTransparent
+        case "transparent_proxy_controller_timed_out_waiting_for_the_transparent_proxy_connection":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerTimedOutWaitingForTheTransparentProxyConnection
+        case "transparent_proxy_controller_timed_out_waiting_for_the_transparent_proxy_to":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerTimedOutWaitingForTheTransparentProxyTo
+        case "transparent_proxy_controller_transparent_capture_was_cancelled":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerTransparentCaptureWasCancelled
+        case "transparent_proxy_controller_unable_to_activate_the_transparent_proxy_system_extension":
+            guard arguments.count == 1 else { return fallback }
+            return .transparentProxyControllerUnableToActivateTheTransparentProxySystemExtension(arguments[0])
+        case "transparent_proxy_controller_unable_to_establish_the_transparent_proxy_connection":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerUnableToEstablishTheTransparentProxyConnection
+        case "transparent_proxy_controller_unable_to_start_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerUnableToStartTransparentCapture
+        case "transparent_proxy_controller_unable_to_stop_transparent_capture":
+            guard arguments.count == 0 else { return fallback }
+            return .transparentProxyControllerUnableToStopTransparentCapture
+        case "transparent_system_operation_failed":
+            guard arguments.count == 3, let p2 = Int(arguments[2]) else { return fallback }
+            return .transparentSystemOperationFailed(arguments[0], arguments[1], p2)
+        default: return restoredModel(code: code, arguments: arguments) ?? fallback
+        }
     }
 
 }

@@ -338,3 +338,5 @@
 "json_type_number" = "Number";
 "json_type_boolean" = "Boolean";
 "json_type_null" = "Null";
+
+"message_pack_output_limit" = "MessagePack conversion exceeds 1 MiB; showing captured bytes.";

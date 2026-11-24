@@ -116,7 +116,7 @@ enum TrafficColumn: Hashable, Identifiable {
         case .edited: return tx.originalURL == nil ? "0" : "1"
         case .comment: return tx.comment
         case .tools: return tx.ruleMatches.joined()
-        case .graphql: return tx.graphqlOperationName ?? ""
+        case .graphql: return CustomColumnValues.shared.graphqlValue(for: tx)
         case .custom(let field): return field.value(for: tx)
         }
     }
@@ -212,6 +212,7 @@ struct TrafficListView: View {
         let hidden = Set(hiddenColumns.split(separator: "|").map(String.init))
         let saved = columnWidths
         let fields = (try? JSONDecoder().decode([CustomTrafficColumn].self, from: customData)) ?? []
+        CustomColumnValues.shared.configure(fields)
         let custom = fields.map(TrafficColumn.custom)
         var columns = (TrafficColumn.allCases + custom).filter { !hidden.contains($0.id) || $0 == .url }
         let priorities: [TrafficColumn] = [.graphql, .tools, .comment, .edited, .ssl, .time, .request, .response, .duration, .client]
@@ -487,6 +488,7 @@ struct TrafficRow: View {
     var isSelected = false
     @ObservedObject private var presentationSettings = AppSettings.shared
     @ObservedObject private var filterPalette = TrafficFilterPalette.shared
+    @ObservedObject private var customColumnValues = CustomColumnValues.shared
     @AppStorage("ui.truncationStyle") private var truncationStyle = "middle"
 
     private var truncation: Text.TruncationMode {
@@ -556,7 +558,7 @@ struct TrafficRow: View {
             badge(tx.state == .failed ? (tx.statusCode > 0 ? Strings.Traffic.failed(tx.statusCode) : Strings.Traffic.failed2)
                   : tx.statusCode == 0 ? Strings.Traffic.inProgress : String(tx.statusCode),
                   color: Color(nsColor: tx.statusColor))
-                .help(tx.errorText ?? tx.statusText)
+                .help(tx.localizedErrorText ?? tx.statusText)
         case .time: Text(tx.timeText).font(PresentationFonts.swiftUIFont()).help(tx.timeText)
         case .duration: Text(tx.state == .pending || tx.state == .awaiting ? "–" : tx.durationText)
         case .request: Text(size(max(tx.requestBytes, tx.requestBody.count)))
@@ -571,7 +573,9 @@ struct TrafficRow: View {
             }
         case .comment: Text(tx.comment).help(tx.comment)
         case .tools: Text(tx.ruleMatches.joined(separator: ", ")).help(tx.ruleMatches.joined(separator: ", "))
-        case .graphql: Text(tx.graphqlOperationName ?? "").help(tx.graphqlOperationName ?? "")
+        case .graphql:
+            let value = CustomColumnValues.shared.graphqlValue(for: tx)
+            Text(value).help(value)
         case .custom(let field):
             let value = field.value(for: tx)
             Text(value.isEmpty ? "–" : value).help(value)

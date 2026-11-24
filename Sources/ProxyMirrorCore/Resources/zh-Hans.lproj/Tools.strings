@@ -524,3 +524,7 @@
 "state_disabled" = "已停用";
 "rule_phase_status" = "%1$@ · %2$@";
 "gist_default_description" = "使用 ProxyMirror 捕获";
+
+"csv_exporting" = "正在导出 CSV…";
+
+"export_cancelled" = "导出已取消。";

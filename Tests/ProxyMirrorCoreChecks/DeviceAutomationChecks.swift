@@ -3,6 +3,20 @@ import Foundation
 
 /// G3：模拟器/设备自动化（PM_SIMCTL 替身命令 + JSON 解析 + 命令拼装）
 func checkDeviceAutomation(_ test: CoreAssertions) {
+    do {
+        let output = try DeviceCommandRunner.run("/bin/sh", ["-c", "head -c 262144 /dev/zero >&2; printf done"], timeout: 3)
+        test.equal(output.stdout, "done", "Device command drains stdout after a large stderr output")
+        test.equal(output.stderr.utf8.count, 262144, "Device command captures stderr without a pipe deadlock")
+        let started = ProcessInfo.processInfo.systemUptime
+        test.rejects(try DeviceCommandRunner.run("/bin/sh", ["-c", "trap '' TERM; sleep 60"], timeout: 0.1),
+                     with: DeviceCommandRunner.Failure.self, "Device command timeout terminates a hung process")
+        test.expect(ProcessInfo.processInfo.systemUptime - started < 2, "Device command timeout remains bounded")
+        let cancelled = DeviceCommandRunner.Cancellation()
+        cancelled.cancel()
+        test.rejects(try DeviceCommandRunner.run("/bin/sh", ["-c", "exit 0"], cancellation: cancelled),
+                     with: DeviceCommandRunner.Failure.self, "Cancelled device commands never launch")
+    } catch { test.expect(false, "Device command runner regression: \(error)") }
+
     let dir = FileManager.default.temporaryDirectory
         .appendingPathComponent("pm-automation-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

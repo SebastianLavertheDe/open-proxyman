@@ -12,8 +12,9 @@ enum MapLocalFileWorker {
     }()
     static let fileIO = NonBlockingFileIO(threadPool: pool)
 
-    struct Busy: LocalizedError {
-        var errorDescription: String? { "本地文件响应繁忙，请重试。" }
+    struct Busy: LocalizedError, OperationIssueProviding {
+        var operationIssue: OperationIssue { .networkLocalFileBusy }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 }
 
@@ -59,8 +60,9 @@ final class MapLocalFile: Sendable {
 /// A channel's event loop owns the sender. The next file read waits for the current
 /// write to complete, including flow control on HTTP/2, and for channel writability.
 final class MapLocalSender {
-    private struct UnexpectedEndOfFile: LocalizedError {
-        var errorDescription: String? { "本地文件在发送期间被截短。" }
+    private struct UnexpectedEndOfFile: LocalizedError, OperationIssueProviding {
+        var operationIssue: OperationIssue { .networkLocalFileTruncated }
+        var errorDescription: String? { operationIssue.diagnostic }
     }
 
     private let file: MapLocalFile

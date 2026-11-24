@@ -346,9 +346,9 @@ enum CertInstaller {
     }
 
     /// 系统级信任安装（-d 写入系统信任存储；一次管理员授权；Chrome/所有应用直接生效）
-    static func installSystemWide(completion: @escaping (Bool, String) -> Void) {
+    static func installSystemWide(authority: CertificateAuthority = .shared, completion: @escaping (Bool, String) -> Void) {
         do {
-            let pem = try CertificateAuthority.shared.caPEM()
+            let pem = try authority.caPEM()
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirrorCA.pem")
             try pem.write(to: tmp, atomically: true, encoding: .utf8)
             let script = "security add-trusted-cert -d -r trustRoot -p ssl -k /Library/Keychains/System.keychain \"\(tmp.path)\""
@@ -519,9 +519,9 @@ enum CertInstaller {
         }.joined(separator: "\n")
     }
 
-    static func revealCAFile() {
+    static func revealCAFile(authority: CertificateAuthority = .shared) {
         do {
-            let pem = try CertificateAuthority.shared.caPEM()
+            let pem = try authority.caPEM()
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirrorCA.pem")
             try pem.write(to: tmp, atomically: true, encoding: .utf8)
             NSWorkspace.shared.selectFile(tmp.path, inFileViewerRootedAtPath: tmp.deletingLastPathComponent().path)

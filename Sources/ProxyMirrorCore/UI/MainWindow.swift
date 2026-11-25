@@ -4,17 +4,12 @@ import UniformTypeIdentifiers
 struct MainWindow: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.self) private var environment
     private var store: TrafficStore { appState.activeStore }
     @FocusState private var trafficFilterFocused: Bool
     @State private var message: String?
     @State private var showFilterEditor = false
     @State private var showTrafficSearch = false
     @State private var showListenDetails = false
-    @State private var organization = RuleOrganizationStore.shared.snapshot()
-    @ObservedObject private var rules = RulesStore.shared
-    private let configuration = InterceptionConfig.shared
-    @ObservedObject private var breakpoints = BreakpointManager.shared
     @AppStorage("ui.showResourceUsage") private var showResourceUsage = true
 
     var body: some View {
@@ -50,9 +45,6 @@ struct MainWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusTrafficFilter)) { _ in
             showTrafficSearch = true
             DispatchQueue.main.async { trafficFilterFocused = true }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ruleOrganizationChanged)) { _ in
-            organization = RuleOrganizationStore.shared.snapshot()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleAdvancedTrafficFilter)) { _ in showFilterEditor.toggle() }
         .onReceive(NotificationCenter.default.publisher(for: .pmNewSourceFolder)) { _ in appState.showSidebar = true }
@@ -394,9 +386,7 @@ struct MainWindow: View {
                         showTrafficSearch = false
                     }
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) { toolStatusCapsules }
-            }.frame(maxWidth: .infinity)
+            Spacer(minLength: 12)
             Text("\(store.selectedIDs.count)/\(store.visible.count)")
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).help(Strings.Traffic.selectedCurrentlyFilteredRequests)
             if showResourceUsage {
@@ -417,46 +407,6 @@ struct MainWindow: View {
         .frame(height: ProxymanTheme.bottomBarHeight)
         .background(ProxymanTheme.inspectorChrome)
         .overlay(alignment: .top) { Rectangle().fill(ProxymanTheme.paneDivider).frame(height: 1) }
-    }
-
-    @ViewBuilder
-    private var toolStatusCapsules: some View {
-        toolCapsule(Strings.Menus.blockList, enabled: activeTool("blockList", configured: rules.blockList.contains(where: \.enabled))) { appState.openTool(.blockList) }
-        toolCapsule(Strings.Menus.allowList, enabled: activeTool("allowList", configured: rules.allowList.contains(where: \.enabled))) { appState.openTool(.allowList) }
-        toolCapsule(Strings.Menus.mapLocal, enabled: activeTool("mapLocal", configured: rules.mapLocal.contains(where: \.enabled))) { appState.openTool(.mapLocal) }
-        toolCapsule(Strings.Menus.scripting, enabled: activeTool("rewrite", configured: configuration.rewrite.value.contains(where: \.enabled))) { openWindow(id: "scripting") }
-        toolCapsule(Strings.Menus.mapRemote, enabled: activeTool("mapRemote", configured: rules.mapRemote.contains(where: \.enabled))) { appState.openTool(.mapRemote) }
-        toolCapsule(Strings.Menus.breakpoints, enabled: breakpoints.enabled && !organization.disabledTools.contains("breakpoints")) { openWindow(id: "breakpoints") }
-        toolCapsule(Strings.Menus.noCaching, enabled: activeTool("noCaching", configured: rules.noCaching)) { rules.noCaching.toggle() }
-        toolCapsule(Strings.Menus.customCertificates, enabled: activeTool("customCertificates", configured: rules.customCertificates.contains(where: \.enabled))) { openWindow(id: "certificate-manager") }
-        toolCapsule(Strings.Menus.networkConditions, enabled: activeTool("latency", configured: LatencyConditions.snapshot().enabled)) { openWindow(id: "network-conditions") }
-        toolCapsule(Strings.Menus.reverseProxy, enabled: activeTool("reverse", configured: configuration.reverse.value.contains(where: \.enabled))) { appState.openTool(.reverseProxy) }
-        toolCapsule(Strings.Menus.dnsMapping, enabled: activeTool("dns", configured: configuration.dnsSpoof.value.contains(where: \.enabled))) { appState.openTool(.dnsMapping) }
-        toolCapsule(Strings.Menus.tlsKeyLogging, enabled: appState.tlsKeyLogURL != nil) { appState.toggleTLSKeyLogging() }
-        toolCapsule(Strings.Menus.externalProxy, enabled: activeTool("external", configured: configuration.externalProxy.value.enabled)) { revealSettings(.upstreamProxy) }
-        toolCapsule("SOCKS", enabled: appState.proxyRunning) { revealSettings(.listenPort) }
-        toolCapsule(Strings.Menus.proxyOverridden, enabled: appState.systemProxyActive) { toggleSystemProxy() }
-        toolCapsule(Strings.Menus.networkExtension, enabled: appState.transparentProxyState == .running) { revealSettings(.networkExtension) }
-    }
-
-    private func activeTool(_ name: String, configured: Bool) -> Bool {
-        configured && !organization.disabledTools.contains(name)
-    }
-
-    private func toolCapsule(_ title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
-                .padding(.horizontal, 6).frame(height: 18)
-                .background(enabled ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08), in: Capsule())
-        }.buttonStyle(.plain).help(title).accessibilityValue(enabled ? Strings.Traffic.enabled : Strings.Traffic.disabled)
-    }
-
-    private func revealSettings(_ target: SettingsSearchTarget) {
-        appState.settingsTarget = target
-        if #available(macOS 14, *) { environment.openSettings() }
-        else { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     private var listenFooter: String {

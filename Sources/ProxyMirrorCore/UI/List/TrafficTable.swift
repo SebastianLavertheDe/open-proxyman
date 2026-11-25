@@ -481,7 +481,7 @@ struct TrafficTable: NSViewRepresentable {
             let settings = AppSettings.shared
             let content = TrafficColumnPresentation.text(column, transaction: transaction)
             let isBadge = column == .method || column == .status
-            label.font = PresentationFonts.nsFont(size: isBadge ? 11 : 12, weight: isBadge ? .semibold : .medium)
+            label.font = PresentationFonts.nsFont(size: isBadge ? 11 : 12, weight: isBadge ? .semibold : .regular)
             label.alignment = column == .sequence ? .right : .left
             switch settings.truncationStyle {
             case "head": label.lineBreakMode = .byTruncatingHead
@@ -520,15 +520,30 @@ struct TrafficTable: NSViewRepresentable {
             needsLayout = true
         }
 
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            needsLayout = true
+        }
+
+        override func viewDidChangeBackingProperties() {
+            super.viewDidChangeBackingProperties()
+            needsLayout = true
+        }
+
         override func layout() {
             super.layout()
             let hasIcon = icon.image != nil
             icon.isHidden = !hasIcon
-            icon.frame = NSRect(x: 6, y: (bounds.height - 15) / 2, width: 15, height: 15)
+            icon.frame = backingAlignedRect(
+                NSRect(x: 6, y: (bounds.height - 15) / 2, width: 15, height: 15),
+                options: [.alignAllEdgesNearest])
             let inset: CGFloat = hasIcon ? 26 : 6
-            let desiredHeight = ceil(label.font?.boundingRectForFont.height ?? 16)
-            label.frame = NSRect(x: inset, y: max(0, (bounds.height - desiredHeight) / 2),
-                                 width: max(0, bounds.width - inset - 6), height: min(bounds.height, desiredHeight))
+            // 字体包围盒覆盖所有字形，不能当作单行控件高度；居中后按实际屏幕像素对齐。
+            let height = min(bounds.height, ceil(label.fittingSize.height))
+            label.frame = backingAlignedRect(
+                NSRect(x: inset, y: max(0, (bounds.height - height) / 2),
+                       width: max(0, bounds.width - inset - 6), height: height),
+                options: [.alignAllEdgesNearest])
         }
 
         override var backgroundStyle: NSView.BackgroundStyle {

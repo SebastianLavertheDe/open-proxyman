@@ -11,7 +11,7 @@
 | 规则导出 | 单条/选中/当前工具原生 JSON 备份；原有 Charles 预览确认流程保留 | `RuleListWindow.swift`、`RuleBackupView.swift` |
 | 阻断动作 | 403（旧数据默认）、503、429、断开；HTTP/1、HTTP/2、CONNECT 同源策略 | `RuleBlockAction.swift`、`TunnelRulePolicy.swift`、`ProxyEngine.swift` |
 | 脚本 | 搜索、编辑器下方 Console、持久化的首个匹配/全部匹配开关 | `ScriptingWindow.swift`、`ScriptingRuntimeSettings.swift` |
-| 主界面 | 高级过滤内联、状态码胶囊、16 个可点击工具状态胶囊；新增工具栏动作；修正 Summary/Automation 默认尺寸 | `MainWindow.swift`、`TrafficFilterEditor.swift` |
+| 主界面 | 高级过滤内联、状态码胶囊；底栏保留常用操作、计数、资源与代理状态，工具入口集中在 Tools 菜单；新增工具栏动作；修正 Summary/Automation 默认尺寸 | `MainWindow.swift`、`TrafficFilterEditor.swift` |
 | 流量表 | 原生多列及表头，支持排序、调宽、拖拽换序与持久化；新增 Scheme、Content-Type | `TrafficTable.swift`、`TrafficListView.swift` |
 | 快捷键 | 新增重放、高亮、删除、停靠、标签导航、工具入口；可选择 Proxyman 兼容键位，编辑控件和 sheet 不触发流量删除/重放 | `ProxyMirrorApp.swift`、`AppSettings.swift` |
 | Setup | macOS、iOS、模拟器、Android、Java/框架、Helper 分步面板，刷新 CA/监听/设备状态，显示 IP/端口，提供二维码和 AirDrop | `SetupGuideWindow.swift`、`CertificateMenu.swift` |

@@ -418,6 +418,7 @@ struct TrafficTable: NSViewRepresentable {
 
     @MainActor
     private final class Cell: NSTableCellView {
+        private let badgeBackground = NSView()
         private let label = NSTextField(labelWithString: "")
         private let icon = NSImageView()
         private var transaction: Transaction?
@@ -429,6 +430,10 @@ struct TrafficTable: NSViewRepresentable {
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
+            badgeBackground.wantsLayer = true
+            badgeBackground.layer?.cornerRadius = 4
+            badgeBackground.isHidden = true
+            badgeBackground.setAccessibilityElement(false)
             label.isSelectable = false
             label.isEditable = false
             label.isBordered = false
@@ -437,6 +442,7 @@ struct TrafficTable: NSViewRepresentable {
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.setAccessibilityElement(false)
+            addSubview(badgeBackground)
             addSubview(label)
             addSubview(icon)
             textField = label
@@ -482,7 +488,7 @@ struct TrafficTable: NSViewRepresentable {
             let content = TrafficColumnPresentation.text(column, transaction: transaction)
             let isBadge = column == .method || column == .status
             label.font = PresentationFonts.nsFont(size: isBadge ? 11 : 12, weight: isBadge ? .semibold : .regular)
-            label.alignment = column == .sequence ? .right : .left
+            label.alignment = isBadge ? .center : column == .sequence ? .right : .left
             switch settings.truncationStyle {
             case "head": label.lineBreakMode = .byTruncatingHead
             case "tail": label.lineBreakMode = .byTruncatingTail
@@ -496,9 +502,8 @@ struct TrafficTable: NSViewRepresentable {
                 .strikethroughStyle: column == .url && transaction.strikethrough ? NSUnderlineStyle.single.rawValue : 0
             ]
             label.attributedStringValue = NSAttributedString(string: content, attributes: attributes)
-            label.wantsLayer = isBadge
-            label.layer?.cornerRadius = 4
-            label.layer?.backgroundColor = isBadge ? color.withAlphaComponent(selected ? 0.28 : 0.16).cgColor : NSColor.clear.cgColor
+            badgeBackground.isHidden = !isBadge
+            badgeBackground.layer?.backgroundColor = isBadge ? color.withAlphaComponent(selected ? 0.28 : 0.16).cgColor : nil
             icon.image = nil
             switch column {
             case .client: icon.image = transaction.clientIcon ?? NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil)
@@ -539,10 +544,28 @@ struct TrafficTable: NSViewRepresentable {
                 options: [.alignAllEdgesNearest])
             let inset: CGFloat = hasIcon ? 26 : 6
             // 字体包围盒覆盖所有字形，不能当作单行控件高度；居中后按实际屏幕像素对齐。
-            let height = min(bounds.height, ceil(label.fittingSize.height))
+            let contentSize = label.fittingSize
+            let height = min(bounds.height, ceil(contentSize.height))
+            let availableWidth = max(0, bounds.width - inset - 6)
+            var textX = inset
+            var textWidth = availableWidth
+            if column == .method || column == .status {
+                // 徽章按文字加留白收紧，列宽只限制最大宽度，不拉伸背景。
+                let padding: CGFloat = 5
+                let badgeWidth = min(availableWidth, ceil(contentSize.width) + padding * 2)
+                let badgeHeight = min(bounds.height, max(17, CGFloat(AppSettings.shared.fontSize) + 5))
+                badgeBackground.frame = backingAlignedRect(
+                    NSRect(x: inset, y: max(0, (bounds.height - badgeHeight) / 2),
+                           width: badgeWidth, height: badgeHeight),
+                    options: [.alignAllEdgesNearest])
+                textX = badgeBackground.frame.minX + padding
+                textWidth = max(0, badgeBackground.frame.width - padding * 2)
+            } else {
+                badgeBackground.frame = .zero
+            }
             label.frame = backingAlignedRect(
-                NSRect(x: inset, y: max(0, (bounds.height - height) / 2),
-                       width: max(0, bounds.width - inset - 6), height: height),
+                NSRect(x: textX, y: max(0, (bounds.height - height) / 2),
+                       width: textWidth, height: height),
                 options: [.alignAllEdgesNearest])
         }
 

@@ -218,6 +218,14 @@ struct MainWindow: View {
 
     @ToolbarContentBuilder
     private var mainToolbar: some CustomizableToolbarContent {
+        captureToolbar
+        workspaceToolbar
+        inspectorToolbar
+    }
+
+    // 保持每个构建块不超过 10 项，并保留各 ToolbarItem 的自定义标识。
+    @ToolbarContentBuilder
+    private var captureToolbar: some CustomizableToolbarContent {
         ToolbarItem(id: "record", placement: .navigation) {
             Button(action: appState.toggleRecording) {
                 Image(systemName: isRecording ? "pause.fill" : "record.circle")
@@ -268,6 +276,10 @@ struct MainWindow: View {
             }
         }
 
+    }
+
+    @ToolbarContentBuilder
+    private var workspaceToolbar: some CustomizableToolbarContent {
         ToolbarItem(id: "new-session", placement: .secondaryAction) {
             Button { appState.addWorkspace() } label: { Label(Strings.Menus.newView, systemImage: "plus.rectangle") }
         }
@@ -289,6 +301,10 @@ struct MainWindow: View {
                 Label(Strings.Menus.keepWindowOnTop, systemImage: "pin")
             }
         }
+    }
+
+    @ToolbarContentBuilder
+    private var inspectorToolbar: some CustomizableToolbarContent {
         ToolbarItem(id: "right-space", placement: .primaryAction) {
             Spacer()
         }

@@ -210,6 +210,14 @@ struct ProxyMirrorMainApp: App {
 
     @CommandsBuilder
     private var proxyCommands: some Commands {
+        applicationCommands
+        workspaceCommands
+        toolCommands
+    }
+
+    // Xcode 16.2 的 CommandsBuilder 每个构建块最多接受 10 项。
+    @CommandsBuilder
+    private var applicationCommands: some Commands {
         CommandGroup(replacing: .appSettings) {
             if #available(macOS 14, *) {
                 SettingsLink { Text(Strings.Menus.preferences) }.keyboardShortcut(",", modifiers: .command)
@@ -264,6 +272,10 @@ struct ProxyMirrorMainApp: App {
                 }
             }
         }
+    }
+
+    @CommandsBuilder
+    private var workspaceCommands: some Commands {
         // View 菜单（对齐 Proxyman View）
         CommandGroup(after: .sidebar) {
             Button(Strings.Menus.filterDomainOrApp) {
@@ -372,6 +384,10 @@ struct ProxyMirrorMainApp: App {
             Divider()
             Button(Strings.Menus.generateSampleTraffic) { appState.store.addSampleData() }
         }
+    }
+
+    @CommandsBuilder
+    private var toolCommands: some Commands {
         // Tools 菜单（对齐 Proxyman Tools 完整结构；未实现项灰态）
         CommandMenu(Strings.Menus.tools) {
             Button(Strings.Menus.toggleRecording) { appState.toggleRecording() }

@@ -50,4 +50,19 @@ func checkWorkbench(_ test: CoreAssertions) throws {
     test.expect(snapshot.shouldSSLProxy(host: "example.test"), "An enabled empty SSL list retains the original default")
     snapshot.sslProxyingEnabled = false
     test.expect(!snapshot.shouldSSLProxy(host: "example.test"), "Disabling the SSL tool stops decryption even when the list is empty")
+
+    let routing = AppState(launchServices: false)
+    routing.openTool(.mapRemote, transaction: tx)
+    test.expect(routing.activeTool == nil, "Opening a rule window does not block the main workspace with a sheet")
+    test.equal(routing.requestedRuleWindow, "mapRemote\n" + tx.fullURL, "Rule window requests retain the selected URL")
+    routing.requestedRuleWindow = nil
+    routing.openTool(.sslProxyingList, transaction: tx)
+    test.equal(routing.requestedRuleWindow, "sslProxyingList\nsession.test", "SSL rule windows match a host rather than an entire URL")
+    routing.openTool(.customCertificates)
+    test.equal(routing.requestedAuxiliaryWindow, "certificate-manager", "Certificate management uses its own window")
+    routing.openTool(.compose, transaction: tx)
+    test.equal(routing.activeTool, .compose, "Compose keeps its editable, cancellable sheet")
+    test.expect(routing.toolTransaction === tx, "Compose receives the selected captured transaction")
+    test.expect(!routing.hasResolvedEngine, "Opening tools does not start a listener or create certificate state")
+
 }

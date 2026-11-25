@@ -80,6 +80,8 @@ final class AppState: ObservableObject, TrafficSink {
     @Published private(set) var tlsKeyLogURL: URL?
     @Published var showCommentSheet = false
     @Published var caBannerDismissed = UserDefaults.standard.bool(forKey: "caBannerDismissed")
+    @Published var requestedRuleWindow: String?
+    @Published var requestedAuxiliaryWindow: String?
     @Published var activeTool: ToolKind?
     private(set) var toolTransaction: Transaction?
     private(set) var commentTargets: [Transaction] = []
@@ -881,8 +883,16 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func openTool(_ kind: ToolKind, transaction: Transaction? = nil) {
-        toolTransaction = transaction
-        activeTool = kind
+        let ruleKinds: Set<ToolKind> = [.mapLocal, .mapRemote, .blockList, .allowList, .sslProxyingList]
+        if ruleKinds.contains(kind) {
+            let pattern = transaction.map { kind == .sslProxyingList ? $0.host : $0.originalURL ?? $0.fullURL } ?? ""
+            requestedRuleWindow = kind.rawValue + "\n" + pattern
+        } else if kind == .customCertificates {
+            requestedAuxiliaryWindow = "certificate-manager"
+        } else {
+            toolTransaction = transaction
+            activeTool = kind
+        }
     }
 
     func dismissTool() {
@@ -952,6 +962,7 @@ final class AppState: ObservableObject, TrafficSink {
 
     func openSession(_ url: URL? = nil, charles: Bool = false) {
         guard let url = url ?? SessionFile.selectFile() else { return }
+        guard !SessionImportGuide.presentIfNeeded(url) else { return }
         let isCharles = charles || CharlesImport.sessionExtensions.contains(url.pathExtension.lowercased())
         let workspace = activeStore
         let workspaceID = workspace.id
@@ -1028,6 +1039,9 @@ final class AppState: ObservableObject, TrafficSink {
 }
 
 extension Notification.Name {
+    static let focusBodySearch = Notification.Name("ProxyMirror.focusBodySearch")
+    static let toggleAdvancedTrafficFilter = Notification.Name("ProxyMirror.toggleAdvancedTrafficFilter")
+    static let pmNewSourceFolder = Notification.Name("ProxyMirror.newSourceFolder")
     static let focusTrafficFilter = Notification.Name("ProxyMirror.focusTrafficFilter")
     static let focusSourceFilter = Notification.Name("ProxyMirror.focusSourceFilter")
 }

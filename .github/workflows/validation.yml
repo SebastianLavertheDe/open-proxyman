@@ -38,10 +38,18 @@ jobs:
           )
       - name: Verify process support against the container libc
         run: python3 Scripts/test_process_support.py
+      - name: Verify release metadata and language packaging
+        run: |
+          python3 Scripts/test_release_configuration.py
+          python3 Scripts/test_localization_packaging.py
       - name: Verify actual SwiftPM localization resources
         run: python3 Scripts/test_processed_localization.py
       - name: Verify typed SSE failures and rendering
         run: python3 Scripts/test_sse_issues.py
+      - name: Verify gzip and binary body inspection
+        run: python3 Scripts/test_body_inspection.py
+      - name: Verify MCP workbench contracts and privacy
+        run: python3 Scripts/test_automation_workbench.py
       - name: Verify native check worker deadlines
         run: python3 Scripts/test_core_check_runner.py
       - name: Exercise the production curl transport on loopback

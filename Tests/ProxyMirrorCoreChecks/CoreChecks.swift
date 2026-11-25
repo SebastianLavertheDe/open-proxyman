@@ -44,6 +44,7 @@ package enum CoreCheckGroup: String, CaseIterable, Sendable {
             try assertions.run("checkDetailInspection") { checkDetailInspection(assertions) }
         case .deviceAutomation:
             try assertions.run("checkDeviceAutomation") { checkDeviceAutomation(assertions) }
+            try assertions.run("checkCertificateDownload") { try checkCertificateDownload(assertions) }
             try assertions.run("checkProtocolAutomation") { try checkProtocolAutomation(assertions) }
         case .sse:
             try assertions.run("checkSSE") { checkSSE(assertions) }

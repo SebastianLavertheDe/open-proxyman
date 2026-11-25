@@ -28,6 +28,9 @@ enum AutomationControl {
     @MainActor
     private static func executeRequest(_ arguments: [String: Any], app: AppState, redactForMCP: Bool) throws -> Data {
         let operation = try string(arguments, "operation")
+        if AutomationWorkbench.operations.contains(operation) {
+            return try AutomationWorkbench.execute(arguments, app: app)
+        }
         let result: Any
         switch operation {
         case "proxy_address":
@@ -103,6 +106,8 @@ enum AutomationControl {
                 let format = arguments["format"] as? String ?? "har"
                 switch format {
                 case "har": result = ExportService.buildHAR(flows, redactSensitiveHeaders: app.settings.redactSensitiveHeaders)
+                case "openapi": result = ExportService.buildOpenAPI(matched.map(SessionRecord.init), redactSensitiveHeaders: app.settings.redactSensitiveHeaders || redactForMCP)
+                case "postman": result = ExportService.buildPostman(matched.map(SessionRecord.init), redactSensitiveHeaders: app.settings.redactSensitiveHeaders || redactForMCP)
                 case "json":
                     let data = try encode(flows.map(SessionRecord.init))
                     if app.settings.redactSensitiveHeaders { return try ExportRedaction.jsonData(data) }
@@ -115,7 +120,7 @@ enum AutomationControl {
                         String(tx.statusCode), tx.fullURL, String(tx.duration * 1000),
                         String(max(tx.requestBytes, tx.requestBody.count)), String(max(tx.responseBytes, tx.responseBody.count))] }
                     return Data(rows.map { $0.map(csv).joined(separator: ",") }.joined(separator: "\r\n").utf8)
-                default: throw LocalControlError.usage("format 必须为 har、json、csv 或 session。")
+                default: throw LocalControlError.usage("format 必须为 har、json、csv、session、openapi 或 postman。")
                 }
             }
         case "export_logs": return try NativeLogExport.data(arguments, app: app)
@@ -467,7 +472,7 @@ enum AutomationControl {
         var offset = 1
         switch command {
         case "export":
-            guard arguments.count > 1, ["flows", "logs"].contains(arguments[1]) else { throw LocalControlError.usage("export 需要 flows 或 logs。") }
+            guard arguments.count > 1, ["flows", "logs", "openapi", "postman"].contains(arguments[1]) else { throw LocalControlError.usage("export 需要 flows、logs、openapi 或 postman。") }
             operation = arguments[1] == "logs" ? "export_logs" : "export_flows"
             offset = 2
         case "flow": operation = "get_flow"
@@ -491,6 +496,9 @@ enum AutomationControl {
         default: return nil
         }
         var object: [String: Any] = ["operation": operation]
+        if command == "export", arguments.count > 1, ["openapi", "postman"].contains(arguments[1]) {
+            object["format"] = arguments[1]
+        }
         if operation == "export_logs", arguments.count > offset, !arguments[offset].hasPrefix("--") {
             guard ["all", "domains"].contains(arguments[offset]) else { throw LocalControlError.usage("export logs 需要 all 或 domains 范围。") }
             object["scope"] = arguments[offset]; offset += 1
@@ -617,7 +625,7 @@ enum AutomationControl {
     static func json(_ value: Any) throws -> Data {
         try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes, .fragmentsAllowed])
     }
-    private static func encode<T: Encodable>(_ value: T) throws -> Data {
+    static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601

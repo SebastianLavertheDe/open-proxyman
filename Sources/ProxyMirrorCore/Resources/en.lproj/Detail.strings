@@ -12,6 +12,10 @@
 "automatically_decompressed_using_content_encoding" = "Automatically decompressed using Content-Encoding";
 "back_to_body" = "Back to Body";
 "binary_body" = "Binary Body";
+"binary_body_output_limit" = "The decoded binary body exceeds the 1 MiB preview limit. View the captured bytes instead.";
+"decoded_tars" = "Decoded Tars/JCE";
+"gzip_detected_from_body" = "Detected gzip from the body bytes; captured headers remain unchanged.";
+"tars_body_converted_to_json" = "Tars/JCE fields are shown by tag number; field names require a schema.";
 "bodies_are_limited_to_256_kib_1_200_lines_compressed_bodies" = "Bodies are limited to 256 KiB / 1,200 lines. Compressed bodies use decoded content; binary bodies use hexadecimal.";
 "body" = "Body";
 "body_decoded_as_headers_retain_captured_values" = "Body Decoded as %@ · Headers Retain Captured Values";
@@ -340,3 +344,41 @@
 "json_type_null" = "Null";
 
 "message_pack_output_limit" = "MessagePack conversion exceeds 1 MiB; showing captured bytes.";
+
+/* Body inspection tools */
+"body_tools_menu" = "Body tools";
+"body_tools_unavailable" = "Unable to complete body action";
+"body_tools_save_part" = "Save this part…";
+"body_tools_select_part" = "Select a form part to inspect";
+"body_tools_waiting_for_parts" = "Waiting for remaining form data. Only complete parts are shown.";
+"body_tools_invalid_multipart" = "Unable to parse multipart boundary";
+"body_tools_preview_disabled" = "HTML preview is disabled during settings snapshots.";
+"body_tools_preview_too_large" = "HTML preview supports captured bodies up to 2 MiB.";
+"body_tools_prettify_json" = "Prettify JSON";
+"body_tools_prettify_xml" = "Prettify XML";
+"body_tools_decode_base64" = "Decode Base64";
+"body_tools_decode_jwt" = "Decode JWT";
+"body_tools_convert_timestamp" = "Convert Timestamp";
+"body_tools_key_value" = "View as Key-Value";
+"body_tools_invalid_selection" = "The selected content cannot be transformed, or exceeds 1 MiB.";
+"body_tools_form" = "Form";
+"body_tools_previewer" = "Previewer";
+"body_tools_tree_view" = "Tree View";
+"body_tools_hex" = "Hex";
+"body_tools_sort_json" = "Sort JSON Keys";
+"body_tools_format_with" = "Format with";
+"body_tools_captured_bytes" = "Export original captured bytes";
+"body_tools_open_with" = "Open with";
+"body_tools_choose_application" = "Choose Application…";
+"body_tools_reveal" = "Reveal in Finder";
+"body_tools_export" = "Export";
+"body_tools_request_body" = "Request Body…";
+"body_tools_response_body" = "Response Body…";
+"body_tools_capture_incomplete" = "Capture is incomplete; only captured bytes can be exported.";
+"body_tools_cannot_format" = "Unable to format this content. The original capture is preserved.";
+"body_tools_incomplete_decode" = "A partial compressed capture cannot be decoded. Select original captured bytes to export it.";
+"body_tools_decode_failed" = "Unable to decode this content encoding, or decoded body exceeds 32 MiB. Select original captured bytes to export it.";
+"body_tools_part" = "Part";
+"body_tools_content_type" = "Content Type";
+"body_tools_file_name" = "File Name";
+"body_tools_value" = "Value";

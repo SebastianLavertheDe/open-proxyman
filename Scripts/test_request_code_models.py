@@ -83,7 +83,7 @@ class Origin(BaseHTTPRequestHandler):
 
 
 def smoke(code, language, directory, origin):
-    if language == "nodeHTTP" and (tool := shutil.which("node")):
+    if language in {"nodeHTTP", "nodeFetch"} and (tool := shutil.which("node")):
         file = directory / "native-http.cjs"
         file.write_text(code, encoding="utf-8")
         command = [tool, str(file)]
@@ -102,7 +102,7 @@ def smoke(code, language, directory, origin):
     response = json.loads("\n".join(lines[1:]))
     assert response["body"] == base64.b64encode(bytes([0, 255, 128, 39, 10, 36, 92])).decode(), response
     assert response["host"] == f"127.0.0.1:{origin.server_port}", response
-    assert response["repeated"] == ["one", "two"], response
+    assert response["repeated"] == (["one, two"] if language == "nodeFetch" else ["one", "two"]), response
     assert response["path"] == "/a%2Fb?tag=a&tag=b", response
     print(f"PASS  {language} real local HTTP: Host, binary bytes, repeated headers, escaped URL")
 
@@ -133,7 +133,7 @@ def main():
                 for language, code in formats.items():
                     checked = check_snippet(language, code, directory)
                     print(f"{'PASS' if checked else 'SKIP'}  {name}: {language} syntax")
-            for language in ("nodeHTTP", "go"):
+            for language in ("nodeHTTP", "nodeFetch", "go"):
                 smoke(fixtures["binary"][language], language, directory, origin)
         finally:
             origin.shutdown(); origin.server_close(); worker.join(timeout=5)

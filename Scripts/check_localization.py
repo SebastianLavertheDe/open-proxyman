@@ -160,6 +160,21 @@ def catalogue():
             if signature(value) != signature(chinese[key]): raise ValueError(f"{table}.{key}: placeholder signatures differ")
         extra = plurals["en"][table].keys() - english.keys()
         if extra: raise ValueError(f"{table}: plurals need English fallback strings: {sorted(extra)}")
+    # Additional locales ship incrementally. Validate translated entries against
+    # the English contract; missing entries deliberately use the runtime fallback.
+    for language in ("es-419", "ja", "pt-BR"):
+        directory = RESOURCES / f"{language}.lproj"
+        files = sorted(directory.glob("*.strings"))
+        if not files: raise ValueError(f"Missing language resources: {directory}")
+        catalogues[language] = {path.stem: load_strings(path) for path in files}
+        plurals[language] = {}
+        for table, translations in catalogues[language].items():
+            if table not in catalogues["en"]: raise ValueError(f"{language}: unknown table {table}")
+            for key, value in translations.items():
+                if key not in catalogues["en"][table]: raise ValueError(f"{language}: unknown key {table}.{key}")
+                if signature(value) != signature(catalogues["en"][table][key]):
+                    raise ValueError(f"{language}.{table}.{key}: placeholder signatures differ")
+            plurals[language][table] = load_plurals(directory / (table + ".stringsdict"), language, translations)
     return catalogues, plurals
 
 def fingerprint():
@@ -325,7 +340,7 @@ def main():
             arguments = [] if filename == "audit_ui_localization.py" else ["--check"]
             checked = subprocess.run([sys.executable, str(generator), *arguments], capture_output=True, text=True)
             if checked.returncode: errors.append(checked.stderr.strip() or checked.stdout.strip() or f"{filename}: failed")
-    report = {"languages": ["en", "zh-Hans"], "tables": len(catalogues["en"]),
+    report = {"languages": list(catalogues), "tables": len(catalogues["en"]),
               "keys": sum(len(values) for values in catalogues["en"].values()),
               "plural_keys": sum(len(values) for values in plurals["en"].values()),
               "generated_accessors_checked": generated_verified, "errors": errors}
@@ -337,7 +352,7 @@ def main():
         args.inventory.parent.mkdir(parents=True, exist_ok=True)
         args.inventory.write_text(json.dumps(review_inventory(catalogues, plurals), ensure_ascii=False, indent=2) + "\n")
     suffix = "; real SwiftGen output matches" if not args.resources_only else "; resources only"
-    print(f"PASS: {report['keys']} keys in {report['tables']} tables; en / zh-Hans resources are consistent{suffix}")
+    print(f"PASS: {report['keys']} keys in {report['tables']} tables; en / zh-Hans parity and 3 preview catalogues validated{suffix}")
 
 if __name__ == "__main__":
     try: main()

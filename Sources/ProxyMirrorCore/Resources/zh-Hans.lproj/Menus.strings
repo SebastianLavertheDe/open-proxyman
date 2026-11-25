@@ -107,3 +107,21 @@
 "traffic_summary" = "流量汇总";
 "traffic_summary_2" = "流量汇总…";
 "user_guide" = "使用指南…";
+
+"rules" = "规则";
+"setup" = "配置引导";
+"custom_certificates" = "自定义证书";
+"next_view" = "下一个视图";
+"previous_view" = "上一个视图";
+"show_toolbar" = "显示工具栏";
+"export_openapi" = "导出为 OpenAPI 3.0…";
+"export_postman" = "导出为 Postman 集合…";
+"proxy_settings" = "代理设置";
+"override_proxy" = "接管系统代理";
+"external_proxy" = "外部代理…";
+"advanced" = "高级";
+"tls_key_logging" = "TLS 密钥日志";
+"proxy_overridden" = "已接管代理";
+"network_extension" = "网络扩展";
+
+"find_in_body" = "在正文中查找…";

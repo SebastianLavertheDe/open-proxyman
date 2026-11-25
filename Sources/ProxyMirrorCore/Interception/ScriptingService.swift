@@ -27,6 +27,7 @@ struct ScriptingPlan: Sendable {
     let target: ScriptingTarget
     let phase: ScriptingPhase
     fileprivate let entries: [ScriptingEntry]
+    var stopAfterFirstMatch = false
 }
 
 struct ScriptingResult: Sendable {
@@ -49,6 +50,7 @@ struct ScriptingMockResponse: Sendable {
 }
 
 private struct ScriptingEntry: Sendable {
+    let ruleID: UUID
     let label: String
     let operation: String
     let action: ScriptingAction
@@ -154,7 +156,10 @@ enum ScriptingService {
         let rules = InterceptionConfig.shared.rewrite.value
         guard !rules.isEmpty else { return nil }
         let entries = entries(for: target, phase: phase, groups: rules)
-        if !entries.isEmpty { return ScriptingPlan(target: target, phase: phase, entries: entries) }
+        if !entries.isEmpty {
+            return ScriptingPlan(target: target, phase: phase, entries: entries,
+                                 stopAfterFirstMatch: ScriptingRuntimeSettings.configuration().stopAfterFirstMatch)
+        }
         if phase == .request, self.entries(for: target, phase: .response, groups: rules).contains(where: { !$0.operation.isEmpty }) {
             return ScriptingPlan(target: target, phase: phase, entries: [])
         }
@@ -175,7 +180,7 @@ enum ScriptingService {
                     .joined(separator: " / ")
                 return rule.actions.compactMap {
                     guard let action = scriptingAction(for: $0, phase: phase) else { return nil }
-                    return ScriptingEntry(label: label, operation: operation, action: action)
+                    return ScriptingEntry(ruleID: rule.id, label: label, operation: operation, action: action)
                 }
             }
         }
@@ -191,7 +196,8 @@ enum ScriptingService {
             operation = graphqlName ?? GraphQLService.detectRequest(path: plan.target.path, query: plan.target.query,
                 headers: HTTPHeaders(), body: Data()).flatMap { $0.operationName.isEmpty ? nil : $0.operationName }
         }
-        let candidates = plan.entries.filter { $0.operation.isEmpty || $0.operation == operation }
+        let candidates = ScriptMatchPolicy.select(plan.entries, operation: operation,
+            stopAfterFirstMatch: plan.stopAfterFirstMatch, ruleID: { $0.ruleID }, requiredOperation: { $0.operation })
         let captured = BreakpointMessage(head: head, body: body)
         schedule(plan: plan, candidates: candidates, busy: { logs in
             completion(ScriptingResult(head: head, body: body, graphqlOperationName: operation, logs: logs))
@@ -230,7 +236,8 @@ enum ScriptingService {
     /// `{base64: "..."}` → 替换二进制负载；其余（含 undefined）→ 原样放行。
     static func rewriteFrame(plan: ScriptingPlan, frame: WSFrame, graphqlName: String?,
                              completion: @escaping @Sendable (WSFrameAction) -> Void) {
-        let candidates = plan.entries.filter { $0.operation.isEmpty || $0.operation == graphqlName }
+        let candidates = ScriptMatchPolicy.select(plan.entries, operation: graphqlName,
+            stopAfterFirstMatch: plan.stopAfterFirstMatch, ruleID: { $0.ruleID }, requiredOperation: { $0.operation })
         guard !candidates.isEmpty else { completion(.pass); return }
         schedule(plan: plan, candidates: candidates, busy: { _ in completion(.pass) }) {
             completion(Self.runFrameEntries(candidates, frame: frame, target: plan.target, graphql: graphqlName))

@@ -26,6 +26,13 @@ func checkRequestRoutePlans(_ test: CoreAssertions) throws {
             test.equal(block.rejection, .blocked, "Block is evaluated before Allow")
             let deny = RequestRoutePlan(request: input, rules: RulesSnapshot(allowList: [ProxyRule(pattern: "other.test")]))
             test.equal(deny.rejection, .notAllowed, "An allow-list miss is a separate common decision")
+            for action in RuleBlockAction.allCases {
+                var entry = ProxyRule(pattern: "*")
+                entry.blockAction = action
+                let configured = RequestRoutePlan(request: input, rules: RulesSnapshot(blockList: [entry]))
+                test.equal(configured.blockAction, action, "HTTP/1 and HTTP/2 routing carry the selected Block action")
+            }
+            test.equal(deny.blockAction.statusCode, 403, "Allow List misses retain HTTP 403 regardless of Block actions")
         }
     }
     let response = HTTPHeaders([("Cache-Control", "max-age=60"), ("eTaG", "v1"), ("X-Preserve", "yes")])

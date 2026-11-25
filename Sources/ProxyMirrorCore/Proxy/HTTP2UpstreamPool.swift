@@ -70,18 +70,6 @@ struct HTTPOrigin: Hashable {
     }
 }
 
-struct ProxyConnectionDetails: Codable {
-    var address: String?
-    var dnsMilliseconds: Double?
-    var tcpMilliseconds: Double?
-    var tlsMilliseconds: Double?
-    var alpn: String?
-    var externalProxy: String?
-    var reused = false
-    var downstreamStream: Int?
-    var upstreamStream: Int?
-}
-
 enum ProxyHTTP2Error: LocalizedError {
     case invalidHeaders, invalidAuthority, invalidMessage, negotiationTimeout, responseTimeout, connectionClosed, pushUnsupported
     case connectionLimit
@@ -325,6 +313,7 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
                         var details = ProxyConnectionDetails(address: channel.remoteAddress?.ipAddress,
                                                              dnsMilliseconds: resolver?.milliseconds, alpn: alpn,
                                                              externalProxy: origin.externalLabel)
+                        TLSConnectionMetadata.captureUpstream(on: channel, into: &details)
                         if let connected = relay.tcpConnectedAt {
                             details.tcpMilliseconds = max(0, connected.timeIntervalSince(started) * 1000 - (resolver?.milliseconds ?? 0))
                             details.tlsMilliseconds = now.timeIntervalSince(connected) * 1000

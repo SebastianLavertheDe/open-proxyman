@@ -156,13 +156,6 @@
       "source": "Text(\"\\(node.key) :\")"
     },
     {
-      "path": "Sources/ProxyMirrorCore/UI/List/TrafficListView.swift",
-      "line": 533,
-      "category": "data_or_formatted_values",
-      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
-      "source": "Text(\"\\(tx.seq)\").frame(maxWidth: .infinity, alignment: .trailing)"
-    },
-    {
       "path": "Sources/ProxyMirrorCore/UI/MainWindow.swift",
       "line": 35,
       "category": "brand_or_protocol_term",
@@ -434,13 +427,6 @@
       "category": "technical_example",
       "reason": "A numeric limit, network address, or executable input example.",
       "source": "TextField(\"https://example.com/path\", text: $url)"
-    },
-    {
-      "path": "Sources/ProxyMirrorCore/UI/Tools/ToolWindows.swift",
-      "line": 413,
-      "category": "data_or_formatted_values",
-      "reason": "Displays raw traffic/user content, a numeric or unit value, or already-localized values; no untranslated prose.",
-      "source": "Text(\"→ \\(rule.target)\")"
     },
     {
       "path": "Sources/ProxyMirrorCore/UI/Tools/WorkbenchUtilities.swift",

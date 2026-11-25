@@ -88,6 +88,12 @@ func checkCertificateFormats(_ test: CoreAssertions) throws {
     let serverPEM = directory.appendingPathComponent("server.pem")
     try Data(try server.serializeAsPEM().pemString.utf8).write(to: serverPEM)
     let serverMaterial = try CertificateFormats.load(certificate: serverPEM, privateKey: clientKeyPEM)
+    let combinedPEM = Data((clientKey.pemRepresentation + "\n" + serverMaterial.certificatePEM).utf8)
+    let publicOnly = try PublicCertificateData(combinedPEM)
+    test.expect(!String(decoding: publicOnly.chainPEM, as: UTF8.self).contains("PRIVATE KEY"),
+                "Certificate preview/export removes private-key blocks from combined identity PEM")
+    test.equal(try CertificateFormats.parseCertificates(publicOnly.leafDER).first?.subject,
+               server.subject, "Public certificate preview retains the selected leaf identity")
     try CertificateFormats.validate(serverMaterial, purpose: .server, host: "api.example.test")
     try CertificateFormats.validate(serverMaterial, purpose: .server, host: "*.example.test")
     test.rejects(try CertificateFormats.validate(serverMaterial, purpose: .server, host: "deep.api.example.test"),

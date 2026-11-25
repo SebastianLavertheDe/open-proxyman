@@ -6,6 +6,7 @@ struct ScriptingMenu: View {
 
     var body: some View {
         Button(Strings.Tools.scriptsExecutionLogs) { openWindow(id: "scripting") }
+            .keyboardShortcut("i", modifiers: [.option, .command])
     }
 }
 
@@ -23,6 +24,8 @@ struct ScriptingWindow: View {
     @State private var followConsole = true
     @State private var logLevels = Set(ScriptingActivity.Level.allCases)
     @State private var logSearch = ""
+    @State private var ruleSearch = ""
+    @State private var scriptingEnabled = RuleOrganizationStore.shared.isEnabled("rewrite")
     @State private var environment = ScriptingRuntimeSettings.configuration()
     @State private var environmentJSON = ""
     @State private var formatting = false
@@ -36,10 +39,14 @@ struct ScriptingWindow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Toggle(Strings.Tools.ruleWindowEnable(Strings.Tools.scripting), isOn: Binding(
+                get: { scriptingEnabled }, set: { value in
+                    do { try RuleOrganizationStore.shared.setEnabled(value, tool: "rewrite"); scriptingEnabled = value }
+                    catch { self.error = LocalizedErrorPresentation.message(for: error) }
+                })).toggleStyle(.checkbox)
             HStack {
                 Picker(Strings.Tools.scripting, selection: $tab) {
                     Text(Strings.Tools.scriptRules).tag(0)
-                    Text(Strings.Tools.console).tag(1)
                     Text(Strings.Tools.environmentNetwork).tag(2)
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 300)
@@ -47,18 +54,30 @@ struct ScriptingWindow: View {
                 Button(Strings.Tools.addons) { NSWorkspace.shared.open(ScriptingRuntimeSettings.addonsDirectory) }
                 Button(Strings.Tools.scriptingApi) { showAPIHelp = true }
                 Button(Strings.Tools.generateScriptWithMcp) { showMCPHelp = true }
-                if tab == 0 { Toggle(Strings.Tools.console, isOn: $showConsole).toggleStyle(.checkbox) }
-                if tab == 1 {
-                    Button(Strings.Tools.clearLogs) { activity.clear() }.disabled(activity.entries.isEmpty)
+                if tab == 0 {
+                    Toggle(Strings.Tools.console, isOn: $showConsole).toggleStyle(.checkbox)
+                    Menu(Strings.Tools.ruleWindowAdvanced) {
+                        Toggle(Strings.Tools.ruleWindowStopAfterFirst, isOn: Binding(
+                            get: { environment.stopAfterFirstMatch }, set: { value in
+                                var current = ScriptingRuntimeSettings.configuration()
+                                current.stopAfterFirstMatch = value
+                                do { try ScriptingRuntimeSettings.save(current); environment.stopAfterFirstMatch = value }
+                                catch { self.error = LocalizedErrorPresentation.message(for: error) }
+                            }))
+                    }
                 }
             }
-            if tab == 0 { rules } else if tab == 1 { logs } else { environmentEditor }
+            if tab == 0 { rules } else { environmentEditor }
         }
         .padding(14)
         .frame(minWidth: 820, minHeight: 500)
+        .searchable(text: $ruleSearch, prompt: Strings.Tools.ruleWindowSearch)
         .onAppear {
             acceptPrefill()
             if environmentJSON.isEmpty { environmentJSON = Self.json(environment.variables) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ruleOrganizationChanged)) { _ in
+            scriptingEnabled = RuleOrganizationStore.shared.isEnabled("rewrite")
         }
         .sheet(isPresented: $showAPIHelp) { apiHelp }
         .sheet(isPresented: $showMCPHelp) { mcpHelp }
@@ -72,17 +91,28 @@ struct ScriptingWindow: View {
 
     private var rules: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HSplitView {
-                groupList.frame(minWidth: 155, idealWidth: 175)
-                ruleList.frame(minWidth: 155, idealWidth: 195)
-                if let group = selectedGroup, let index = selectedRule {
-                    ruleEditor(group, index).frame(minWidth: 430)
-                } else {
-                    Text(Strings.Tools.addAGroupAndRuleToGetStarted).foregroundStyle(.secondary)
-                        .frame(minWidth: 430, maxWidth: .infinity, maxHeight: .infinity)
+            VSplitView {
+                HSplitView {
+                    groupList.frame(minWidth: 155, idealWidth: 175)
+                    ruleList.frame(minWidth: 155, idealWidth: 195)
+                    if let group = selectedGroup, let index = selectedRule {
+                        ruleEditor(group, index).frame(minWidth: 430)
+                    } else {
+                        Text(Strings.Tools.addAGroupAndRuleToGetStarted).foregroundStyle(.secondary)
+                            .frame(minWidth: 430, maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                if showConsole {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(Strings.Tools.console).font(.caption.weight(.semibold))
+                            Spacer()
+                            Button(Strings.Tools.clearLogs) { activity.clear() }.disabled(activity.entries.isEmpty)
+                        }
+                        logs
+                    }.frame(minHeight: 130, idealHeight: 170, maxHeight: 300)
                 }
             }
-            if showConsole { logs.frame(minHeight: 100, idealHeight: 150, maxHeight: 200) }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
                 Text(Strings.Tools.scriptsRunInGroupAndListOrderEachStage)
@@ -109,11 +139,19 @@ struct ScriptingWindow: View {
         }
     }
 
+    private func matchesSearch(_ rule: RewriteRule) -> Bool {
+        rule.rule.name.localizedCaseInsensitiveContains(ruleSearch) ||
+            rule.rule.summary.localizedCaseInsensitiveContains(ruleSearch) ||
+            rule.actions.contains { $0.summary.localizedCaseInsensitiveContains(ruleSearch) }
+    }
+
     private var groupList: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(Strings.Tools.group).font(.caption.weight(.semibold))
             List(selection: $groupID) {
-                ForEach(groups) { group in
+                ForEach(groups.filter { group in
+                    ruleSearch.isEmpty || group.name.localizedCaseInsensitiveContains(ruleSearch) || group.rules.contains(where: matchesSearch)
+                }) { group in
                     Text(group.name.isEmpty ? Strings.Tools.untitledGroup : group.name).tag(group.id)
                 }
             }
@@ -143,7 +181,7 @@ struct ScriptingWindow: View {
             Text(Strings.Tools.rules).font(.caption.weight(.semibold))
             List(selection: $ruleID) {
                 if let group = selectedGroup {
-                    ForEach(groups[group].rules) { rule in
+                    ForEach(groups[group].rules.filter { ruleSearch.isEmpty || groups[group].name.localizedCaseInsensitiveContains(ruleSearch) || matchesSearch($0) }) { rule in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(rule.rule.name.isEmpty ? rule.rule.summary : rule.rule.name).lineLimit(1)
                             Text(rule.enabled ? Strings.Tools.stateEnabled : Strings.Tools.stateDisabled).font(.caption).foregroundStyle(.secondary)

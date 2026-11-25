@@ -48,6 +48,10 @@ struct RequestRoutePlan {
         rejection = rules.isBlocked(url: request.url) ? .blocked : (rules.isAllowed(url: request.url) ? nil : .notAllowed)
     }
 
+    var blockAction: RuleBlockAction {
+        rejection == .blocked ? (rules.blockAction(for: request.url) ?? .forbidden) : .forbidden
+    }
+
     func prepareLocal(on loop: EventLoop) -> EventLoopFuture<PreparedMapLocalResponse?>? {
         guard rejection == nil else { return nil }
         return rules.prepareMapLocalResponse(for: request.url, includeBody: request.method != "HEAD", on: loop)

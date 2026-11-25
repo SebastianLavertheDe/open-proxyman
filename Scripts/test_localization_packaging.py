@@ -89,13 +89,13 @@ class LocalizationPackagingChecks(unittest.TestCase):
             verify_resources(self.app)
 
     def test_matching_missing_tables_in_both_languages_fail(self):
-        for language in LANGUAGES:
+        for language in ("en", "zh-Hans"):
             (self.core / f"{language}.lproj/Settings.strings").unlink()
         with self.assertRaises(ValueError):
             verify_resources(self.app)
 
     def test_matching_missing_keys_in_both_languages_fail(self):
-        for language in LANGUAGES:
+        for language in ("en", "zh-Hans"):
             (self.core / f"{language}.lproj/Diagnostics.strings").write_text(
                 '"interface_label" = "Changed";\n')
         with self.assertRaises(ValueError):

@@ -42,6 +42,11 @@ final class AppSettings: ObservableObject {
         static let cleanupIntervalMinutes = "capture.cleanupIntervalMinutes"
     }
 
+    var proxymanCompatibleShortcuts: Bool {
+        get { d.bool(forKey: "ui.proxymanCompatibleShortcuts") }
+        set { d.set(newValue, forKey: "ui.proxymanCompatibleShortcuts"); notifyChange() }
+    }
+
     var port: UInt16 {
         get { (d.object(forKey: Keys.port) as? Int).flatMap(UInt16.init(exactly:)).flatMap { $0 >= 1024 ? $0 : nil } ?? 9090 }
         set { d.set(Int(newValue), forKey: Keys.port); notifyChange() }
@@ -235,8 +240,8 @@ final class AppSettings: ObservableObject {
         set { d.set(newValue, forKey: Keys.showUpdateNotifications); notifyChange() }
     }
     var applicationLanguage: String {
-        get { Self.choice(d.string(forKey: Keys.applicationLanguage), in: ["system", "zh-Hans", "en"], fallback: "system") }
-        set { d.set(Self.choice(newValue, in: ["system", "zh-Hans", "en"], fallback: "system"), forKey: Keys.applicationLanguage); notifyChange() }
+        get { Self.choice(d.string(forKey: Keys.applicationLanguage), in: ["system"] + AppLanguage.allCases.map(\.rawValue), fallback: "system") }
+        set { d.set(Self.choice(newValue, in: ["system"] + AppLanguage.allCases.map(\.rawValue), fallback: "system"), forKey: Keys.applicationLanguage); notifyChange() }
     }
     var mcpEnabled: Bool {
         get { d.object(forKey: Keys.mcpEnabled) as? Bool ?? true }
@@ -272,7 +277,7 @@ final class AppSettings: ObservableObject {
         let keys = [Keys.fontSize, Keys.useMonospacedFont, Keys.scrollBeyondLastLine, Keys.appIconStyle,
                     "ui.monospacedFontFamily", "ui.codeTabWidth", "ui.wordWrap", "ui.showInvisibles",
                     "ui.showMinimap", "ui.showAlternatingRows", "ui.showResourceUsage", "ui.use24HourClock",
-                    "ui.showFullDate", "ui.appearance"]
+                    "ui.showFullDate", "ui.appearance", "ui.proxymanCompatibleShortcuts"]
         keys.forEach { d.removeObject(forKey: $0) }
         notifyChange()
     }

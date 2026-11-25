@@ -9,6 +9,11 @@ python3 Scripts/test_localization_resources.py
 python3 Scripts/audit_ui_localization.py
 python3 Scripts/test_processed_localization.py
 python3 Scripts/test_sse_issues.py
+python3 Scripts/test_body_inspection.py
+python3 Scripts/test_release_configuration.py
+python3 Scripts/test_appcast_verification.py
+python3 Scripts/test_localization_packaging.py
+python3 Scripts/test_automation_workbench.py
 
 case "$lane" in
   debug)
@@ -32,7 +37,7 @@ case "$lane" in
     PM_APP_PATH="$PWD/.build/ci-debug/ProxyMirror.app" Scripts/make_app.sh debug
     python3 Scripts/test_app_bundle.py --app .build/ci-debug/ProxyMirror.app
     python3 Scripts/test_cli.py --app .build/ci-debug/ProxyMirror.app
-    python3 Scripts/test_preferences_ui.py --app .build/ci-debug/ProxyMirror.app --language both --appearance both
+    python3 Scripts/test_preferences_ui.py --app .build/ci-debug/ProxyMirror.app --language all --appearance both
     ;;
   release)
     # A separate CI job ensures testability flags from test builds cannot leak

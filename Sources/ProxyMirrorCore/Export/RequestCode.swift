@@ -105,8 +105,8 @@ enum RequestCode {
 extension RequestCode {
     enum Format: String, CaseIterable, Identifiable {
         case curl, httpie, python, fetch
-        case swift, alamofire, moya, go, nodeHTTP, axios, got, nodeRequest, jquery
-        case kotlin, java, dart, php, rust, objectiveC, har, postman
+        case swift, alamofire, moya, go, nodeHTTP, nodeFetch, axios, got, nodeRequest, jquery
+        case kotlin, java, dart, php, phpGuzzle, rust, objectiveC, har, postman
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -119,6 +119,7 @@ extension RequestCode {
             case .moya: return "Swift Moya"
             case .go: return "Go net/http"
             case .nodeHTTP: return "Node.js http/https"
+            case .nodeFetch: return "Node.js fetch"
             case .axios: return "Node.js Axios"
             case .got: return "Node.js Got"
             case .nodeRequest: return "Node.js request (legacy)"
@@ -127,6 +128,7 @@ extension RequestCode {
             case .java: return "Java HttpClient"
             case .dart: return "Dart HttpClient"
             case .php: return "PHP cURL"
+            case .phpGuzzle: return "PHP Guzzle"
             case .rust: return "Rust reqwest"
             case .objectiveC: return "Objective-C NSURLSession"
             case .har: return "HAR 1.2"
@@ -137,7 +139,7 @@ extension RequestCode {
 
     static func supported(_ format: Format, for tx: Transaction) -> Bool {
         if [.har, .postman].contains(format) { return true }
-        if [.fetch, .jquery].contains(format) { return supportsFetch(tx) }
+        if [.fetch, .nodeFetch, .jquery].contains(format) { return supportsFetch(tx) }
         if [.kotlin, .alamofire, .moya].contains(format), ["GET", "HEAD"].contains(tx.method.uppercased()), !tx.requestBody.isEmpty { return false }
         return tx.canReplay
     }
@@ -218,6 +220,20 @@ extension RequestCode {
             request.setTimeout(30000, () => request.destroy(new Error("Request timed out")));
             request.on("error", console.error);
             \(request.body == nil ? "request.end();" : "request.end(body);")
+            """
+        case .nodeFetch:
+            let nodeHeaders = "{" + groupedHeaders.filter { $0.name.caseInsensitiveCompare("Expect") != .orderedSame }
+                .map { "\(quoted($0.name)): \(quoted($0.value))" }.joined(separator: ", ") + "}"
+            return duplicateNote + """
+            // Requires Node.js 18 or later. Fetch combines repeated header values.
+            // Undici does not support the Expect request header.
+            const headers = \(nodeHeaders);
+            fetch(\(url), { method: \(method), headers,
+              \(request.body == nil ? "" : "body: Buffer.from(\(base64), \"base64\"),")
+              redirect: "manual", signal: AbortSignal.timeout(30000)
+            }).then(async response => {
+              console.log(response.status); process.stdout.write(Buffer.from(await response.arrayBuffer()));
+            }).catch(console.error);
             """
         case .axios:
             return duplicateNote + """
@@ -317,6 +333,17 @@ extension RequestCode {
             echo curl_getinfo($ch, CURLINFO_RESPONSE_CODE), PHP_EOL, $body;
             curl_close($ch);
             """
+        case .phpGuzzle:
+            return """
+            <?php
+            require 'vendor/autoload.php';
+            $client = new \\GuzzleHttp\\Client(['timeout' => 30, 'allow_redirects' => false, 'http_errors' => false]);
+            $response = $client->request(\(phpLiteral(request.method)), \(phpLiteral(request.url)), [
+              'headers' => [\(groupedHeaders.map { phpLiteral($0.name) + " => " + phpLiteral($0.value) }.joined(separator: ", "))],
+              \(request.body == nil ? "" : "'body' => base64_decode(\(base64)),")
+            ]);
+            echo $response->getStatusCode(), PHP_EOL, $response->getBody();
+            """
         case .rust:
             return """
             // Cargo dependencies: reqwest = { version = "0.12", features = ["blocking"] }, base64 = "0.22"
@@ -353,20 +380,12 @@ extension RequestCode {
         case .har:
             return json(ExportService.buildHAR([tx], redactSensitiveHeaders: runtime?.redactSensitiveHeaders))
         case .postman:
-            let body: [String: Any]
-            if let bytes = request.body, let text = String(data: bytes, encoding: .utf8), !bytes.contains(0) {
-                body = ["mode": "raw", "raw": text]
-            } else if request.body != nil {
-                // Postman accepts binary request bodies through a local file, not an inline base64 string.
-                body = ["mode": "file", "file": ["src": "request-body.bin"]]
-            } else { body = [:] }
+            let sample = APIExchange(method: request.method, url: request.url,
+                requestHeaders: headers.map { ($0.name, $0.value) }, requestBody: request.body ?? Data())
             return json([
                 "info": ["name": "ProxyMirror \(request.method) \(tx.host)",
-                         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-                         "description": request.body.map { "Binary body (if applicable): decode the following Base64 to request-body.bin before sending: " + $0.base64EncodedString() } ?? "Captured with ProxyMirror"],
-                "item": [["name": request.method + " " + tx.path,
-                          "request": ["method": request.method, "url": request.url,
-                                      "header": headers.map { ["key": $0.name, "value": $0.value] }, "body": body]]],
+                         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"],
+                "item": [PostmanCollectionExporter.item(sample)],
             ])
         }
     }

@@ -13,6 +13,17 @@ enum ContentCoding {
     static let supported: Set<String> = ["gzip", "deflate", "br", "zstd"]
     static let maxDecodedBytes = 32 * 1024 * 1024
 
+    /// Inspection-only fallback for applications that gzip their payload without
+    /// declaring Content-Encoding. Never rewrite captured headers or wire bytes,
+    /// guess headerless raw deflate, or override an explicit unknown encoding.
+    static func inspectionEncodings(_ data: Data, declared: [String]) -> [String] {
+        let list = declared.flatMap { $0.split(separator: ",") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && $0 != "identity" }
+        if !list.isEmpty { return list }
+        return data.starts(with: [0x1f, 0x8b, 0x08]) ? ["gzip"] : []
+    }
+
     /// 解码成功返回 (数据, 编码标签)；输入未压缩（无编码）返回 nil。
     /// 组合编码（如 "gzip, br"）按声明逆序逐层解开。
     static func decodeIfCompressed(_ data: Data, encodings: [String],

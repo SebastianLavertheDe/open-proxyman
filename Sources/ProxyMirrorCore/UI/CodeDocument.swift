@@ -41,7 +41,7 @@ enum CodeViewportGeometry {
 @MainActor
 final class CodeDocumentContainer: NSView {
     let scrollView = NSScrollView()
-    let textView = NSTextView()
+    let textView = InspectableCodeTextView()
     let minimap = CodeMinimapView(frame: .zero)
     private var wordWrap = true
     private var scrollBeyondLastLine = false
@@ -72,6 +72,9 @@ final class CodeDocumentContainer: NSView {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+        scrollView.findBarPosition = .aboveContent
         textView.drawsBackground = false
         textView.isVerticallyResizable = true
         textView.minSize = .zero
@@ -278,5 +281,73 @@ final class CodeMinimapView: NSView {
         guard let document else { return false }
         scroll(to: document.scrollView.contentView.bounds.minY - document.scrollView.contentSize.height * 0.8)
         return true
+    }
+}
+
+
+/// Keyboard handling stays with the first responder, so text zoom cannot trigger
+/// the main traffic table's highlight command. Transform results never edit capture.
+@MainActor
+final class InspectableCodeTextView: NSTextView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.command), !flags.contains(.option), !flags.contains(.control),
+           let key = event.charactersIgnoringModifiers, ["+", "=", "-", "0"].contains(key) {
+            let settings = AppSettings.shared
+            settings.fontSize = key == "0" ? 12 : min(32, max(8, settings.fontSize + (key == "-" ? -1 : 1)))
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        guard selectedRange().length > 0 else { return menu }
+        menu.addItem(.separator())
+        for operation in SelectionTransform.allCases {
+            let item = NSMenuItem(title: Self.title(operation), action: #selector(transformSelection(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = operation.rawValue
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    private static func title(_ operation: SelectionTransform) -> String {
+        switch operation {
+        case .prettifyJSON: return Strings.Detail.bodyToolsPrettifyJson
+        case .prettifyXML: return Strings.Detail.bodyToolsPrettifyXml
+        case .decodeBase64: return Strings.Detail.bodyToolsDecodeBase64
+        case .decodeJWT: return Strings.Detail.bodyToolsDecodeJwt
+        case .convertTimestamp: return Strings.Detail.bodyToolsConvertTimestamp
+        case .keyValue: return Strings.Detail.bodyToolsKeyValue
+        }
+    }
+
+    @objc private func transformSelection(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let operation = SelectionTransform(rawValue: raw) else { return }
+        let range = selectedRange()
+        guard range.length > 0, NSMaxRange(range) <= (string as NSString).length else { return }
+        let input = (string as NSString).substring(with: range)
+        guard let output = operation.apply(input) else { BodyExportService.show(Strings.Detail.bodyToolsInvalidSelection); return }
+        let alert = NSAlert()
+        alert.messageText = Self.title(operation)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 300))
+        scroll.hasVerticalScroller = true
+        let text = NSTextView(frame: scroll.bounds)
+        text.isEditable = false
+        text.isSelectable = true
+        text.string = output
+        text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        text.isVerticallyResizable = true
+        text.textContainer?.widthTracksTextView = true
+        scroll.documentView = text
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: Strings.Common.copy)
+        alert.addButton(withTitle: Strings.Common.close)
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(output, forType: .string)
+        }
     }
 }

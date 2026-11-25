@@ -49,49 +49,50 @@ struct CertificateGuideSheet: View {
 
 /// 证书菜单（对齐 Proxyman：安装/自定义/导出/重置）
 struct CertificateMenuContent: View {
+    @Environment(\.openWindow) private var openWindow
     var body: some View {
         Group {
         Button(Strings.Tools.installCertificateOnThisMac) {
-            AppState.shared.installCACertificate()
+            openWindow(id: "setup-guide", value: "macOS")
         }
         Menu(Strings.Tools.installCertificateOnIos) {
-            Button(Strings.Tools.setUpIosSimulator) { AppState.shared.runSimulatorAutomation() }
+            Button(Strings.Tools.setUpIosSimulator) { openWindow(id: "setup-guide", value: "iOS Simulator") }
             Button(Strings.Tools.chooseSimulatorInstallCa) { CertificateToolWindows.showSimulatorInstaller(platform: "iOS") }
-            Button(Strings.Tools.installationGuide) { AppState.shared.certificateGuide = "iOS" }
+            Button(Strings.Tools.installationGuide) { openWindow(id: "setup-guide", value: "iOS") }
         }
         Menu(Strings.Tools.installCertificateOnAndroid) {
             Button(Strings.Tools.copyUserCaViaAdb) { AppState.shared.prepareAndroidUserCertificate() }
-            Button(Strings.Tools.androidEmulatorAutomationAdbRoot) { AppState.shared.runAndroidEmulatorAutomation() }
-            Button(Strings.Tools.installationGuide) { AppState.shared.certificateGuide = "Android" }
+            Button(Strings.Tools.androidEmulatorAutomationAdbRoot) { openWindow(id: "setup-guide", value: "Android Emulator") }
+            Button(Strings.Tools.installationGuide) { openWindow(id: "setup-guide", value: "Android") }
         }
         Menu(Strings.Tools.otherApplePlatformsSwiftuiPreview) {
             ForEach(CertificatePlatformGuides.simulatorPlatforms, id: \.self) { platform in
                 Menu(platform) {
                     Button(Strings.Tools.chooseDeviceInstallCa) { CertificateToolWindows.showSimulatorInstaller(platform: platform) }
-                    Button(Strings.Tools.setupGuide) { AppState.shared.certificateGuide = platform }
+                    Button(Strings.Tools.setupGuide) { openWindow(id: "setup-guide", value: platform) }
                 }
             }
         }
         Menu(Strings.Tools.frameworkToolIntegration) {
             ForEach(CertificatePlatformGuides.frameworks, id: \.self) { framework in
-                Button(framework + "…") { AppState.shared.certificateGuide = framework }
+                Button(framework + "…") { openWindow(id: "setup-guide", value: framework) }
             }
         }
         Menu(Strings.Tools.installCertificateInJavaVm) {
-            Button(Strings.Tools.installationGuide) { AppState.shared.certificateGuide = "Java" }
+            Button(Strings.Tools.installationGuide) { openWindow(id: "setup-guide", value: "Java") }
         }
         Menu(Strings.Tools.installCertificateInAndroidDevelopmentBrowser) {
-            Button(Strings.Tools.installationGuide) { AppState.shared.certificateGuide = "Android" }
+            Button(Strings.Tools.installationGuide) { openWindow(id: "setup-guide", value: "Android") }
         }
         Menu(Strings.Tools.installCertificateInFirefox) {
-            Button(Strings.Tools.installationGuide) { AppState.shared.certificateGuide = "Firefox" }
+            Button(Strings.Tools.installationGuide) { openWindow(id: "setup-guide", value: "Firefox") }
         }
         }
         Divider()
         Group {
         Button(Strings.Tools.certificateImportWizardPemDerP12) { CertificateToolWindows.showImporter() }
         Button(Strings.Tools.importUpstreamMtlsIdentity) { CertificateToolWindows.showImporter(purpose: .client) }
-        Button(Strings.Tools.customServerCertificatesByDomain) { AppState.shared.openTool(.customCertificates) }
+        Button(Strings.Guides.setupManageCertificates) { openWindow(id: "certificate-manager") }
         Button(Strings.Tools.importCustomRootCertificatePemPrivateKey) { CertInstaller.importRootCA() }
         Button(Strings.Tools.addCustomCertificate) { CertInstaller.importCustomCertificate() }
         Button(Strings.Tools.importUpstreamCaTrustChainPem) {

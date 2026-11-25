@@ -82,6 +82,7 @@ struct RuleBackup: Codable {
             var codeTabWidth: Int?
             var use24HourClock: Bool?
             var showFullDate: Bool?
+            var proxymanCompatibleShortcuts: Bool?
             var showAlternatingRows: Bool?
             var defaultCopyFormat: String?
             var fontSize: Double?
@@ -112,7 +113,7 @@ struct RuleBackup: Codable {
                     && (fontSize.map { $0.isFinite && (8...32).contains($0) } ?? true)
                     && (contentLayout.map { ["vertical", "horizontal"].contains($0) } ?? true)
                     && (appIconStyle.map { ["earth", "mars", "candy", "classic"].contains($0) } ?? true)
-                    && (applicationLanguage.map { ["system", "zh-Hans", "en"].contains($0) } ?? true)
+                    && (applicationLanguage.map { (["system"] + AppLanguage.allCases.map(\.rawValue)).contains($0) } ?? true)
                     && (appearance.map { ["system", "light", "dark"].contains($0) } ?? true)
                     && (cleanupMemoryLimitMB.map { (64...65536).contains($0) } ?? true)
                     && (cleanupIntervalMinutes.map { (1...60).contains($0) } ?? true)
@@ -133,6 +134,7 @@ struct RuleBackup: Codable {
                 codeTabWidth = settings.codeTabWidth
                 use24HourClock = settings.use24HourClock
                 showFullDate = settings.showFullDate
+                proxymanCompatibleShortcuts = settings.proxymanCompatibleShortcuts
                 showAlternatingRows = settings.showAlternatingRows
                 defaultCopyFormat = settings.defaultCopyFormat.rawValue
                 fontSize = settings.fontSize
@@ -178,6 +180,7 @@ struct RuleBackup: Codable {
                 if let codeTabWidth { settings.codeTabWidth = codeTabWidth }
                 if let use24HourClock { settings.use24HourClock = use24HourClock }
                 if let showFullDate { settings.showFullDate = showFullDate }
+                if let proxymanCompatibleShortcuts { settings.proxymanCompatibleShortcuts = proxymanCompatibleShortcuts }
                 if let showAlternatingRows { settings.showAlternatingRows = showAlternatingRows }
                 if let raw = defaultCopyFormat, let format = RequestCode.Format(rawValue: raw) { settings.defaultCopyFormat = format }
                 if let fontSize { settings.fontSize = fontSize }
@@ -328,7 +331,7 @@ struct RuleBackup: Codable {
     }
 
     private func validateRules(_ object: [String: Any]) throws {
-        let classicKeys: Set<String> = ["id", "enabled", "pattern", "target", "comment", "responseStatus", "responseHeaders", "urlRegex"]
+        let classicKeys: Set<String> = ["id", "enabled", "pattern", "target", "comment", "responseStatus", "responseHeaders", "urlRegex", "blockAction"]
         for section in Section.allCases {
             guard let path = section.classicRules else { continue }
             try Self.validateIDs(self[keyPath: path], section: section)

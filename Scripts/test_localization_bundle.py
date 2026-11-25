@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 
-LANGUAGES = ("en", "zh-Hans")
+LANGUAGES = ("en", "zh-Hans", "es-419", "ja", "pt-BR")
 CORE_BUNDLE = "ProxyMirror_ProxyMirrorCore.bundle"
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = re.compile(r'\s+|/\*.*?\*/|//[^\n]*|("(?:\\.|[^"\\])*")\s*=\s*("(?:\\.|[^"\\])*")\s*;', re.S)
@@ -61,7 +61,7 @@ def verify_resources(app, expect_transparent=False):
     contents = app / "Contents"
     info = plistlib.loads((contents / "Info.plist").read_bytes())
     if set(info.get("CFBundleLocalizations", [])) != set(LANGUAGES):
-        raise ValueError("The app must declare exactly en and zh-Hans")
+        raise ValueError("The app must declare exactly the supported language identifiers")
     if info.get("CFBundleDevelopmentRegion") != "en":
         raise ValueError("The app development language must match the English fallback")
     resources = contents / "Resources"
@@ -119,8 +119,8 @@ def verify_selection_count(item, language):
     count = item["count"]
     # Foundation can apply locale grouping even to the same native plural rule.
     numbers = {str(count), f"{count:,}"}
-    expected = {(f"{number} request{'s' if count != 1 else ''} selected"
-                 if language == "en" else f"已选择 {number} 条请求") for number in numbers}
+    expected = {(f"已选择 {number} 条请求" if language == "zh-Hans" else
+                 f"{number} request{'s' if count != 1 else ''} selected") for number in numbers}
     if item["text"] not in expected:
         raise ValueError(f"Incorrect native plural result: {item!r}, expected one of {sorted(expected)!r}")
 
@@ -143,7 +143,7 @@ def verify_runtime(app):
             record = json.loads(result.stdout)
             if record.get("version") != 1:
                 raise ValueError("Unknown localization probe format")
-            expected = "Application Language" if language == "en" else "应用语言"
+            expected = {"en": "Application Language", "zh-Hans": "应用语言", "es-419": "Idioma de la aplicación", "ja": "アプリの言語", "pt-BR": "Idioma do aplicativo"}[language]
             if record["language"] != language or record["label"] != expected:
                 raise ValueError(f"Incorrect packaged language selection: {record}")
             resource = Path(record["resourceBundle"]).resolve()

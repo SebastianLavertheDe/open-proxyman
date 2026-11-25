@@ -59,7 +59,8 @@ enum LocalControl {
       ProxyMirror rules 工具 list|get|add|update|delete|enable|disable [--id ID] [--group-id 规则集UUID] [--input JSON文件]
       ProxyMirror rules 工具 rename --id ID --name 名称 [--group-id 规则集UUID]
       ProxyMirror rules 工具 duplicate --id ID [--name 名称] [--bundle-id 新应用ID] [--folder-id UUID]
-      ProxyMirror export flows --format har|json|csv|session [筛选选项] [--output 路径]
+      ProxyMirror export flows --format har|json|csv|session|openapi|postman [筛选选项] [--output 路径]
+      ProxyMirror export openapi|postman [筛选选项] [--output 路径]
       ProxyMirror export logs [all|domains] [--domains 主机,主机通配] [--from ISO8601] [--to ISO8601] [--output 路径]
       ProxyMirror flow --id UUID
       ProxyMirror code --id UUID --language curl|httpie|python|javascript|…

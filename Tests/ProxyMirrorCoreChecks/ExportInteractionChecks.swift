@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 func checkExportInteractions(_ test: CoreAssertions) throws {
+    try checkAPIExports(test)
     try checkImportedTrafficMetrics(test)
     try checkDiffSnapshots(test)
     try checkCapturedFailurePersistence(test)

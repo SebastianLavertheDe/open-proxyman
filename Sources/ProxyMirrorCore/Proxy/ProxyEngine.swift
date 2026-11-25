@@ -795,6 +795,9 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         tx.peerPort = UInt16(clientChannel?.remoteAddress?.port ?? 0)
         tx.clientAddress = clientChannel?.remoteAddress?.ipAddress
         tx.setClientApplication(conn.clientApplication)
+        if let version = TLSConnectionMetadata.clientVersion(on: clientChannel) {
+            tx.connectionDetails = ProxyConnectionDetails(clientTLSVersion: version)
+        }
         conn.transparentFlow?.mark(tx)
         tx.isTLSIntercepted = conn.http2WebSocket != nil || (conn.reverseRoute == nil && https)
         tx.originalURL = conn.reverseRoute?.clientURL(target: originalRequest.target)
@@ -847,13 +850,55 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         commitMetadata(tx) { $0.requestBodyComplete = complete }
 
         keepAlive = conn.http2WebSocket == nil && !HTTPClientWantsClose(req)
+        // The reserved download host is served locally after normal request framing.
+        // Only the public CA certificate is exposed; private identity material is never included.
+        if req.method == "GET", tx.scheme == "http", tx.host.lowercased() == "proxy.mirror",
+           tx.port == 80, tx.path == "/ssl", tx.query.isEmpty {
+            guard let channel = clientChannel else { return }
+            mode = .resolvingLocal
+            refreshReads()
+            let authority = conn.engine.certificateAuthority
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Result { try authority.caDER() }
+                channel.eventLoop.execute { [weak self] in
+                    guard let self, self.mode == .resolvingLocal, self.tx === tx, channel.isActive else { return }
+                    switch result {
+                    case .success(let certificate):
+                        var headers = HTTPHeaders()
+                        headers.set(name: "Content-Disposition", value: "attachment; filename=\"ProxyMirror-CA.cer\"")
+                        headers.set(name: "Cache-Control", value: "no-store")
+                        self.finishWithSynthesizedResponse(tx: tx, status: 200, reason: "OK",
+                            contentType: "application/x-x509-ca-cert", body: ByteBuffer(bytes: certificate),
+                            contentLength: certificate.count, extraHeaders: headers)
+                    case .failure:
+                        self.finishWithSynthesizedResponse(tx: tx, status: 503, reason: "Service Unavailable",
+                            contentType: "text/plain", body: Data("CA certificate unavailable".utf8))
+                    }
+                }
+            }
+            return
+        }
         guard var input = requestMetadata else { return }
         input.headers = req.headers
         let plan = RequestRoutePlan(request: input, rules: requestRules())
         if let rejection = plan.rejection {
             commitMetadata(tx) { $0.matchedByBlock = true }
             diagnosticHeaders.record(.block)
-            finishWithSynthesizedResponse(tx: tx, status: 403, reason: "Forbidden",
+            guard let status = plan.blockAction.statusCode else {
+                let failure = CapturedFailure(code: OperationIssue.networkRouteBlocked.code,
+                                              diagnostic: rejection.diagnostic)
+                let elapsed = Date().timeIntervalSince(tx.startedAt)
+                commitMetadata(tx) {
+                    $0.state = .failed
+                    $0.setFailure(failure)
+                    $0.duration = elapsed
+                }
+                publish(tx)
+                mode = .closed
+                closeClient()
+                return
+            }
+            finishWithSynthesizedResponse(tx: tx, status: status, reason: TrafficStore.reason(for: status),
                                           contentType: "text/plain",
                                           body: Data(rejection.diagnostic.utf8))
             return
@@ -1386,7 +1431,10 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
               let failure = tunnelRules().tunnelFailure(host: host, port: conn.resolvedConnectPort,
                                                         serverName: serverName) else { return false }
         let reason = failure.diagnostic
-        let body = Data(reason.utf8)
+        let action = tunnelRules().tunnelBlockAction(host: host, port: conn.resolvedConnectPort,
+                                                    serverName: serverName) ?? .forbidden
+        let status = action.statusCode
+        let body = status == nil ? Data() : Data(reason.utf8)
         diagnosticHeaders.record(.block)
         let requestHeaders = diagnosticHeaders.appending(to: connectRequestHeaders)
         let responseHeaders = diagnosticHeaders.appending(to: HTTPHeaders([
@@ -1396,13 +1444,13 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         let sink = conn.engine.sink
         commitMetadata(tx) { tx in
             tx.matchedByBlock = true
-            tx.statusCode = 403
-            tx.statusReason = "Forbidden"
-            tx.contentType = "text/plain"
+            tx.statusCode = status ?? 0
+            tx.statusReason = status.map { TrafficStore.reason(for: $0) } ?? ""
+            tx.contentType = status == nil ? "" : "text/plain"
             tx.requestHeaders = requestHeaders
-            tx.responseHeaders = responseHeaders
-            tx.appendResponseBody(body)
-            tx.responseBodyComplete = true
+            tx.responseHeaders = status == nil ? HTTPHeaders() : responseHeaders
+            if status != nil { tx.appendResponseBody(body) }
+            tx.responseBodyComplete = status != nil
             tx.state = .failed
             tx.setFailure(failure)
             tx.duration = duration
@@ -1413,9 +1461,9 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         earlyConnectBytes.removeAll()
         earlyConnectByteCount = 0
         mode = .closed
-        if sendResponse {
+        if sendResponse, let status {
             let headers = String(decoding: responseHeaders.rawBytes, as: UTF8.self)
-            writeRawAndClose("HTTP/1.1 403 Forbidden\r\n\(headers)\r\n\(reason)")
+            writeRawAndClose("HTTP/1.1 \(status) \(TrafficStore.reason(for: status))\r\n\(headers)\r\n\(reason)")
         } else { closeClient() }
         return true
     }
@@ -1515,6 +1563,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         var details = ProxyConnectionDetails(address: channel.remoteAddress?.ipAddress, dnsMilliseconds: dns,
                                              tcpMilliseconds: tcp, externalProxy: upstreamOrigin?.externalLabel)
         details.downstreamStream = http2DownstreamStreamID
+        details.clientTLSVersion = TLSConnectionMetadata.clientVersion(on: clientChannel)
         upstreamConnection = details
         if mode == .tunnelConnecting {
             if socksReplyPending {
@@ -1559,6 +1608,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
               var details = upstreamConnection else { return }
         details.alpn = protocolName
         details.tlsMilliseconds = max(0, Date().timeIntervalSince(connected) * 1000)
+        TLSConnectionMetadata.captureUpstream(on: channel, into: &details)
         upstreamConnection = details
         upstreamReady = true
         upstreamReusable = true

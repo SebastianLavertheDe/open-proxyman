@@ -100,6 +100,7 @@ func checkCertificates(_ test: CoreAssertions) throws {
         issuerPrivateKey: Certificate.PrivateKey(key)
     )
     let leafPEM = try leafCert.serializeAsPEM().pemString
+    try checkTLSMetadata(test, leafPEM: leafPEM, certificate: leafCert)
     do {
         try authority.importRootCA(certificatePEM: leafPEM,
                                    privateKeyPEM: leafKey.pemRepresentation)

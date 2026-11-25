@@ -317,3 +317,6 @@
 "workspace_backup" = "Workspace 与备份";
 "workspaces_and_sessions_stay_on_this_mac_export" = "工作区与会话保存在本机。规则与设置可导出后在另一台 Mac 导入。";
 "your_http_https_proxies_are_currently_managed_by" = "当前 HTTP/HTTPS 代理由 ProxyMirror 管理。";
+
+"proxyman_compatible_shortcuts" = "Proxyman 兼容快捷键";
+"proxyman_compatible_shortcuts_help" = "使用 Proxyman 的过滤、Compose、SSL 代理、禁用缓存、编辑并重发及清空会话快捷键。";

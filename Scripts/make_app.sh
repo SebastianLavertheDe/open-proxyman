@@ -62,7 +62,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleLocalizations</key>
-	<array><string>zh-Hans</string><string>en</string></array>
+	<array><string>zh-Hans</string><string>en</string><string>es-419</string><string>ja</string><string>pt-BR</string></array>
 	<key>CFBundleDisplayName</key>
 	<string>ProxyMirror</string>
 	<key>CFBundleExecutable</key>
@@ -138,6 +138,27 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+python3 - "$APP/Contents/Info.plist" <<'PY'
+import plistlib,sys
+from pathlib import Path
+path = Path(sys.argv[1])
+info = plistlib.loads(path.read_bytes())
+info['CFBundleDocumentTypes'].append({
+    'CFBundleTypeName': 'Proxyman Capture (convert to HAR)',
+    'CFBundleTypeExtensions': ['proxymanlog','proxymansession'],
+    'LSTypeIsPackage': True,
+    'CFBundleTypeRole': 'Viewer', 'LSHandlerRank': 'Alternate',
+})
+info['CFBundleDocumentTypes'].append({
+    'CFBundleTypeName': 'Proxyman Capture V2 (convert to HAR)',
+    'CFBundleTypeExtensions': ['proxymanlogv2','proxymansessionv2'],
+    'CFBundleTypeRole': 'Viewer', 'LSHandlerRank': 'Alternate',
+})
+path.write_bytes(plistlib.dumps(info, sort_keys=False))
+PY
+
+python3 Scripts/configure_release.py "$APP"
+
 signature_args=(--force --sign -)
 if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 ]]; then
   signature_args=(--force --sign "$PM_DEVELOPER_ID" --options runtime --timestamp)
@@ -177,7 +198,7 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Ship licenses for the embedded scripting libraries and Zstandard decoder.
 mkdir -p "$APP/Contents/Resources/ThirdParty"
-for language in en zh-Hans; do
+for language in en zh-Hans es-419 ja pt-BR; do
   localization="Resources/$language.lproj"
   [[ -f "$localization/InfoPlist.strings" ]]
   mkdir -p "$APP/Contents/Resources/$language.lproj"
@@ -207,7 +228,7 @@ if (( TRANSPARENT )); then
   host_id=$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")
   extension="$APP/Contents/Library/SystemExtensions/$host_id.transparent-proxy.systemextension"
   cp "$BIN_DIR/ProxyMirrorTransparentExtension" "$extension/Contents/MacOS/ProxyMirrorTransparentExtension"
-  for language in en zh-Hans; do
+  for language in en zh-Hans es-419 ja pt-BR; do
     mkdir -p "$extension/Contents/Resources/$language.lproj"
     cp "Resources/TransparentExtension/$language.lproj/InfoPlist.strings" "$extension/Contents/Resources/$language.lproj/InfoPlist.strings"
   done

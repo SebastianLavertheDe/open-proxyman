@@ -236,7 +236,7 @@ final class Transaction: ObservableObject, Identifiable {
     var requestVersion = "HTTP/1.1"
     var responseVersion = "HTTP/1.1"
     var upstreamProtocol: String?
-    var connectionDetails: ProxyConnectionDetails?
+    @Published var connectionDetails: ProxyConnectionDetails?
     var originalURL: String?
     var resolvedAddress: String?
     var simulatedLatencyMs: Int?

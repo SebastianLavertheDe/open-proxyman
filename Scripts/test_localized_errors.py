@@ -142,10 +142,10 @@ def main():
             paths.append(str(copied))
         binary=folder/'checks'
         subprocess.run([swiftc,'-swift-version','5','-package-name','ProxyMirror','-module-cache-path',str(folder/'modules'),'-I',str(folder),'-L',str(folder),'-lProxyMirrorSystemProxy',*module_flags,'-Xlinker','-rpath','-Xlinker',str(folder),*paths,str(entry),'-o',str(binary)],check=True,timeout=180)
-        bundle=folder/'Resources.bundle';bundle.mkdir();(bundle/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'test.ProxyMirror.Errors','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':['en','zh-Hans']}))
-        for language in ['en','zh-Hans']:
-            target=bundle/f'{language}.lproj';target.mkdir()
-            for table in ['Errors','Guides','Models','Integration']:shutil.copy2(ROOT/f'Sources/ProxyMirrorCore/Resources/{language}.lproj/{table}.strings',target/f'{table}.strings')
+        bundle=folder/'Resources.bundle'
+        shutil.copytree(ROOT/'Sources/ProxyMirrorCore/Resources',bundle)
+        languages=[path.stem for path in bundle.glob('*.lproj')]
+        (bundle/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'test.ProxyMirror.Errors','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':languages}))
         for language in ['en','zh-Hans']:
             env=dict(os.environ,PM_SETTINGS_LANGUAGE=language,PM_LOCALIZATION_RESOURCE_DIR=str(bundle))
             subprocess.run([str(binary)],env=env,check=True,timeout=20)

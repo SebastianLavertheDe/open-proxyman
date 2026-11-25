@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 enum TrafficColumn: Hashable, Identifiable {
-    case sequence, url, client, method, status, time, duration, request, response, ssl, edited, comment, tools, graphql
+    case sequence, url, client, method, status, time, duration, request, response, ssl, edited, comment, tools, graphql, scheme, contentType
     case custom(CustomTrafficColumn)
 
-    static let allCases: [Self] = [.sequence, .url, .client, .method, .status, .time, .duration, .request, .response, .ssl, .edited, .comment, .tools, .graphql]
+    static let allCases: [Self] = [.sequence, .url, .client, .method, .status, .time, .duration, .request, .response, .ssl, .edited, .comment, .tools, .graphql, .scheme, .contentType]
 
     var id: String {
         if case .custom(let field) = self { return field.id.uuidString }
@@ -24,6 +24,8 @@ enum TrafficColumn: Hashable, Identifiable {
         case .comment: return "comment"
         case .tools: return "tools"
         case .graphql: return "graphql"
+        case .scheme: return "scheme"
+        case .contentType: return "contentType"
         case .custom: preconditionFailure("Custom column ID handled above")
         }
     }
@@ -44,6 +46,8 @@ enum TrafficColumn: Hashable, Identifiable {
         case .comment: return Strings.Traffic.comment
         case .tools: return Strings.Traffic.tools
         case .graphql: return Strings.Traffic.graphqlOperation
+        case .scheme: return Strings.Traffic.scheme
+        case .contentType: return Strings.Traffic.contentType
         case .custom(let field): return field.title
         }
     }
@@ -66,6 +70,8 @@ enum TrafficColumn: Hashable, Identifiable {
         case .comment: key = "comment"
         case .tools: key = "tools"
         case .graphql: key = "graphql_operation"
+        case .scheme: key = "scheme"
+        case .contentType: key = "content_type"
         }
         return L10n.render(table: "Traffic", key: key, arguments: [], englishFallback: title, language: language)
     }
@@ -88,6 +94,8 @@ enum TrafficColumn: Hashable, Identifiable {
         case .comment: return 269
         case .tools: return 107
         case .graphql: return 160
+        case .scheme: return 64
+        case .contentType: return 150
         case .custom: return 118
         }
     }
@@ -117,6 +125,8 @@ enum TrafficColumn: Hashable, Identifiable {
         case .comment: return tx.comment
         case .tools: return tx.ruleMatches.joined()
         case .graphql: return CustomColumnValues.shared.graphqlValue(for: tx)
+        case .scheme: return tx.scheme
+        case .contentType: return tx.responseHeaders.value(of: "Content-Type") ?? ""
         case .custom(let field): return field.value(for: tx)
         }
     }
@@ -166,10 +176,8 @@ struct TrafficListView: View {
     @AppStorage("ui.hiddenTrafficColumns") private var hiddenColumns = ""
     @AppStorage("ui.trafficColumnWidths") private var storedWidths = ""
     @AppStorage(CustomTrafficColumn.defaultsKey) private var customData = Data()
-    @State private var resizing: (column: TrafficColumn, original: CGFloat)?
     @State private var sortColumn: TrafficColumn = .sequence
     @State private var ascending = true
-    @State private var showFilterEditor = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -179,7 +187,6 @@ struct TrafficListView: View {
                 let columns = visibleColumns(in: geometry.size.width)
                 let display = store.displayedRows(sortedBy: sortColumn, ascending: ascending)
                 VStack(spacing: 0) {
-                    header(columns)
                     if store.sortingBodyValues || store.filteringCapturedValues {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -200,13 +207,15 @@ struct TrafficListView: View {
                         open: openDetails,
                         copyAsCurl: appState.copyRequestsAsCurl,
                         contextMenu: rowContextMenu,
-                        copyUsingDefaultFormat: appState.copyRequestsUsingDefaultFormat
+                        copyUsingDefaultFormat: appState.copyRequestsUsingDefaultFormat,
+                        sortColumn: sortColumn,
+                        ascending: ascending,
+                        sort: { sortColumn = $0; ascending = $1 }
                     )
                     .overlay { if display.rows.isEmpty { emptyState } }
                 }
             }
         }
-        .sheet(isPresented: $showFilterEditor) { TrafficFilterEditor(store: store) }
         .onAppear { store.sortsByCapturedBody = sortColumn.readsBody }
         .onChange(of: sortColumn) { store.sortsByCapturedBody = $0.readsBody }
         .onChange(of: store.id) { _ in store.sortsByCapturedBody = sortColumn.readsBody }
@@ -221,93 +230,16 @@ struct TrafficListView: View {
         let saved = columnWidths
         let fields = (try? JSONDecoder().decode([CustomTrafficColumn].self, from: customData)) ?? []
         CustomColumnValues.shared.configure(fields)
-        let custom = fields.map(TrafficColumn.custom)
-        var columns = (TrafficColumn.allCases + custom).filter { !hidden.contains($0.id) || $0 == .url }
-        let priorities: [TrafficColumn] = [.graphql, .tools, .comment, .edited, .ssl, .time, .request, .response, .duration, .client]
-            + Array(custom.reversed())
-        let minimumURL = width < 400 ? 100 : minimumWidth(for: .url)
-        func size(_ column: TrafficColumn) -> CGFloat {
-            if column == .url { return minimumURL }
-            return min(max(saved[column.id] ?? column.preferredWidth, minimumWidth(for: column)), 640)
-        }
-        let available = max(0, width - 38)
-        var occupied = columns.reduce(CGFloat.zero) { $0 + size($1) }
-        for column in priorities where occupied > available && columns.contains(column) {
-            columns.removeAll { $0 == column }
-            occupied -= size(column)
-        }
-        let urlWidth = min(saved[TrafficColumn.url.id] ?? TrafficColumn.url.preferredWidth,
-                           minimumURL + available - occupied)
-        return columns.map { ($0, $0 == .url ? max(72, urlWidth) : size($0)) }
+        return (TrafficColumn.allCases + fields.map(TrafficColumn.custom))
+            .filter { !hidden.contains($0.id) || $0 == .url }
+            .map { column in (column, max(minimumWidth(for: column), CGFloat(saved[column.id] ?? Double(column.preferredWidth)))) }
     }
 
     private func minimumWidth(for column: TrafficColumn) -> CGFloat {
         switch column {
-        case .url: return 175
+        case .url: return 100
         case .ssl: return 29
-        case .time: return TrafficColumn.time.preferredWidth
         default: return 40
-        }
-    }
-
-    private func header(_ columns: [(TrafficColumn, CGFloat)]) -> some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: 22, height: 26)
-            ForEach(columns, id: \.0) { column, width in
-                Button {
-                    if sortColumn == column { ascending.toggle() } else { sortColumn = column; ascending = true }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(column.localizedTitle()).lineLimit(1).help(column.localizedTitle())
-                        if sortColumn == column {
-                            Image(systemName: ascending ? "chevron.up" : "chevron.down").font(.system(size: 8))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .frame(width: width, height: 26)
-                .overlay(alignment: .trailing) {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.20))
-                        .frame(width: 1, height: 15)
-                        .padding(.horizontal, 2)
-                        .contentShape(Rectangle())
-                        .gesture(DragGesture(minimumDistance: 3)
-                            .onChanged { event in
-                                if resizing?.column != column { resizing = (column, width) }
-                                var sizes = columnWidths
-                                let proposed = (resizing?.original ?? width) + event.translation.width
-                                sizes[column.id] = min(max(proposed, minimumWidth(for: column)), 640)
-                                if let data = try? JSONEncoder().encode(sizes) {
-                                    storedWidths = String(decoding: data, as: UTF8.self)
-                                }
-                            }
-                            .onEnded { _ in resizing = nil })
-                        .accessibilityHidden(true)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, 8)
-        .font(.system(size: 11, weight: .semibold))
-        .frame(height: 27)
-        .background(ProxymanTheme.headerBackground)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1) }
-        .contextMenu {
-            ForEach(TrafficColumn.allCases.filter { $0 != .url }) { column in
-                Toggle(column.localizedTitle(), isOn: Binding(get: {
-                    !hiddenColumns.split(separator: "|").contains(Substring(column.id))
-                }, set: { visible in
-                    var hidden = Set(hiddenColumns.split(separator: "|").map(String.init))
-                    if visible { hidden.remove(column.id) } else { hidden.insert(column.id) }
-                    hiddenColumns = hidden.sorted().joined(separator: "|")
-                }))
-            }
-            Button(Strings.Traffic.customTrafficColumns) { appState.showColumnEditor = true }
-            Button(Strings.Traffic.resetColumnWidths) { storedWidths = ""; hiddenColumns = "" }
         }
     }
 
@@ -338,15 +270,35 @@ struct TrafficListView: View {
                     filterDivider
                     protocolFilter("h1", versions: ["HTTP/1.0", "HTTP/1.1"])
                     protocolFilter("h2", versions: ["HTTP/2"])
+                    filterDivider
+                    ForEach([("2xx", "success"), ("3xx", "redirect"), ("4xx", "clientError"), ("5xx", "serverError")], id: \.1) { title, bucket in
+                        filterButton(title, selected: store.filter.statusBuckets.contains(bucket)) {
+                            if store.filter.statusBuckets.contains(bucket) { store.filter.statusBuckets.remove(bucket) }
+                            else { store.filter.statusBuckets.insert(bucket) }
+                        }
+                    }
                 }
                 .padding(.leading, 11)
                 .frame(height: 27)
             }
+            Menu(Strings.Traffic.columns) {
+                ForEach(TrafficColumn.allCases.filter { $0 != .url }) { column in
+                    Toggle(column.localizedTitle(), isOn: Binding(get: {
+                        !hiddenColumns.split(separator: "|").contains(Substring(column.id))
+                    }, set: { visible in
+                        var hidden = Set(hiddenColumns.split(separator: "|").map(String.init))
+                        if visible { hidden.remove(column.id) } else { hidden.insert(column.id) }
+                        hiddenColumns = hidden.sorted().joined(separator: "|")
+                    }))
+                }
+                Button(Strings.Traffic.customTrafficColumns) { appState.showColumnEditor = true }
+                Button(Strings.Traffic.resetColumnWidths) { storedWidths = ""; hiddenColumns = ""; UserDefaults.standard.removeObject(forKey: "ui.trafficColumnOrder") }
+            }.menuStyle(.borderlessButton).fixedSize()
             Menu {
                 Button(Strings.Traffic.searchCurrentRequests) {
                     NotificationCenter.default.post(name: .focusTrafficFilter, object: nil)
                 }
-                Button(Strings.Traffic.advancedFilters) { showFilterEditor = true }
+                Button(Strings.Traffic.advancedFilters) { NotificationCenter.default.post(name: .toggleAdvancedTrafficFilter, object: nil) }
                 Menu(Strings.Traffic.status) {
                     ForEach([("2xx", "success"), ("3xx", "redirect"), ("4xx", "clientError"), ("5xx", "serverError"),
                              (Strings.Traffic.transportFailed, "error"), (Strings.Traffic.inProgress, "pending")], id: \.1) { label, value in
@@ -454,6 +406,8 @@ struct TrafficListView: View {
         menu.addSubmenu(Strings.Traffic.export) { submenu in
             submenu.addAction("HAR") { ExportService.exportHAR(targets) }
             submenu.addAction("CSV") { ExportService.exportCSV(targets) }
+            submenu.addAction(Strings.Export.asOpenapi) { ExportService.exportOpenAPI(targets) }
+            submenu.addAction(Strings.Export.asPostman) { ExportService.exportPostman(targets) }
         }
         SavedRequestMenu.add(to: menu, store: store, transactions: targets, reportError: { appState.systemProxyMessage = $0 })
         menu.addAction(Strings.Traffic.addComment) { appState.openComment(targets) }
@@ -461,16 +415,25 @@ struct TrafficListView: View {
             appState.toggleDiffCandidate(tx)
         }
         menu.addSubmenu(Strings.Traffic.highlight) { submenu in
-            for name in ProxymanTheme.highlightNames {
+            for (index, name) in ProxymanTheme.highlightNames.enumerated() {
                 submenu.addAction(ProxymanTheme.localizedHighlightName(name)) {
                     for tx in targets { tx.highlightName = name }
                     store.update(targets)
+                }
+                if index < 6 {
+                    submenu.items.last?.keyEquivalent = String(index + 1)
+                    submenu.items.last?.keyEquivalentModifierMask = [.command]
                 }
             }
             submenu.addAction(Strings.Traffic.reset) {
                 for tx in targets { tx.highlightName = nil }
                 store.update(targets)
             }
+        }
+        menu.addAction(Strings.Menus.strikethrough) {
+            let value = !targets.allSatisfy(\.strikethrough)
+            targets.forEach { $0.strikethrough = value }
+            store.update(targets)
         }
         menu.addAction(Strings.Traffic.copyUrl) { appState.copyText(targets.map(\.fullURL).joined(separator: "\n")) }
         menu.addAction(Strings.Traffic.copy(presentationSettings.defaultCopyFormat.title)) { appState.copyRequestsUsingDefaultFormat(targets) }
@@ -485,128 +448,5 @@ struct TrafficListView: View {
         menu.addItem(.separator())
         menu.addAction(Strings.Traffic.delete) { store.remove(Set(targets.map(\.id))) }
         return menu
-    }
-}
-
-@MainActor
-struct TrafficRow: View {
-    @ObservedObject var tx: Transaction
-    let columns: [(TrafficColumn, CGFloat)]
-
-    var isSelected = false
-    @ObservedObject private var presentationSettings = AppSettings.shared
-    @ObservedObject private var filterPalette = TrafficFilterPalette.shared
-    @ObservedObject private var customColumnValues = CustomColumnValues.shared
-    @AppStorage("ui.truncationStyle") private var truncationStyle = "middle"
-
-    private var truncation: Text.TruncationMode {
-        switch truncationStyle { case "head": return .head; case "tail": return .tail; default: return .middle }
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Circle()
-                .fill(Color(nsColor: tx.statusColor))
-                .frame(width: 9, height: 9)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            ForEach(columns, id: \.0) { column, width in
-                cell(column)
-                    .truncationMode(truncation)
-                    .lineLimit(1)
-                    .padding(.horizontal, 6)
-                    .frame(width: width, alignment: .leading)
-                    .clipped()
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity)
-        .frame(height: ProxymanTheme.rowHeight)
-        .font(PresentationFonts.swiftUIFont(weight: .medium))
-        .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.87))
-        .contentShape(Rectangle())
-        .background(rowBackground)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var rowBackground: Color {
-        if isSelected { return Color(nsColor: TrafficRowPresentation.background(selected: true, highlight: nil, alternate: false)) }
-        guard let name = tx.highlightName ?? filterPalette.highlight(for: tx) else { return .clear }
-        return Color(nsColor: TrafficRowPresentation.background(selected: false, highlight: NSColor(ProxymanTheme.highlightColor(name)), alternate: false))
-    }
-
-    @ViewBuilder
-    private func cell(_ column: TrafficColumn) -> some View {
-        switch column {
-        case .sequence:
-            Text("\(tx.seq)").frame(maxWidth: .infinity, alignment: .trailing)
-        case .url:
-            HStack(spacing: 5) {
-                Text(tx.originalURL ?? tx.fullURL).truncationMode(truncation).strikethrough(tx.strikethrough)
-                    .help(tx.originalURL ?? tx.fullURL)
-                if tx.suspectedPinning {
-                    Image(systemName: "lock.shield")
-                        .foregroundStyle(isSelected ? Color.white : Color.orange)
-                        .accessibilityLabel(Strings.Traffic.possibleSslCertificatePinning)
-                        .help(Strings.Traffic.theClientRejectedTheProxyCertificate)
-                }
-                if tx.isGRPCWeb {
-                    badge("gRPC-Web", color: .accentColor).fixedSize()
-                }
-            }
-        case .client:
-            HStack(spacing: 6) {
-                ClientIconView(image: tx.clientIcon)
-                Text(tx.clientName ?? Strings.Traffic.unknown).foregroundStyle(isSelected ? Color.white : Color.secondary)
-            }
-        case .method:
-            badge(tx.method, color: tx.method == "CONNECT" ? .secondary : Color(nsColor: tx.methodColor))
-        case .status:
-            badge(tx.state == .failed ? (tx.statusCode > 0 ? Strings.Traffic.failed(tx.statusCode) : Strings.Traffic.failed2)
-                  : tx.statusCode == 0 ? Strings.Traffic.inProgress : String(tx.statusCode),
-                  color: Color(nsColor: tx.statusColor))
-                .help(tx.localizedErrorText ?? tx.statusText)
-        case .time: Text(tx.timeText).font(PresentationFonts.swiftUIFont()).help(tx.timeText)
-        case .duration: Text(tx.state == .pending || tx.state == .awaiting ? "–" : tx.durationText)
-        case .request: Text(size(max(tx.requestBytes, tx.requestBody.count)))
-        case .response: Text(size(max(tx.responseBytes, tx.responseBody.count)))
-        case .ssl:
-            if tx.isTLSIntercepted {
-                Image(systemName: "lock.open").accessibilityLabel(Strings.Traffic.decrypted)
-            }
-        case .edited:
-            if tx.originalURL != nil {
-                Image(systemName: "pencil").accessibilityLabel(Strings.Traffic.edited)
-            }
-        case .comment: Text(tx.comment).help(tx.comment)
-        case .tools: Text(tx.ruleMatches.joined(separator: ", ")).help(tx.ruleMatches.joined(separator: ", "))
-        case .graphql:
-            let value = CustomColumnValues.shared.graphqlValue(for: tx)
-            Text(value).help(value)
-        case .custom(let field):
-            let value = field.value(for: tx)
-            Text(value.isEmpty ? "–" : value).help(value)
-        }
-    }
-
-    private func badge(_ title: String, color: Color) -> some View {
-        Text(title)
-            .font(PresentationFonts.swiftUIFont(size: 11, weight: .semibold))
-            .foregroundStyle(isSelected ? Color.white : color)
-            .padding(.horizontal, 5)
-            .frame(height: max(17, CGFloat(presentationSettings.fontSize) + 5))
-            .background(isSelected ? Color.black.opacity(0.26) : color.opacity(0.19),
-                        in: RoundedRectangle(cornerRadius: 4))
-    }
-
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter
-    }()
-
-    private func size(_ bytes: Int) -> String {
-        bytes == 0 ? "–" : Self.byteFormatter.string(fromByteCount: Int64(bytes))
     }
 }

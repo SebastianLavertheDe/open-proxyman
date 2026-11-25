@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+import Combine
+import ProxyMirrorFoundation
 
 @MainActor
 struct TrafficTable: NSViewRepresentable {
@@ -15,22 +17,24 @@ struct TrafficTable: NSViewRepresentable {
     let copyAsCurl: ([Transaction]) -> Void
     let contextMenu: (Transaction, [Transaction]) -> NSMenu
     var copyUsingDefaultFormat: (([Transaction]) -> Void)?
+    var sortColumn: TrafficColumn = .sequence
+    var ascending = true
+    var sort: ((TrafficColumn, Bool) -> Void)?
     @ObservedObject private var presentationSettings = AppSettings.shared
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
         let table = Table()
-        table.headerView = nil
+        table.headerView = NSTableHeaderView(frame: NSRect(x: 0, y: 0, width: 0, height: 28))
+        table.allowsColumnReordering = true
+        table.allowsColumnResizing = true
         table.style = .plain
         table.rowHeight = ProxymanTheme.rowHeight
         table.intercellSpacing = .zero
         table.allowsMultipleSelection = true
         table.allowsEmptySelection = true
-        table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("request"))
-        column.title = Strings.Traffic.request
-        table.addTableColumn(column)
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.setAccessibilityLabel(Strings.Traffic.requestList)
 
         let coordinator = context.coordinator
@@ -38,6 +42,7 @@ struct TrafficTable: NSViewRepresentable {
 
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
         scroll.documentView = table
@@ -47,7 +52,6 @@ struct TrafficTable: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let table = scroll.documentView as? Table else { return }
         table.setAccessibilityLabel(Strings.Traffic.requestList)
-        table.tableColumns.first?.title = Strings.Traffic.request
         if table.rowHeight != ProxymanTheme.rowHeight {
             table.rowHeight = ProxymanTheme.rowHeight
             table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows))
@@ -72,6 +76,27 @@ struct TrafficTable: NSViewRepresentable {
         private var copyAsCurl: (([Transaction]) -> Void)?
         private var copyUsingDefaultFormat: (([Transaction]) -> Void)?
         private var contextMenu: ((Transaction, [Transaction]) -> NSMenu)?
+        private var sort: ((TrafficColumn, Bool) -> Void)?
+        private var presentation: Presentation?
+
+        /// 仅呈现偏好改变时刷新整屏单元格；抓包增量由可见记录订阅处理。
+        private struct Presentation: Equatable {
+            let fontSize: Double
+            let useMonospacedFont: Bool
+            let monospacedFontFamily: String
+            let truncationStyle: String
+            let use24HourClock: Bool
+            let showFullDate: Bool
+
+            init(_ settings: AppSettings) {
+                fontSize = settings.fontSize
+                useMonospacedFont = settings.useMonospacedFont
+                monospacedFontFamily = settings.monospacedFontFamily
+                truncationStyle = settings.truncationStyle
+                use24HourClock = settings.use24HourClock
+                showFullDate = settings.showFullDate
+            }
+        }
 
         func attach(to table: Table) {
             self.table = table
@@ -92,22 +117,24 @@ struct TrafficTable: NSViewRepresentable {
             copyAsCurl = input.copyAsCurl
             copyUsingDefaultFormat = input.copyUsingDefaultFormat
             contextMenu = input.contextMenu
+            sort = input.sort
             updating = true
             defer { updating = false }
 
+            let nextPresentation = Presentation(AppSettings.shared)
+            let presentationChanged = presentation != nextPresentation
+            presentation = nextPresentation
             let workspaceChanged = workspaceID != input.workspaceID
             let columnsChanged = !columns.elementsEqual(input.columns, by: ==)
             columns = input.columns
+            synchronizeColumns(table, changed: columnsChanged)
+            table.sortDescriptors = [NSSortDescriptor(key: input.sortColumn.id, ascending: input.ascending)]
             if workspaceChanged || revision != input.revision {
                 updateRows(input.rows, table: table, preserveScroll: !workspaceChanged)
                 workspaceID = input.workspaceID
                 revision = input.revision
             }
-            if columnsChanged {
-                table.enumerateAvailableRowViews { _, row in
-                    (table.view(atColumn: 0, row: row, makeIfNecessary: false) as? Cell)?.setColumns(self.columns)
-                }
-            }
+            if columnsChanged { table.reloadData() }
 
             let selected = IndexSet(input.selectedIDs.compactMap { indexes[$0] })
             if selected != table.selectedRowIndexes {
@@ -119,6 +146,71 @@ struct TrafficTable: NSViewRepresentable {
                 table.scrollRowToVisible(row)
             }
             followedID = nextFollow
+            if presentationChanged { refreshVisibleCells(table) }
+        }
+
+        private func refreshVisibleCells(_ table: NSTableView) {
+            table.enumerateAvailableRowViews { view, row in
+                view.needsDisplay = true
+                for column in table.tableColumns.indices {
+                    (table.view(atColumn: column, row: row, makeIfNecessary: false) as? Cell)?.refresh()
+                }
+            }
+        }
+
+        private func synchronizeColumns(_ table: NSTableView, changed: Bool) {
+            let requested = Set(columns.map { $0.0.id })
+            for native in table.tableColumns where !requested.contains(native.identifier.rawValue) {
+                table.removeTableColumn(native)
+            }
+            let savedOrder = UserDefaults.standard.stringArray(forKey: "ui.trafficColumnOrder") ?? []
+            let ordered = columns.sorted { left, right in
+                (savedOrder.firstIndex(of: left.0.id) ?? (savedOrder.count + (columns.firstIndex { $0.0 == left.0 } ?? 0)))
+                    < (savedOrder.firstIndex(of: right.0.id) ?? (savedOrder.count + (columns.firstIndex { $0.0 == right.0 } ?? 0)))
+            }
+            for (column, width) in ordered {
+                let identifier = NSUserInterfaceItemIdentifier(column.id)
+                let native = table.tableColumn(withIdentifier: identifier) ?? {
+                    let created = NSTableColumn(identifier: identifier)
+                    created.minWidth = column == .url ? 100 : column == .ssl ? 29 : 40
+                    created.resizingMask = .userResizingMask
+                    table.addTableColumn(created)
+                    return created
+                }()
+                native.title = column.localizedTitle()
+                native.sortDescriptorPrototype = NSSortDescriptor(key: column.id, ascending: true)
+                if changed { native.width = width }
+            }
+            for (index, entry) in ordered.enumerated() {
+                let current = table.column(withIdentifier: NSUserInterfaceItemIdentifier(entry.0.id))
+                if current >= 0, current != index { table.moveColumn(current, toColumn: index) }
+            }
+        }
+
+        func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+            guard !updating, let descriptor = tableView.sortDescriptors.first,
+                  let column = columns.first(where: { $0.0.id == descriptor.key })?.0 else { return }
+            sort?(column, descriptor.ascending)
+        }
+
+        func tableViewColumnDidMove(_ notification: Notification) {
+            guard !updating, let table else { return }
+            let previous = UserDefaults.standard.stringArray(forKey: "ui.trafficColumnOrder") ?? TrafficColumn.allCases.map(\.id)
+            let merged = TrafficColumnOrder.merging(visibleOrder: table.tableColumns.map { $0.identifier.rawValue }, previousOrder: previous)
+            UserDefaults.standard.set(merged, forKey: "ui.trafficColumnOrder")
+        }
+
+        func tableViewColumnDidResize(_ notification: Notification) {
+            guard !updating, let table else { return }
+            let sizes = Dictionary(uniqueKeysWithValues: table.tableColumns.map { ($0.identifier.rawValue, Double($0.width)) })
+            if let data = try? JSONEncoder().encode(sizes) {
+                UserDefaults.standard.set(String(decoding: data, as: UTF8.self), forKey: "ui.trafficColumnWidths")
+            }
+            table.enumerateAvailableRowViews { _, row in
+                for index in table.tableColumns.indices {
+                    (table.view(atColumn: index, row: row, makeIfNecessary: false) as? Cell)?.resizeContent()
+                }
+            }
         }
 
         private func updateRows(_ incoming: [Transaction], table: Table, preserveScroll: Bool) {
@@ -179,14 +271,17 @@ struct TrafficTable: NSViewRepresentable {
         func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
             let view = tableView.makeView(withIdentifier: Row.reuseIdentifier, owner: nil) as? Row ?? Row()
             view.identifier = Row.reuseIdentifier
+            if rows.indices.contains(row) { view.configure(rows[row]) }
             return view
         }
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-            guard rows.indices.contains(row) else { return nil }
-            let view = tableView.makeView(withIdentifier: Cell.reuseIdentifier, owner: nil) as? Cell ?? Cell()
-            view.identifier = Cell.reuseIdentifier
-            view.configure(rows[row], columns: columns, selected: tableView.selectedRowIndexes.contains(row))
+            guard rows.indices.contains(row), let tableColumn,
+                  let column = columns.first(where: { $0.0.id == tableColumn.identifier.rawValue })?.0 else { return nil }
+            let identifier = NSUserInterfaceItemIdentifier("traffic-cell-" + column.id)
+            let view = tableView.makeView(withIdentifier: identifier, owner: nil) as? Cell ?? Cell()
+            view.identifier = identifier
+            view.configure(rows[row], columns: [(column, tableColumn.width)], selected: tableView.selectedRowIndexes.contains(row))
             return view
         }
 
@@ -280,11 +375,38 @@ struct TrafficTable: NSViewRepresentable {
         }
     }
 
+    @MainActor
     private final class Row: NSTableRowView {
         static let reuseIdentifier = NSUserInterfaceItemIdentifier("traffic-row")
+        private var transaction: Transaction?
+        private var transactionChanges: AnyCancellable?
+        private var paletteChanges: AnyCancellable?
+
+        func configure(_ transaction: Transaction) {
+            if self.transaction !== transaction {
+                self.transaction = transaction
+                transactionChanges = transaction.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
+                    self?.needsDisplay = true
+                }
+            }
+            if paletteChanges == nil {
+                paletteChanges = TrafficFilterPalette.shared.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
+                    self?.needsDisplay = true
+                }
+            }
+            needsDisplay = true
+        }
 
         override var isSelected: Bool {
             didSet { subviews.compactMap { $0 as? Cell }.forEach { $0.setSelected(isSelected) } }
+        }
+
+        override func drawBackground(in dirtyRect: NSRect) {
+            guard !isSelected, let transaction,
+                  let name = transaction.highlightName ?? TrafficFilterPalette.shared.highlight(for: transaction) else { return }
+            let color = NSColor(ProxymanTheme.highlightColor(name))
+            TrafficRowPresentation.background(selected: false, highlight: color, alternate: false).setFill()
+            bounds.intersection(dirtyRect).fill()
         }
 
         override func drawSelection(in dirtyRect: NSRect) {
@@ -294,45 +416,119 @@ struct TrafficTable: NSViewRepresentable {
         }
     }
 
+    @MainActor
     private final class Cell: NSTableCellView {
-        static let reuseIdentifier = NSUserInterfaceItemIdentifier("traffic-cell")
-
+        private let label = NSTextField(labelWithString: "")
+        private let icon = NSImageView()
         private var transaction: Transaction?
-        private var columns: [(TrafficColumn, CGFloat)] = []
+        private var column: TrafficColumn?
         private var selected = false
-        private var host: NSHostingView<TrafficRow>?
+        private var transactionChanges: AnyCancellable?
+        private var derivedChanges: AnyCancellable?
+        private var refreshScheduled = false
 
-        func configure(_ transaction: Transaction, columns: [(TrafficColumn, CGFloat)], selected: Bool) {
-            self.transaction = transaction
-            self.columns = columns
-            self.selected = selected
-            updateContent()
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            label.isSelectable = false
+            label.isEditable = false
+            label.isBordered = false
+            label.drawsBackground = false
+            label.maximumNumberOfLines = 1
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            icon.imageScaling = .scaleProportionallyUpOrDown
+            icon.setAccessibilityElement(false)
+            addSubview(label)
+            addSubview(icon)
+            textField = label
+            imageView = icon
         }
 
-        func setColumns(_ columns: [(TrafficColumn, CGFloat)]) {
-            self.columns = columns
-            updateContent()
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        func configure(_ transaction: Transaction, columns: [(TrafficColumn, CGFloat)], selected: Bool) {
+            if self.transaction !== transaction {
+                self.transaction = transaction
+                transactionChanges = transaction.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in self?.scheduleRefresh() }
+            }
+            column = columns.first?.0
+            let usesDerivedValues: Bool
+            switch column { case .custom, .graphql: usesDerivedValues = true; default: usesDerivedValues = false }
+            if usesDerivedValues, derivedChanges == nil {
+                derivedChanges = CustomColumnValues.shared.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in self?.scheduleRefresh() }
+            } else if !usesDerivedValues { derivedChanges = nil }
+            self.selected = selected
+            refresh()
         }
 
         func setSelected(_ selected: Bool) {
             guard self.selected != selected else { return }
             self.selected = selected
-            updateContent()
+            refresh()
         }
 
-        private func updateContent() {
-            guard let transaction else { return }
-            let content = TrafficRow(tx: transaction, columns: columns, isSelected: selected)
-            if let host {
-                host.rootView = content
-            } else {
-                let host = NSHostingView(rootView: content)
-                host.sizingOptions = []
-                host.frame = bounds
-                host.autoresizingMask = [.width, .height]
-                addSubview(host)
-                self.host = host
+        private func scheduleRefresh() {
+            guard !refreshScheduled else { return }
+            refreshScheduled = true
+            RunLoop.main.perform { [weak self] in
+                guard let self else { return }
+                self.refreshScheduled = false
+                self.refresh()
             }
+        }
+
+        func refresh() {
+            guard let transaction, let column else { return }
+            let settings = AppSettings.shared
+            let content = TrafficColumnPresentation.text(column, transaction: transaction)
+            let isBadge = column == .method || column == .status
+            label.font = PresentationFonts.nsFont(size: isBadge ? 11 : 12, weight: isBadge ? .semibold : .medium)
+            label.alignment = column == .sequence ? .right : .left
+            switch settings.truncationStyle {
+            case "head": label.lineBreakMode = .byTruncatingHead
+            case "tail": label.lineBreakMode = .byTruncatingTail
+            default: label.lineBreakMode = .byTruncatingMiddle
+            }
+            let color: NSColor = column == .status ? transaction.statusColor : column == .method ? transaction.methodColor : .labelColor
+            let foreground: NSColor = selected ? .white : color
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: label.font ?? NSFont.systemFont(ofSize: 12),
+                .foregroundColor: foreground,
+                .strikethroughStyle: column == .url && transaction.strikethrough ? NSUnderlineStyle.single.rawValue : 0
+            ]
+            label.attributedStringValue = NSAttributedString(string: content, attributes: attributes)
+            label.wantsLayer = isBadge
+            label.layer?.cornerRadius = 4
+            label.layer?.backgroundColor = isBadge ? color.withAlphaComponent(selected ? 0.28 : 0.16).cgColor : NSColor.clear.cgColor
+            icon.image = nil
+            switch column {
+            case .client: icon.image = transaction.clientIcon ?? NSImage(systemSymbolName: "terminal.fill", accessibilityDescription: nil)
+            case .ssl where transaction.isTLSIntercepted: icon.image = NSImage(systemSymbolName: "lock.open", accessibilityDescription: Strings.Traffic.decrypted)
+            case .edited where transaction.originalURL != nil: icon.image = NSImage(systemSymbolName: "pencil", accessibilityDescription: Strings.Traffic.edited)
+            case .url where transaction.suspectedPinning: icon.image = NSImage(systemSymbolName: "lock.shield", accessibilityDescription: Strings.Traffic.possibleSslCertificatePinning)
+            default: break
+            }
+            icon.contentTintColor = selected ? .white : column == .url ? .systemOrange : .secondaryLabelColor
+            toolTip = TrafficColumnPresentation.tooltip(column, transaction: transaction)
+            setAccessibilityLabel(content.isEmpty ? toolTip : content)
+            needsLayout = true
+        }
+
+        func resizeContent() { needsLayout = true }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            needsLayout = true
+        }
+
+        override func layout() {
+            super.layout()
+            let hasIcon = icon.image != nil
+            icon.isHidden = !hasIcon
+            icon.frame = NSRect(x: 6, y: (bounds.height - 15) / 2, width: 15, height: 15)
+            let inset: CGFloat = hasIcon ? 26 : 6
+            let desiredHeight = ceil(label.font?.boundingRectForFont.height ?? 16)
+            label.frame = NSRect(x: inset, y: max(0, (bounds.height - desiredHeight) / 2),
+                                 width: max(0, bounds.width - inset - 6), height: min(bounds.height, desiredHeight))
         }
 
         override var backgroundStyle: NSView.BackgroundStyle {
@@ -346,9 +542,9 @@ struct TrafficTable: NSViewRepresentable {
             }
         }
 
-        // The row content is display-only. Let the table handle selection, double-clicks and menus.
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
+
 }
 
 private final class TrafficMenuAction: NSObject {

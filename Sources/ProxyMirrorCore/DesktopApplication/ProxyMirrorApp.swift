@@ -6,7 +6,10 @@ struct ProxyMirrorMainApp: App {
     @StateObject private var appState: AppState
     @AppStorage private var appearance: ProxyMirrorAppearance
     @AppStorage private var showMenuBarIcon: Bool
+    @AppStorage("ui.proxymanCompatibleShortcuts") private var compatibleShortcuts = false
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.self) private var environment
+    @FocusedValue(\.trafficCommandsActive) private var trafficCommandsActive
 
     init() {
         // 必须先完成版本重置，再初始化会读取设置、规则与 Saved 的单例。
@@ -36,6 +39,15 @@ struct ProxyMirrorMainApp: App {
     }
 
     private var appLocale: Locale { L10n.locale }
+    private var flowCommandsAvailable: Bool {
+        trafficCommandsActive == true && NSApp.keyWindow?.attachedSheet == nil && NSApp.keyWindow?.sheetParent == nil
+            && appState.activeTool == nil && (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true
+    }
+    private var exportTargets: [Transaction] {
+        let store = appState.activeStore
+        return store.selectedIDs.isEmpty ? store.visible : store.selectedTransactions
+    }
+
     private var appColorScheme: ColorScheme? {
         if ProcessInfo.processInfo.environment["PM_SETTINGS_SNAPSHOT"] != nil {
             switch ProcessInfo.processInfo.environment["PM_SETTINGS_APPEARANCE"] {
@@ -83,6 +95,7 @@ struct ProxyMirrorMainApp: App {
         }
         .defaultSize(width: 1020, height: 610)
 
+        setupScenes
         toolScenes
 
         MenuBarExtra("ProxyMirror", systemImage: "network", isInserted: Binding(
@@ -112,6 +125,36 @@ struct ProxyMirrorMainApp: App {
     }
 
     @SceneBuilder
+    private var setupScenes: some Scene {
+        WindowGroup(Strings.Menus.rules, id: "rule-window", for: String.self) { $route in
+            let parts = (route ?? ToolKind.mapLocal.rawValue).split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            RuleListWindow(kind: ToolKind(rawValue: String(parts[0])) ?? .mapLocal,
+                           initialPattern: parts.count > 1 ? String(parts[1]) : "")
+                .environmentObject(appState)
+                .preferredColorScheme(appColorScheme)
+                .environment(\.locale, appLocale)
+        }.defaultSize(width: 860, height: 560)
+
+        WindowGroup(Strings.Menus.setup, id: "setup-guide", for: String.self) { $platform in
+            SetupGuideWindow(platform: platform ?? "macOS")
+                .environmentObject(appState)
+                .preferredColorScheme(appColorScheme)
+                .environment(\.locale, appLocale)
+        }.defaultSize(width: 760, height: 680)
+
+        Window(Strings.Menus.customCertificates, id: "certificate-manager") {
+            CertificateManagerView().environmentObject(appState)
+                .preferredColorScheme(appColorScheme).environment(\.locale, appLocale)
+        }.defaultSize(width: 700, height: 498)
+
+        Window(Strings.Menus.networkConditions, id: "network-conditions") {
+            LatencyConditionsView().environmentObject(appState)
+                .preferredColorScheme(appColorScheme).environment(\.locale, appLocale)
+        }.defaultSize(width: 886, height: 640)
+
+    }
+
+    @SceneBuilder
     private var toolScenes: some Scene {
         Window(Strings.Menus.trafficComparison, id: "traffic-diff") {
             TrafficDiffWorkspaceView(appState: appState)
@@ -123,7 +166,7 @@ struct ProxyMirrorMainApp: App {
             FlowSummaryView(store: appState.activeStore)
                 .preferredColorScheme(appColorScheme)
                 .environment(\.locale, appLocale)
-        }.defaultSize(width: 700, height: 500)
+        }.defaultSize(width: 760, height: 650)
 
         Window(Strings.Menus.customPreviewers, id: "custom-previewers") {
             CustomPreviewerManagerView().preferredColorScheme(appColorScheme)
@@ -144,7 +187,7 @@ struct ProxyMirrorMainApp: App {
             AutomationDashboardView().preferredColorScheme(appColorScheme)
                 .environmentObject(appState)
                 .environment(\.locale, appLocale)
-        }.defaultSize(width: 820, height: 580)
+        }.defaultSize(width: 820, height: 640)
 
         Window(Strings.Menus.softwareUpdates, id: "updates") {
             UpdateSettingsView().environment(\.locale, appLocale).preferredColorScheme(appColorScheme)
@@ -156,6 +199,13 @@ struct ProxyMirrorMainApp: App {
         }
             .defaultSize(width: 780, height: 520)
 
+    }
+
+    private func showSettings(_ target: SettingsSearchTarget) {
+        appState.settingsTarget = target
+        if #available(macOS 14, *) { environment.openSettings() }
+        else { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @CommandsBuilder
@@ -222,11 +272,13 @@ struct ProxyMirrorMainApp: App {
                     NotificationCenter.default.post(name: .focusSourceFilter, object: nil)
                 }
             }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .keyboardShortcut("f", modifiers: compatibleShortcuts ? [.command, .option] : [.command, .shift])
             Button(Strings.Menus.filterCurrentView) {
                 NotificationCenter.default.post(name: .focusTrafficFilter, object: nil)
             }
-            .keyboardShortcut("f", modifiers: .command)
+            .keyboardShortcut("f", modifiers: compatibleShortcuts ? [.command, .shift] : .command)
+            Button(Strings.Menus.findInBody) { NotificationCenter.default.post(name: .focusBodySearch, object: nil) }
+                .keyboardShortcut(compatibleShortcuts ? KeyboardShortcut("f", modifiers: .command) : nil)
             Divider()
             Button(Strings.Menus.showCommandPalette) { appState.showCommandPalette = true }
                 .keyboardShortcut("p", modifiers: .command)
@@ -239,10 +291,19 @@ struct ProxyMirrorMainApp: App {
             Toggle(Strings.Menus.showSourceListPanel, isOn: Binding(
                 get: { AppState.shared.showSidebar },
                 set: { AppState.shared.showSidebar = $0 }))
+                .keyboardShortcut("[", modifiers: [.control, .command])
             Button(Strings.Menus.newView) { appState.addWorkspace() }.keyboardShortcut("t", modifiers: .command)
             Button(Strings.Menus.toggleSplitView) { appState.toggleSplit() }
             Button(Strings.Menus.dockInspectorAtBottom) { appState.dockRight = false }
+                .keyboardShortcut("]", modifiers: [.control, .command])
             Button(Strings.Menus.dockInspectorOnRight) { appState.dockRight = true }
+                .keyboardShortcut("\\", modifiers: [.control, .command])
+            Button(Strings.Menus.nextView) { appState.selectWorkspace((appState.activeTabIndex + 1) % max(1, appState.tabs.count)) }
+                .keyboardShortcut("]", modifiers: [.shift, .command])
+            Button(Strings.Menus.previousView) { appState.selectWorkspace((appState.activeTabIndex + appState.tabs.count - 1) % max(1, appState.tabs.count)) }
+                .keyboardShortcut("[", modifiers: [.shift, .command])
+            Button(Strings.Menus.showToolbar) { NSApp.keyWindow?.toggleToolbarShown(nil) }
+                .keyboardShortcut("t", modifiers: [.option, .command])
             Button(Strings.Menus.keepWindowOnTop) {
                 if let window = NSApp.keyWindow { window.level = window.level == .floating ? .normal : .floating }
             }
@@ -250,19 +311,22 @@ struct ProxyMirrorMainApp: App {
         // Flow 菜单（对齐 Proxyman Flow）
         CommandMenu(Strings.Menus.traffic) {
             Button(Strings.Menus.repeat) { appState.repeatSelected() }
-                .disabled(!appState.activeStore.selectedTransactions.contains(where: \.canReplay))
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!flowCommandsAvailable || !appState.activeStore.selectedTransactions.contains(where: \.canReplay))
             Button(Strings.Menus.saveSelectedRequests) { appState.activeStore.saveSelection() }
                 .disabled(appState.activeStore.selectedIDs.isEmpty)
             Button(Strings.Menus.compareSelectedResponses) { appState.openComparison() }
                 .disabled(appState.activeStore.selectedIDs.count != 2)
             Button(Strings.Menus.openComparisonPool(appState.diffPool.count)) { openWindow(id: "traffic-diff") }
+                .keyboardShortcut("y", modifiers: [.option, .command])
             Button(Strings.Menus.addToComparisonPool) { appState.addToDiffPool(appState.activeStore.selectedTransactions) }
                 .keyboardShortcut("y", modifiers: .command).disabled(appState.activeStore.selectedIDs.isEmpty)
             Button(Strings.Menus.clearComparisonPool) { appState.clearDiffPool() }.disabled(appState.diffPool.isEmpty)
             Button(Strings.Menus.editAndRepeat) { appState.editSelected(sendAndRepeat: true) }
-                .keyboardShortcut("R", modifiers: [.command, .shift])
-                .disabled(appState.activeStore.selectedTransaction?.canReplay != true)
+                .keyboardShortcut(compatibleShortcuts ? KeyEquivalent.return : "r", modifiers: compatibleShortcuts ? [.option, .command] : [.command, .shift])
+                .disabled(!flowCommandsAvailable || appState.activeStore.selectedTransaction?.canReplay != true)
             Button(Strings.Menus.enableSslProxyingForThisDomain) { appState.enableSSLProxyingForSelected() }
+                .keyboardShortcut(.return, modifiers: .option)
                 .disabled(appState.activeStore.selectedTransaction == nil)
             Divider()
             Button(Strings.Menus.exportSelectedRequestsAsHar) { ExportService.exportHAR(appState.activeStore.selectedTransactions) }
@@ -273,36 +337,43 @@ struct ProxyMirrorMainApp: App {
                     .disabled(appState.activeStore.selectedIDs.isEmpty)
                 Button(Strings.Menus.asCsv) { ExportService.exportCSV(appState.activeStore.selectedTransactions) }
                     .disabled(appState.activeStore.selectedIDs.isEmpty)
+                Button(Strings.Menus.exportOpenapi) { ExportService.exportOpenAPI(exportTargets) }
+                    .disabled(exportTargets.isEmpty)
+                Button(Strings.Menus.exportPostman) { ExportService.exportPostman(exportTargets) }
+                    .disabled(exportTargets.isEmpty)
                 Button(Strings.Menus.publishToGithubGist) { appState.showGistPublish = true }
             }
-            .disabled(appState.activeStore.selectedIDs.isEmpty)
             Divider()
             Button(Strings.Menus.addComment) { appState.openComment() }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(appState.activeStore.selectedIDs.isEmpty)
             Menu(Strings.Menus.highlight) {
-                ForEach(ProxymanTheme.highlightNames, id: \.self) { name in
+                ForEach(Array(ProxymanTheme.highlightNames.enumerated()), id: \.element) { index, name in
                     Button(ProxymanTheme.localizedHighlightName(name)) { appState.highlightSelected(name) }
+                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                 }
                 Divider()
                 Button(Strings.Menus.strikethrough) { appState.strikethroughSelected() }
                     .keyboardShortcut("/", modifiers: .command)
                 Button(Strings.Menus.reset) { appState.highlightSelected(nil); appState.unstrikethroughSelected() }
-                    .keyboardShortcut("0", modifiers: .command)
+                    .keyboardShortcut("0", modifiers: [.command, .shift])
             }
             Divider()
             Button(Strings.Menus.clearSession) { appState.clearTraffic() }
-                .keyboardShortcut("k", modifiers: [.command, .option, .shift])
+                .keyboardShortcut(compatibleShortcuts ? KeyEquivalent.delete : "k", modifiers: [.command, .option, .shift])
+                .disabled(!flowCommandsAvailable)
             Divider()
             Button(Strings.Menus.delete) { appState.deleteSelected() }
-                .disabled(appState.activeStore.selectedIDs.isEmpty)
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(!flowCommandsAvailable || appState.activeStore.selectedIDs.isEmpty)
             Button(Strings.Menus.deleteAll) { appState.clearTraffic() }
+                .keyboardShortcut(.delete, modifiers: [.shift, .command])
+                .disabled(!flowCommandsAvailable)
             Divider()
             Button(Strings.Menus.generateSampleTraffic) { appState.store.addSampleData() }
         }
         // Tools 菜单（对齐 Proxyman Tools 完整结构；未实现项灰态）
         CommandMenu(Strings.Menus.tools) {
-            Button(Strings.Menus.importRulesFromCharles) { appState.showCharlesRules = true }
             Button(Strings.Menus.toggleRecording) { appState.toggleRecording() }
                 .keyboardShortcut("r", modifiers: .command)
             Button((appState.proxyRunning ? Strings.Menus.stopListening : Strings.Menus.startListening)) { appState.toggleProxy() }
@@ -310,10 +381,10 @@ struct ProxyMirrorMainApp: App {
                 .disabled(appState.transparentProxyState == .stopping)
             Divider()
             Button(Strings.Menus.sslProxyingList) { appState.openTool(.sslProxyingList) }
-                .keyboardShortcut("P", modifiers: [.command, .shift])
+                .keyboardShortcut("p", modifiers: compatibleShortcuts ? [.command, .option] : [.command, .shift])
             Button(Strings.Menus.configureSslByApplication) { appState.openTool(.sslApplications) }
             Button(Strings.Menus.composeRequest) { appState.openTool(.compose) }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+                .keyboardShortcut(compatibleShortcuts ? "c" : "n", modifiers: [.command, .option])
             Divider()
             BreakpointMenu()
             ScriptingMenu()
@@ -330,8 +401,9 @@ struct ProxyMirrorMainApp: App {
             Toggle(Strings.Menus.noCaching, isOn: Binding(
                 get: { RulesStore.shared.noCaching },
                 set: { RulesStore.shared.noCaching = $0 }))
+                .keyboardShortcut(compatibleShortcuts ? KeyboardShortcut("n", modifiers: [.option, .command]) : nil)
             Divider()
-            Button(Strings.Menus.networkConditions) { appState.showLatencyEditor = true }
+            Button(Strings.Menus.networkConditions) { openWindow(id: "network-conditions") }
                 .keyboardShortcut("j", modifiers: [.option, .command])
             Button((appState.tlsKeyLogURL == nil ? Strings.Menus.startTlsKeyLogging : Strings.Menus.stopTlsKeyLogging)) {
                 appState.toggleTLSKeyLogging()
@@ -344,8 +416,18 @@ struct ProxyMirrorMainApp: App {
             Button(Strings.Menus.customTrafficColumns) { appState.showColumnEditor = true }
             Button(Strings.Menus.customPreviewers2) { openWindow(id: "custom-previewers") }
             Button(Strings.Menus.protobufSchemasMappings) { openWindow(id: "protobuf") }
+                .keyboardShortcut("u", modifiers: [.option, .command])
             Button(Strings.Menus.trafficSummary2) { openWindow(id: "flow-summary") }
             Button(Strings.Menus.automationDashboard) { openWindow(id: "automation") }
+            Menu(Strings.Menus.proxySettings) {
+                Button(appState.systemProxyActive ? Strings.Menus.restoreSystemProxy : Strings.Menus.overrideProxy) {
+                    if appState.systemProxyActive { appState.stopSystemProxy() } else { appState.startSystemProxy() }
+                }.keyboardShortcut("o", modifiers: [.option, .command]).disabled(appState.systemProxyBusy)
+                Button(Strings.Menus.externalProxy) { showSettings(.upstreamProxy) }
+                    .keyboardShortcut("e", modifiers: [.option, .command])
+            }
+            Divider()
+            Button(Strings.Menus.importRulesFromCharles) { appState.showCharlesRules = true }
             ToolsEnableMenu()
             Button(Strings.Menus.manageRuleFolders) { openWindow(id: "rule-folders") }
             Button(Strings.Menus.customizeToolbar) {
@@ -354,6 +436,13 @@ struct ProxyMirrorMainApp: App {
             }
         }
         CommandMenu(Strings.Menus.certificates) { CertificateMenuContent() }
+        CommandMenu(Strings.Menus.setup) {
+            ForEach(["macOS", "iOS", "iOS Simulator", "Android", "Android Emulator", "Java"], id: \.self) { platform in
+                Button(platform) { openWindow(id: "setup-guide", value: platform) }
+            }
+            Divider()
+            Button(Strings.Menus.automation) { openWindow(id: "automation") }
+        }
         CommandGroup(replacing: .help) {
             Button(Strings.Menus.userGuide) {
                 HelpGuideCoordinator.shared.show(.gettingStarted)
@@ -364,21 +453,23 @@ struct ProxyMirrorMainApp: App {
             Button(Strings.Menus.showMcpConfiguration) { LocalControl.showMCPConfiguration() }
             Button(Strings.Menus.softwareUpdateSettings) { openWindow(id: "updates") }
             Divider()
-            Button(Strings.Menus.copyDebugInformation) { appState.copyText(AppDiagnostics.debugInfo()) }
-            Button(Strings.Menus.simulateMemoryWarning) {
-                appState.systemProxyMessage = MemoryPressureController.shared.simulateWarning().summary
+            Menu(Strings.Menus.advanced) {
+                Button(Strings.Menus.copyDebugInformation) { appState.copyText(AppDiagnostics.debugInfo()) }
+                Button(Strings.Menus.simulateMemoryWarning) {
+                    appState.systemProxyMessage = MemoryPressureController.shared.simulateWarning().summary
+                }
+                Button(Strings.Menus.openUserDataFolder) { AppDiagnostics.openDataFolder() }
+                Button(Strings.Menus.openBackupFolder) { AppDiagnostics.openDataFolder(backups: true) }
+                Button(Strings.Menus.backUpRulesSettings) {
+                    do { let url = try AppDiagnostics.backup(); NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    catch { appState.systemProxyMessage = LocalizedErrorPresentation.message(for: error) }
+                }
+                Toggle(Strings.Menus.debugMode, isOn: Binding(get: { UserDefaults.standard.bool(forKey: "diagnostics.debugMode") },
+                    set: { UserDefaults.standard.set($0, forKey: "diagnostics.debugMode"); DiagnosticLog.record("debug mode enabled") }))
+                Button(Strings.Menus.showDiagnosticLog) { NSWorkspace.shared.activateFileViewerSelecting([DiagnosticLog.fileURL]) }
+                Button(Strings.Menus.restoreSystemProxy) { appState.stopSystemProxy() }.disabled(!appState.systemProxyActive || appState.systemProxyBusy)
+                Button(Strings.Menus.restoreDefaults) { appState.showFactoryReset = true }
             }
-            Button(Strings.Menus.openUserDataFolder) { AppDiagnostics.openDataFolder() }
-            Button(Strings.Menus.openBackupFolder) { AppDiagnostics.openDataFolder(backups: true) }
-            Button(Strings.Menus.backUpRulesSettings) {
-                do { let url = try AppDiagnostics.backup(); NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                catch { appState.systemProxyMessage = LocalizedErrorPresentation.message(for: error) }
-            }
-            Toggle(Strings.Menus.debugMode, isOn: Binding(get: { UserDefaults.standard.bool(forKey: "diagnostics.debugMode") },
-                set: { UserDefaults.standard.set($0, forKey: "diagnostics.debugMode"); DiagnosticLog.record("debug mode enabled") }))
-            Button(Strings.Menus.showDiagnosticLog) { NSWorkspace.shared.activateFileViewerSelecting([DiagnosticLog.fileURL]) }
-            Button(Strings.Menus.restoreSystemProxy) { appState.stopSystemProxy() }.disabled(!appState.systemProxyActive || appState.systemProxyBusy)
-            Button(Strings.Menus.restoreDefaults) { appState.showFactoryReset = true }
         }
     }
 }

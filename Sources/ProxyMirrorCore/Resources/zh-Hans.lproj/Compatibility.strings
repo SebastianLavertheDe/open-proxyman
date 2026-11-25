@@ -1,0 +1,4 @@
+"import_title" = "打开 Proxyman 抓包文件";
+"import_instructions" = "请先在 Proxyman 中将请求导出为 HAR，再用 ProxyMirror 打开该 HAR 文件。Proxyman 运行时，也可以在终端执行下方命令导出当前已加载的请求。Proxyman 私有日志和会话格式暂不能直接读取。";
+"copy_export_command" = "复制导出命令";
+"open_documentation" = "打开 Proxyman 官方文档";

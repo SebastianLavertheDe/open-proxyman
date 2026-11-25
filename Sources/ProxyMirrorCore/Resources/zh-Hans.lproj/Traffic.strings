@@ -171,3 +171,13 @@
 "sorting_body_values" = "正在计算排序字段…";
 
 "filtering_captured_values" = "正在筛选请求…";
+
+"filter_shift_command_f" = "过滤 (⇧⌘F)";
+"filter_option_command_f" = "域名或应用 (⌥⌘F)";
+"enabled" = "已启用";
+"disabled" = "已禁用";
+"scheme" = "协议方案";
+"content_type" = "内容类型";
+"columns" = "列";
+
+"compose_option_command_c" = "编写请求 (⌥⌘C)";

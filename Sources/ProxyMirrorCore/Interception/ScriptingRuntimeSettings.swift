@@ -3,15 +3,17 @@ import Foundation
 struct ScriptEnvironmentConfig: Codable, Equatable {
     var variables: [String: String] = [:]
     var includeSystemEnvironment = false
+    var stopAfterFirstMatch = false
     var networkWallTimeMilliseconds = 10_000
     var networkRequestTimeoutMilliseconds = 5_000
 
     init() {}
-    private enum CodingKeys: String, CodingKey { case variables, includeSystemEnvironment, networkWallTimeMilliseconds, networkRequestTimeoutMilliseconds }
+    private enum CodingKeys: String, CodingKey { case variables, includeSystemEnvironment, stopAfterFirstMatch, networkWallTimeMilliseconds, networkRequestTimeoutMilliseconds }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         variables = try values.decodeIfPresent([String: String].self, forKey: .variables) ?? [:]
         includeSystemEnvironment = try values.decodeIfPresent(Bool.self, forKey: .includeSystemEnvironment) ?? false
+        stopAfterFirstMatch = try values.decodeIfPresent(Bool.self, forKey: .stopAfterFirstMatch) ?? false
         networkWallTimeMilliseconds = min(30_000, max(1000, try values.decodeIfPresent(Int.self, forKey: .networkWallTimeMilliseconds) ?? 10_000))
         networkRequestTimeoutMilliseconds = min(networkWallTimeMilliseconds, max(100, try values.decodeIfPresent(Int.self, forKey: .networkRequestTimeoutMilliseconds) ?? 5_000))
     }

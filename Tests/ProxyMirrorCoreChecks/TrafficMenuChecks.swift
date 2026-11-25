@@ -79,7 +79,7 @@ private func checkTableSelection(_ test: CoreAssertions, pasteboard: NSPasteboar
     var menuTargets: [UUID] = []
     var copiedIDs: [UUID] = []
     let input = TrafficTable(rows: [first, second], revision: 1, workspaceID: store.id,
-        columns: [], selectedIDs: [], selectedID: nil, followLatest: false,
+        columns: [(.url, 400)], selectedIDs: [], selectedID: nil, followLatest: false,
         select: store.selectManually, open: { _ in }, copyAsCurl: { targets in
             copiedIDs = targets.map(\.id)
             CopyPaste.copy(targets.map(ExportService.curlCommand).joined(separator: "\n"), to: pasteboard)

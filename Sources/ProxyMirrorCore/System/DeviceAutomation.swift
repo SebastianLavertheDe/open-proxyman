@@ -154,28 +154,5 @@ enum DeviceAutomation {
         return Strings.Errors.deviceAutomationTheCertificateWasCopiedToTheDeviceDownload
     }
 
-    /// Only the explicitly connected writable emulator is eligible for adb root.
-    static func setupAndroidEmulator(certificatePath: String,
-                                      cancellation: DeviceCommandRunner.Cancellation? = nil) throws -> String {
-        let emulators = try androidDevices(cancellation: cancellation).filter { $0.hasPrefix("emulator-") }
-        guard emulators.count == 1, let serial = emulators.first else { throw AutomationError.unsupportedAndroidDevice }
-        func command(_ args: [String]) throws -> String { try adb(["-s", serial] + args, cancellation: cancellation) }
-        let sdkText = try command(["shell", "getprop", "ro.build.version.sdk"])
-        let fingerprint = try command(["shell", "getprop", "ro.build.fingerprint"])
-        guard let sdk = Int(sdkText.trimmingCharacters(in: .whitespacesAndNewlines)), sdk < 34,
-              !fingerprint.localizedCaseInsensitiveContains("playstore") else {
-            throw AutomationError.unsupportedAndroidDevice
-        }
-        let hash = try androidCertificateHash(certificatePath: certificatePath, cancellation: cancellation)
-        _ = try command(["root"])
-        _ = try command(["wait-for-device"])
-        guard try command(["shell", "id", "-u"]).trimmingCharacters(in: .whitespacesAndNewlines) == "0" else {
-            throw AutomationError.unsupportedAndroidDevice
-        }
-        _ = try command(["remount"])
-        let destination = "/system/etc/security/cacerts/\(hash).0"
-        _ = try command(["push", certificatePath, destination])
-        _ = try command(["shell", "chmod", "644", destination])
-        return Strings.Errors.deviceAutomationInstalledTheSystemCaOnAndroidEmulatorApi(String(serial), Int(sdk))
-    }
+
 }

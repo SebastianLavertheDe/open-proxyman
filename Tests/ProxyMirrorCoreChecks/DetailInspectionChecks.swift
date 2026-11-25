@@ -3,6 +3,20 @@ import Foundation
 
 @MainActor
 func checkDetailInspection(_ test: CoreAssertions) {
+    let tarsWire = Data(base64Encoded: "H4sIAAAAAAAC/2NkOCHGb2horGdoYKFnaGSiZ2hhrszAwLiI18hNx4y9uDQ5ObW4GAAXJUxMJgAAAA==")!
+    if case .success(let decoded)? = ContentCoding.decodeIfCompressed(tarsWire,
+        encodings: ContentCoding.inspectionEncodings(tarsWire, declared: [])) {
+        let body = HTTPBodyInspection.inspect(decoded.0, contentType: "application/octet-stream", allowUnhintedTars: true)
+        test.equal(body.format, .tars, "Screenshot gzip/JCE response reaches the shared application-payload inspector")
+        test.expect(BodyContentView.isJSON(data: body.data, contentType: body.contentType)
+            && !BodyContentView.isBinary(data: body.data, contentType: body.contentType),
+            "Decoded JCE uses the actual text/JSON tree rendering decision instead of Hex")
+        let object = (try? JSONSerialization.jsonObject(with: body.data)) as? [String: Any]
+        test.equal((object?["0"] as? NSNumber)?.intValue, 200, "Screenshot JCE numeric field is preserved")
+        test.equal(object?["3"] as? String, "success", "Screenshot JCE string field is readable")
+    } else { test.expect(false, "Headerless screenshot gzip must decode in the detail path") }
+    test.expect(BodyContentView.isBinary(data: tarsWire, contentType: "application/octet-stream"),
+                "Raw captured gzip remains binary for the captured-bytes toggle")
     let captured = Data([0x81, 0xa1, 0x6b, 0x01])
     let inspected = MessagePackBody.inspect(captured, contentType: "application/msgpack")
     test.equal(inspected.data, Data("{\"k\":1}".utf8), "MessagePack inspection produces the decoded JSON bytes")

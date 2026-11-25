@@ -120,13 +120,13 @@ enum MCPProtocol {
 
     static var tools: [[String: Any]] {
         var exports = filters
-        exports["format"] = choices(["har", "json", "csv", "session"])
+        exports["format"] = choices(["har", "json", "csv", "session", "openapi", "postman"])
         return [
             tool("status", "Read proxy listener, recording and HTTP/2 status."),
             tool("proxy_address", "Get the local HTTP proxy address as JSON."),
             tool("query_flows", "Query captured flows in capture order; afterId supports incremental polling. limit defaults to 100.", filters),
             tool("get_flow", "Read full captured request/response, bodies (base64), timings, PID, rules, comments and protocol details.", ["id": text], required: ["id"]),
-            tool("export_flows", "Export matching flows as HAR, JSON records, CSV or native session. Captured data may contain secrets.", exports),
+            tool("export_flows", "Export matching flows as HAR, JSON records, CSV, native session, OpenAPI 3.0 or Postman v2.1. Captured data may contain secrets.", exports),
             tool("export_logs", "Export the complete retained traffic as native sessions, without flow pagination. scope=all returns one SessionFile; scope=domains returns a domain bundle of independently decodable SessionFiles. from/to filter request start times inclusively using ISO 8601 timestamps.",
                  ["scope": choices(["all", "domains"]), "domains": ["type": "array", "items": ["type": "string"], "maxItems": 256], "from": text, "to": text, "selected": boolean]),
             tool("copy_as_code", "Generate runnable request code. Use curl, httpie, python, javascript or one of the application's supported language targets.", ["id": text, "language": choices(RequestCode.Format.allCases.map(\.rawValue) + ["javascript", "node", "objc", "python-requests"])], required: ["id"]),
@@ -141,6 +141,12 @@ enum MCPProtocol {
             tool("launch", "Launch a terminal/browser/Electron application with local proxy configuration. Uses a dedicated browser profile. Requires a running listener.",
                  ["target": choices(["terminal", "iterm", "ghostty", "chrome", "firefox", "electron", "custom"]), "application": text], required: ["target"], readOnly: false),
             tool("script_help", "Read script entry points and an example. Review generated scripts before activation.")
+            ,tool("websocket_sessions", "List captured WebSocket sessions, including retained message counts.", ["limit": ["type": "integer", "minimum": 1, "maximum": 1000]])
+            ,tool("websocket_messages", "Read captured WebSocket frames as base64. afterId supports polling. Whole payloads exceeding the 1 MiB response budget are omitted explicitly.", ["id": text, "afterId": text, "direction": choices(["all", "send", "recv"]), "limit": ["type": "integer", "minimum": 1, "maximum": 200]], required: ["id"])
+            ,tool("compose", "Manage persisted HTTP request drafts (100 drafts / 4 MiB). create/update accept rawRequest. send uses the running local proxy and returns a jobId; poll result or cancel with id=jobId. Up to 20 jobs run concurrently; the last 100 jobs remain addressable. result includes a complete snapshot up to 1 MiB within an 8 MiB retained budget; resultState reports omitted/evicted snapshots. flowId is present only while get_flow can resolve it.", ["action": choices(["list", "create", "get", "update", "delete", "send", "result", "cancel"]), "id": text, "name": text, "rawRequest": text], required: ["action"], readOnly: false)
+            ,tool("certificate_status", "Read the last known root certificate trust state and request an asynchronous refresh.")
+            ,tool("setup_guide", "Get device/framework setup steps, proxy port, CA download URL and commands.", ["platform": text])
+            ,tool("search_docs", "Search the bundled ProxyMirror workbench documentation.", ["query": text], required: ["query"])
         ]
     }
 

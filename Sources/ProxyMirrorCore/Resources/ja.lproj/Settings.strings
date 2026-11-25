@@ -1,0 +1,13 @@
+/* Initial translation; missing entries use the English fallback. */
+"advanced" = "詳細";
+"appearance" = "外観";
+"application" = "アプリケーション";
+"application_language" = "アプリの言語";
+"font_size" = "フォントサイズ";
+"general" = "一般";
+"language" = "言語";
+"language_restart_notice" = "再起動後に反映されます。";
+"privacy" = "プライバシー";
+"system" = "システム";
+"tools" = "ツール";
+"word_wrap" = "折り返し";

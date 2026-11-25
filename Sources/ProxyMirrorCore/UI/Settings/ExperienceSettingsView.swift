@@ -23,6 +23,8 @@ struct ExperienceSettingsView: View {
                             VStack(alignment: .leading, spacing: 9) {
                                 PreferencesToggle(title: Strings.Settings.alternatingRowColors, keyPath: \.showAlternatingRows)
                                 PreferencesToggle(title: Strings.Settings.showResourceUsageInTheBottomToolbar, keyPath: \.showResourceUsage)
+                                PreferencesToggle(title: Strings.Settings.proxymanCompatibleShortcuts, keyPath: \.proxymanCompatibleShortcuts)
+                                PreferencesHelp(Strings.Settings.proxymanCompatibleShortcutsHelp)
                                 PreferencesHelp(Strings.Settings.includesMemoryUsageUploadAndDownloadSpeeds)
                             }
                         }

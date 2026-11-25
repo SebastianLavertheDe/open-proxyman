@@ -121,6 +121,9 @@ struct PreferencesGeneralView: View {
                                 Text(Strings.Settings.system).tag("system")
                                 Text(Strings.Settings.languageSimplifiedChineseAutonym).tag("zh-Hans")
                                 Text(Strings.Settings.languageEnglishAutonym).tag("en")
+                                Text(Strings.Common.languageSpanishPreview).tag("es-419")
+                                Text(Strings.Common.languageJapanesePreview).tag("ja")
+                                Text(Strings.Common.languagePortuguesePreview).tag("pt-BR")
                             }.labelsHidden().frame(width: 170)
                             Button { showingLanguageHelp.toggle() } label: {
                                 Image(systemName: "questionmark.circle.fill")

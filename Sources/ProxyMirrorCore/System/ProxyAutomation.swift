@@ -180,4 +180,25 @@ enum ProxyAutomation {
             }
         }
     }
+    /// Chromium only accepts proxy flags at process startup. Preserve the current profile when Chrome is closed.
+    static func launchChromeCurrentProfile(port: UInt16) async throws -> String {
+        guard port > 0 else { throw Failure(text: OperationIssue.proxyAutomationStartTheProxyListenerFirst) }
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty else {
+            throw Failure(Strings.Guides.setupCloseChromeFirst)
+        }
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else {
+            throw Failure(Strings.Guides.setupChromeMissing)
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-na", app.path, "--args", "--proxy-server=http://127.0.0.1:\(port)", "--proxy-bypass-list=<-loopback>"]
+        return try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { completed in
+                if completed.terminationStatus == 0 { continuation.resume(returning: Strings.Guides.setupBrowserStarted) }
+                else { continuation.resume(throwing: Failure(Strings.Guides.setupBrowserFailed)) }
+            }
+            do { try process.run() } catch { continuation.resume(throwing: error) }
+        }
+    }
+
 }

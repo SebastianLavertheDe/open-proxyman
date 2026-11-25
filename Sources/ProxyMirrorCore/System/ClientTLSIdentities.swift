@@ -72,6 +72,13 @@ final class ClientTLSIdentities: @unchecked Sendable {
         return entries.map(\.summary).sorted { $0.host < $1.host }
     }
 
+    /// Public certificate chain only; preview must never export the stored private key.
+    func certificateData(id: UUID) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.first(where: { $0.stored.id == id })?.stored.certificate
+    }
+
     func identity(for host: String) -> ClientTLSIdentity? {
         guard let host = ExternalProxyHost(host) else { return nil }
         lock.lock()

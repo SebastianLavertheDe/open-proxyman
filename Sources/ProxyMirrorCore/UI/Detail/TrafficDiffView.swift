@@ -7,6 +7,7 @@ struct TrafficDiffWorkspaceView: View {
     @ObservedObject var appState: AppState
     @State private var leftID: UUID?
     @State private var rightID: UUID?
+    @State private var poolSelection: UUID?
 
     private var pool: [Transaction] { appState.diffPool }
 
@@ -19,7 +20,7 @@ struct TrafficDiffWorkspaceView: View {
                     Button { addSelection() } label: { Image(systemName: "plus") }
                         .help(Strings.Detail.addRequestsSelectedInTheMainWindowToTheComparisonPool)
                 }.padding(.horizontal, 10)
-                List(pool) { transaction in
+                List(pool, selection: $poolSelection) { transaction in
                     VStack(alignment: .leading, spacing: 5) {
                         Text("#\(transaction.seq) \(transaction.method)").font(.caption).foregroundStyle(.secondary)
                         Text(transaction.fullURL).lineLimit(2).help(transaction.fullURL)
@@ -32,8 +33,12 @@ struct TrafficDiffWorkspaceView: View {
                                     .buttonStyle(.borderless).help(Strings.Detail.removeFromComparisonPool)
                             }
                         }
-                    }.padding(.vertical, 3)
+                    }.padding(.vertical, 3).tag(transaction.id)
                 }
+                HStack {
+                    Button(Strings.Detail.left) { leftID = poolSelection }.keyboardShortcut("[", modifiers: .command)
+                    Button(Strings.Detail.right) { rightID = poolSelection }.keyboardShortcut("]", modifiers: .command)
+                }.disabled(poolSelection == nil).padding(.horizontal, 10)
                 Button(Strings.Detail.clearComparisonPool) { appState.clearDiffPool() }.padding(.horizontal, 10)
             }.padding(.vertical, 10).frame(minWidth: 210, idealWidth: 250, maxWidth: 360)
             VStack(spacing: 0) {

@@ -180,6 +180,9 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         tx.responseVersion = "HTTP/2"
         tx.clientAddress = client?.ipAddress
         tx.peerPort = UInt16(client?.port ?? 0)
+        if let version = TLSConnectionMetadata.clientVersion(on: downstream) {
+            tx.connectionDetails = ProxyConnectionDetails(clientTLSVersion: version)
+        }
         tx.setClientApplication(clientApplication)
         transparentFlow?.mark(tx)
         tx.isTLSIntercepted = true
@@ -224,7 +227,14 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         if let rejection = plan.rejection {
             commitMetadata(tx) { $0.matchedByBlock = true }
             diagnosticHeaders.record(.block)
-            sendLocal(status: 403, type: "text/plain", data: Data(rejection.diagnostic.utf8))
+            if let status = plan.blockAction.statusCode {
+                sendLocal(status: status, type: "text/plain", data: Data(rejection.diagnostic.utf8))
+            } else {
+                markAborted(CapturedFailure(code: OperationIssue.networkRouteBlocked.code,
+                                           diagnostic: rejection.diagnostic))
+                publish(tx)
+                downstream.close(promise: nil)
+            }
             return
         }
         if let lookup = plan.prepareLocal(on: downstream.eventLoop) {
@@ -581,6 +591,7 @@ final class HTTP2ProxyStream: ChannelInboundHandler {
         downstream.getOption(HTTP2StreamChannelOptions.streamID).whenComplete { result in
             var details = exchange.connection
             details.downstreamStream = (try? result.get()).map { Int($0) }
+            details.clientTLSVersion = TLSConnectionMetadata.clientVersion(on: downstream)
             onMain {
                 tx.connectionDetails = details
                 tx.tConnected = max(exchange.connectedAt, tx.startedAt)

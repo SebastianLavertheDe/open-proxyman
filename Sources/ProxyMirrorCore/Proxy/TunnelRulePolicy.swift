@@ -8,6 +8,16 @@ extension RulesSnapshot {
         tunnelFailure(host: host, port: port, serverName: serverName)?.diagnostic
     }
 
+    func tunnelBlockAction(host: String, port: Int, serverName: String? = nil) -> RuleBlockAction? {
+        let urls = ([host] + (serverName.map { [$0] } ?? [])).flatMap { name -> [String] in
+            let authority = "https://" + URLParser.authority(host: name, port: port, scheme: "https")
+            return [authority, authority + "/"]
+        }
+        return blockList.first { rule in
+            urls.contains { firstEnabled([rule], url: $0) != nil }
+        }.map { $0.blockAction ?? .forbidden }
+    }
+
     func tunnelFailure(host: String, port: Int, serverName: String? = nil) -> CapturedFailure? {
         let urls = ([host] + (serverName.map { [$0] } ?? [])).flatMap { name -> [String] in
             let authority = "https://" + URLParser.authority(host: name, port: port, scheme: "https")

@@ -23,20 +23,37 @@ let bundle = Bundle.module
 let directories = try FileManager.default.contentsOfDirectory(atPath: bundle.resourceURL!.path)
 print("Processed localization directories: " + directories.filter { $0.hasSuffix(".lproj") }.sorted().joined(separator: ", "))
 check(AppLanguage.simplifiedChinese.rawValue == "zh-Hans", "Persisted language identifier remains canonical")
-check(LocalizationResources.hasLanguages(bundle), "Actual processed bundle contains both supported languages")
+check(LocalizationResources.hasLanguages(bundle), "Actual processed bundle contains all supported languages")
 for language in AppLanguage.allCases {
     check(LocalizationResources.languageBundle(language, in: bundle) != nil, "Processed language bundle resolves")
     let context = LocalizationContext(language: language, resources: bundle, reportMissing: { _, _ in
         preconditionFailure("Processed lookup must not fall back")
     })
-    let expected = language == .english ? "Subject: user.example" : "主题：user.example"
+    let expected: String
+    switch language {
+    case .english: expected = "Subject: user.example"
+    case .simplifiedChinese: expected = "主题：user.example"
+    case .spanish: expected = "Asunto: user.example"
+    case .japanese: expected = "サブジェクト：user.example"
+    case .portuguese: expected = "Titular: user.example"
+    }
     check(context.render(table: "Tools", key: "certificate_subject", arguments: ["user.example"], englishFallback: "Wrong") == expected,
           "Real processed strings render with their native language")
+}
+for language in [AppLanguage.spanish, .japanese, .portuguese] {
+    var missing: [String] = []
+    let context = LocalizationContext(language: language, resources: bundle, reportMissing: { table, key in missing.append(table + "." + key) })
+    let result = context.lookup(table: "Detail", key: "status", englishFallback: "Wrong")
+    check(result.value == "Status" && result.language == .english && result.usedFallback,
+          "Untranslated tables deliberately use the packaged English fallback")
+    check(missing.isEmpty, "Expected fallback in staged translations does not flood diagnostic logs")
 }
 check(L10n.startupIssue == nil, "Raw SwiftPM launch locates its real resources")
 let selected = ProcessInfo.processInfo.environment["PM_SETTINGS_LANGUAGE"]!
 check(L10n.effectiveLanguage == selected, "Runtime language uses the canonical requested identifier")
-check(Strings.Tools.certificateSubject("user.example") == (selected == "en" ? "Subject: user.example" : "主题：user.example"),
+let selectedSubject = ["en": "Subject: user.example", "zh-Hans": "主题：user.example", "es-419": "Asunto: user.example",
+                       "ja": "サブジェクト：user.example", "pt-BR": "Titular: user.example"][selected]!
+check(Strings.Tools.certificateSubject("user.example") == selectedSubject,
       "Production generated interface renders processed resources")
 
 let manager = FileManager.default
@@ -103,7 +120,7 @@ let package = Package(name: "ProcessedLocalizationChecks", defaultLocalization: 
         command = [args.swift, "build", "--package-path", str(package), "-j", "2"]
         subprocess.run(command, cwd=package, check=True, timeout=180)
         binaries = subprocess.check_output([*command, "--show-bin-path"], cwd=package, text=True, timeout=30).strip()
-        for language in ("en", "zh-Hans"):
+        for language in ("en", "zh-Hans", "es-419", "ja", "pt-BR"):
             environment = dict(os.environ, PM_SETTINGS_LANGUAGE=language)
             environment.pop("PM_LOCALIZATION_RESOURCE_DIR", None)
             subprocess.run([str(Path(binaries) / "ProcessedLocalizationChecks")], cwd=package,

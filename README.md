@@ -11,7 +11,7 @@
 - Map Local、Map Remote、Block/Allow、No Caching、断点、脚本、DNS 映射和按主机模拟延迟、限速、抖动、断连和正文分块暂停。
 - 反向代理、HTTP CONNECT、HTTPS CONNECT、SOCKS5 和 PAC 路由、上游 CA、mTLS 客户端身份与 TLS 密钥日志。
 - 流量表格、自定义列、组合筛选、标签和分屏。详情提供 Query、Cookie、原文、耗时、JSONPath、jq 和二进制查看。
-- Compose 支持 JSON、Form、Multipart、QUERY、WebSocket、超时和重定向；21 种 Copy as Code，常规重发经过本机代理。
+- Compose 支持 JSON、Form、Multipart、QUERY、WebSocket、超时和重定向；23 种 Copy as Code，常规重发经过本机代理。
 - 独立 Diff 对比池、请求/响应/头/正文比较、JSON 排序、外部 Diff；19 字段高级过滤、嵌套 AND/OR、着色预设及详情历史导航。
 - 保存流量、版本化会话、HAR / CSV、Gist 脱敏发布、Charles 会话及规则导入、含 Protobuf 描述符的规则与设置备份。
 - 内置 HTTP / stdio MCP、完整 CLI、嵌套规则文件夹和工具总开关；Automation Dashboard 可启动带代理的终端、浏览器与 Electron。
@@ -22,10 +22,14 @@
 - Saved 请求支持嵌套文件夹、移动和复制，旧 Saved 托盘自动迁移；流量汇总提供状态分桶、耗时直方图与 P50 / P95 / P99。
 - 偏好设置采用分类侧栏，支持搜索及前进后退；请求/响应可上下或左右排列。字号、等宽字体、Tab、字符 Minimap、末行外滚动、含时区的日期和主题均可设置。应用统一使用原有蓝底宇航员图标。
 - MCP 可运行中启停，提供 Claude Code / Codex / Manual 的 HTTP 与 stdio 配置；默认脱敏 AI 返回数据。复制可保留原始内容头，规则处理消息可附带诊断头。
-- 支持独立启动录制、退出确认、中英界面、更新通知，以及按内存阈值和间隔清理较早已完成请求；帮助菜单保留故障排查和模拟内存警告。
+- 支持独立启动录制、退出确认、中英界面及日/西/葡三语言初版翻译、更新通知，以及按内存阈值和间隔清理较早已完成请求；帮助菜单保留故障排查和模拟内存警告。
 - 脚本支持 `fetch`、`@proxymirror/http` 及 Axios 的 HTTP 子集，可等待 HTTP(S)、取消请求并设置超时；脚本窗口可复制 MCP 生成脚本任务。
 
 常用快捷键为 ⌘F 过滤当前流量、⇧⌘F 查找来源、⌥⌘N 构建请求、⌘K 编辑请求、⇧⌘R 编辑并重发，以及 ⇧⌘C 复制 cURL。
+
+开启「设置 → 工具 → Proxyman 兼容快捷键」后，当前视图过滤改为 ⇧⌘F、来源过滤改为 ⌥⌘F、正文查找为 ⌘F、Compose 为 ⌥⌘C、No Caching 为 ⌥⌘N、SSL 列表为 ⌥⌘P、编辑并重发为 ⌥⌘↩。正文获得焦点时 ⌘+ / ⌘− / ⌘0 缩放或重置字号；清除高亮为 ⇧⌘0。
+
+规则窗口支持 ⌘N 新建、⌘↩ 编辑、⌘⌫ 删除、⌘D 复制、空格启停、⌘F 搜索。规则列表修改立即生效，单条编辑仍可取消。流量表支持原生表头排序、调宽和拖拽换序。
 
 高级过滤面板内，⌘N 新增条件，⇧⌘N 新增子组，⌘↑ / ⌘↓ 导航，⌘B 切换预设着色；列表 ⌘C 使用所选默认复制格式。
 
@@ -213,6 +217,10 @@ Scripts/                  # 测试夹具、打包与构建
 
 Automation、Repeat、Compose 及代码导出通过运行时 context 使用所选引擎、CA 与配置。JSON/GraphQL 列和过滤采用不可变快照、后台派生缓存和待完成状态；实时捕获时保留已完成的排序批次。Diff 文档和 JSON 高亮在生成阶段限制输出与着色范围，并响应取消。Saved 写入失败保留待存快照，退出会重试，仍失败则提示并取消退出。
 
+正文检查可根据 gzip 特征识别没有声明 `Content-Encoding` 的压缩载荷。Tars/JCE 正文按字段标签编号转换为 JSON，供正文、预览、树和查询共用；没有协议定义时不猜测业务字段名。自动识别未标注的 Tars/JCE 仅用于解压后的通用二进制内容，并要求完整解析多个有序字段。捕获字节、头部和重放内容保持原样；不支持的二进制仍显示 Hex。
+
+截图样本、识别边界及回归入口见 [gzip 与 Tars/JCE 正文显示修复](Docs/body-inspection-gzip-tars-2026-11-24.md)。
+
 ## 本机构建注意事项
 
 可使用提供 Swift 5.10 或更新版本的 macOS Command Line Tools，项目通过 SelfTest 可执行文件运行回归。如果本机环境终止并行编译，可改用 `swift build -j 1`。首次拉取依赖后遇到明确的 UTF-8 解码错误时，可检查依赖 checkout 的文件内容。
@@ -232,7 +240,7 @@ tar --exclude=Package.resolved -cf - Package.swift Sources Tests | tar -xf - -C 
 )
 ```
 
-[持续集成配置](.github/workflows/validation.yml) 包含 Linux Foundation 和三条独立 macOS 验证：debug 的真实模块与代理回归、双语设置窗口及打包检查；不带测试可见性开关的 release 打包；Thread Sanitizer 下的原生核心、并发和 HTTP/1、HTTP/2 回归。新增配置需要在远端实际运行后才能证明这些原生检查通过。
+[持续集成配置](.github/workflows/validation.yml) 包含 Linux Foundation 和三条独立 macOS 验证：debug 的真实模块与代理回归、五语言设置窗口及打包检查；不带测试可见性开关的 release 打包；Thread Sanitizer 下的原生核心、并发和 HTTP/1、HTTP/2 回归。新增配置需要在远端实际运行后才能证明这些原生检查通过。
 
 ### 偏好设置界面验收
 
@@ -286,6 +294,7 @@ python3 Scripts/test_saved_models.py
 python3 Scripts/test_processed_localization.py
 python3 Scripts/test_process_support.py
 python3 Scripts/test_sse_issues.py
+python3 Scripts/test_body_inspection.py
 python3 Scripts/test_core_check_runner.py
 ```
 
@@ -325,14 +334,13 @@ mkdir -p .build/performance
 python3 Scripts/bench_proxy.py --output .build/performance/small-requests.json
 ```
 
-UI 和 macOS 系统验收环境见 [测试实施方案](./outputs/ProxyMirror%20测试实施方案.md)。
+UI 和 macOS 系统验收步骤见 [交付与验收记录](./Docs/proxyman-alignment-2026-11-25.md)。
 
 ## 对齐范围
 
-对比基准见 [实施清单](./outputs/ProxyMirror%20对齐%20Proxyman%20实施清单.md)，当前实现、验证结果及未完成项见 [开发交付与验收](./outputs/ProxyMirror%20对齐开发交付与验收.md)。
+本次实现、验证结果及外部依赖见 [Proxyman 对齐记录](./Docs/proxyman-alignment-2026-11-25.md)，前一轮能力范围见 [功能实现记录](./Docs/gap-implementation.md)。
 
 ## 调试技巧
 
-- `PM_SNAPSHOT=/tmp/x.pdf PM_SNAPSHOT_DELAY=15 PM_SNAPSHOT_SELECT=1` 环境变量可让 App
-  延时离屏渲染主窗口（无需屏幕录制权限），用于无头 UI 验证。
+- 偏好窗口可用 `python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --appearance both` 离屏验收，内部使用 `PM_SETTINGS_SNAPSHOT`。主窗口目前没有 `PM_SNAPSHOT` 接口。
 - 引擎日志（代理启停/上游拨号/根证书数量）输出到 stdout。

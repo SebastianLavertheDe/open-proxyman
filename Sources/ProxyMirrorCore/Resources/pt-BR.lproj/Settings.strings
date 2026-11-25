@@ -1,0 +1,13 @@
+/* Initial translation; missing entries use the English fallback. */
+"advanced" = "Avançado";
+"appearance" = "Aparência";
+"application" = "Aplicativo";
+"application_language" = "Idioma do aplicativo";
+"font_size" = "Tamanho da fonte";
+"general" = "Geral";
+"language" = "Idioma";
+"language_restart_notice" = "Aplicado após reiniciar.";
+"privacy" = "Privacidade";
+"system" = "Sistema";
+"tools" = "Ferramentas";
+"word_wrap" = "Quebra de linha";

@@ -15,12 +15,13 @@ struct ProxyRule: Codable, Identifiable, Equatable, Sendable {
     var responseStatus: Int?
     var responseHeaders: HTTPHeaders?
     var urlRegex: String?
+    var blockAction: RuleBlockAction?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.enabled == rhs.enabled && lhs.pattern == rhs.pattern
             && lhs.target == rhs.target && lhs.comment == rhs.comment
             && lhs.responseStatus == rhs.responseStatus && lhs.responseHeaders?.rawBytes == rhs.responseHeaders?.rawBytes
-            && lhs.urlRegex == rhs.urlRegex
+            && lhs.urlRegex == rhs.urlRegex && lhs.blockAction == rhs.blockAction
     }
 }
 
@@ -273,9 +274,11 @@ struct RulesSnapshot {
                                pathPrefix: u.percentEncodedPath, query: u.percentEncodedQuery)
     }
 
-    func isBlocked(url: String) -> Bool {
-        firstEnabled(blockList, url: url) != nil
+    func blockAction(for url: String) -> RuleBlockAction? {
+        firstEnabled(blockList, url: url).map { $0.blockAction ?? .forbidden }
     }
+
+    func isBlocked(url: String) -> Bool { blockAction(for: url) != nil }
 
     func isAllowed(url: String) -> Bool {
         if !allowList.contains(where: \.enabled) { return true }

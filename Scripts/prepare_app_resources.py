@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LANGUAGES = ("en", "zh-Hans")
+LANGUAGES = ("en", "zh-Hans", "es-419", "ja", "pt-BR")
 
 
 def normalize_localizations(bundle):

@@ -317,3 +317,6 @@
 "workspace_backup" = "Workspace & Backup";
 "workspaces_and_sessions_stay_on_this_mac_export" = "Workspaces and sessions stay on this Mac. Export rules and settings to import them on another Mac.";
 "your_http_https_proxies_are_currently_managed_by" = "Your HTTP/HTTPS proxies are currently managed by ProxyMirror.";
+
+"proxyman_compatible_shortcuts" = "Proxyman compatible shortcuts";
+"proxyman_compatible_shortcuts_help" = "Use Proxyman shortcuts for filtering, Compose, SSL Proxying, No Caching, Edit & Repeat, and Clear Session.";

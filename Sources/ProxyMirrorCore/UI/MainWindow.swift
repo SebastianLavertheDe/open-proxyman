@@ -1,14 +1,20 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MainWindow: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.self) private var environment
     private var store: TrafficStore { appState.activeStore }
     @FocusState private var trafficFilterFocused: Bool
     @State private var message: String?
     @State private var showFilterEditor = false
     @State private var showTrafficSearch = false
     @State private var showListenDetails = false
+    @State private var organization = RuleOrganizationStore.shared.snapshot()
+    @ObservedObject private var rules = RulesStore.shared
+    private let configuration = InterceptionConfig.shared
+    @ObservedObject private var breakpoints = BreakpointManager.shared
     @AppStorage("ui.showResourceUsage") private var showResourceUsage = true
 
     var body: some View {
@@ -20,6 +26,11 @@ struct MainWindow: View {
         } detail: {
             VStack(spacing: 0) {
                 if appState.tabs.count > 1 || appState.activeTab.archiveName != nil { workspaceTabs }
+                if showFilterEditor {
+                    TrafficFilterEditor(store: store, embedded: true, onClose: { showFilterEditor = false })
+                        .id(store.id)
+                    Divider()
+                }
                 if let split = appState.splitStore {
                     HSplitView {
                         splitPane(appState.activeTab, right: false)
@@ -33,11 +44,29 @@ struct MainWindow: View {
         }
         .navigationSplitViewStyle(.balanced)
         .navigationTitle("ProxyMirror")
+        .focusedSceneValue(\.trafficCommandsActive, true)
         .toolbar(id: "proxymirror.capture-toolbar") { mainToolbar }
         .frame(minWidth: 980, minHeight: 560)
         .onReceive(NotificationCenter.default.publisher(for: .focusTrafficFilter)) { _ in
             showTrafficSearch = true
             DispatchQueue.main.async { trafficFilterFocused = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ruleOrganizationChanged)) { _ in
+            organization = RuleOrganizationStore.shared.snapshot()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleAdvancedTrafficFilter)) { _ in showFilterEditor.toggle() }
+        .onReceive(NotificationCenter.default.publisher(for: .pmNewSourceFolder)) { _ in appState.showSidebar = true }
+        .onChange(of: appState.requestedRuleWindow) { _ in openRequestedToolWindow() }
+        .onChange(of: appState.requestedAuxiliaryWindow) { _ in openRequestedToolWindow() }
+        .onChange(of: appState.showLatencyEditor) { showing in
+            if showing { openWindow(id: "network-conditions"); appState.showLatencyEditor = false }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url { DispatchQueue.main.async { appState.openSession(url) } }
+            }
+            return true
         }
         .onReceive(NotificationCenter.default.publisher(for: .pmOpenProtobuf)) { _ in openWindow(id: "protobuf") }
         .onChange(of: appState.proxyStartError) { if let text = $0 { message = text } }
@@ -45,7 +74,7 @@ struct MainWindow: View {
         .onChange(of: appState.showDiff) { showing in
             if showing { openWindow(id: "traffic-diff"); appState.showDiff = false }
         }
-        .onAppear { if appState.shouldPresentSavedError(store.savedError) { message = store.savedError } }
+        .onAppear { openRequestedToolWindow(); if appState.shouldPresentSavedError(store.savedError) { message = store.savedError } }
         .onChange(of: store.savedError) { if appState.shouldPresentSavedError($0) { message = $0 } }
         .alert("ProxyMirror", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button(Strings.Traffic.ok) { message = nil }
@@ -61,12 +90,8 @@ struct MainWindow: View {
                 ReverseProxyEditor()
             } else if tool == .sslApplications {
                 SSLApplicationRulesView(transaction: appState.toolTransaction)
-            } else if tool == .customCertificates {
-                CustomCertificateView()
             } else {
-                RulesEditorView(kind: tool, initialPattern: appState.toolTransaction.map {
-                    tool == .sslProxyingList ? $0.host : $0.originalURL ?? $0.fullURL
-                } ?? "")
+                EmptyView()
             }
         }
         .sheet(isPresented: $appState.showCommentSheet, onDismiss: appState.dismissComments) {
@@ -74,9 +99,6 @@ struct MainWindow: View {
         }
         .sheet(isPresented: $appState.showCommandPalette) {
             CommandPalette()
-        }
-        .sheet(isPresented: $showFilterEditor) {
-            TrafficFilterEditor(store: store)
         }
         .sheet(isPresented: $appState.showBridgePairing) {
             BridgePairingView()
@@ -90,9 +112,6 @@ struct MainWindow: View {
         .sheet(isPresented: $appState.showColumnEditor) {
             CustomizeTrafficColumnsView()
         }
-        .sheet(isPresented: $appState.showLatencyEditor) {
-            LatencyConditionsView()
-        }
         .sheet(isPresented: $appState.showFactoryReset) { FactoryResetView() }
         .sheet(isPresented: $appState.showGistPublish) { GistPublishView(transactions: store.selectedTransactions) }
         .sheet(item: Binding(get: { appState.certificateGuide.map(GuidePlatformBox.init(value:)) },
@@ -101,6 +120,17 @@ struct MainWindow: View {
         }
         .sheet(isPresented: $appState.showResetCA) {
             ResetCAConfirmView { appState.showResetCA = false }
+        }
+    }
+
+    private func openRequestedToolWindow() {
+        if let route = appState.requestedRuleWindow {
+            openWindow(id: "rule-window", value: route)
+            appState.requestedRuleWindow = nil
+        }
+        if let id = appState.requestedAuxiliaryWindow {
+            openWindow(id: id)
+            appState.requestedAuxiliaryWindow = nil
         }
     }
 
@@ -201,7 +231,7 @@ struct MainWindow: View {
             Button { appState.openTool(.compose) } label: {
                 Image(systemName: "square.and.pencil").frame(width: 30)
             }
-            .help(Strings.Traffic.composeRequestN)
+            .help(appState.settings.proxymanCompatibleShortcuts ? Strings.Traffic.composeOptionCommandC : Strings.Traffic.composeRequestN)
             .accessibilityLabel(Strings.Traffic.composeRequest)
         }
         ToolbarItem(id: "clear", placement: .navigation) {
@@ -238,6 +268,27 @@ struct MainWindow: View {
             }
         }
 
+        ToolbarItem(id: "new-session", placement: .secondaryAction) {
+            Button { appState.addWorkspace() } label: { Label(Strings.Menus.newView, systemImage: "plus.rectangle") }
+        }
+        ToolbarItem(id: "new-folder", placement: .secondaryAction) {
+            Button { NotificationCenter.default.post(name: .pmNewSourceFolder, object: nil) } label: {
+                Label(Strings.Traffic.newFolder, systemImage: "folder.badge.plus")
+            }
+        }
+        ToolbarItem(id: "source-filter", placement: .secondaryAction) {
+            Button { appState.showSidebar = true; NotificationCenter.default.post(name: .focusSourceFilter, object: nil) } label: {
+                Label(Strings.Menus.filterDomainOrApp, systemImage: "line.3.horizontal.decrease.circle")
+            }
+        }
+        ToolbarItem(id: "flow-summary", placement: .secondaryAction) {
+            Button { openWindow(id: "flow-summary") } label: { Label(Strings.Menus.trafficSummary, systemImage: "chart.bar") }
+        }
+        ToolbarItem(id: "pin-window", placement: .secondaryAction) {
+            Button { if let window = NSApp.keyWindow { window.level = window.level == .floating ? .normal : .floating } } label: {
+                Label(Strings.Menus.keepWindowOnTop, systemImage: "pin")
+            }
+        }
         ToolbarItem(id: "right-space", placement: .primaryAction) {
             Spacer()
         }
@@ -301,7 +352,7 @@ struct MainWindow: View {
         HStack(spacing: 7) {
             Button(action: appState.clearTraffic) { Label(Strings.Traffic.clear, systemImage: "trash") }
                 .buttonStyle(FooterButtonStyle())
-            Button { showFilterEditor = true } label: {
+            Button { showFilterEditor.toggle() } label: {
                 let count = store.filter.conditions.conditionCount
                 Label(count == 0 ? Strings.Traffic.filters2 : Strings.Traffic.filters(count), systemImage: "line.3.horizontal.decrease")
             }
@@ -315,7 +366,7 @@ struct MainWindow: View {
             .accessibilityAddTraits(store.followLatest ? .isSelected : [])
 
             if showTrafficSearch || !store.filter.searchText.isEmpty {
-                TextField(Strings.Traffic.filterF, text: Binding(
+                TextField(appState.settings.proxymanCompatibleShortcuts ? Strings.Traffic.filterShiftCommandF : Strings.Traffic.filterF, text: Binding(
                     get: { store.filter.searchText },
                     set: { store.filter.searchText = $0 }))
                     .textFieldStyle(.roundedBorder)
@@ -327,11 +378,13 @@ struct MainWindow: View {
                         showTrafficSearch = false
                     }
             }
-            Spacer(minLength: 6)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) { toolStatusCapsules }
+            }.frame(maxWidth: .infinity)
             Text("\(store.selectedIDs.count)/\(store.visible.count)")
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).help(Strings.Traffic.selectedCurrentlyFilteredRequests)
             if showResourceUsage {
-                ResourceUsageView(store: appState.store).lineLimit(1).minimumScaleFactor(0.85)
+                ResourceUsageView(store: appState.store).lineLimit(1).minimumScaleFactor(0.85).frame(width: 155)
             } else {
                 let counts = transferred()
                 Text("↑ \(counts.request) ↓ \(counts.response)")
@@ -348,6 +401,46 @@ struct MainWindow: View {
         .frame(height: ProxymanTheme.bottomBarHeight)
         .background(ProxymanTheme.inspectorChrome)
         .overlay(alignment: .top) { Rectangle().fill(ProxymanTheme.paneDivider).frame(height: 1) }
+    }
+
+    @ViewBuilder
+    private var toolStatusCapsules: some View {
+        toolCapsule(Strings.Menus.blockList, enabled: activeTool("blockList", configured: rules.blockList.contains(where: \.enabled))) { appState.openTool(.blockList) }
+        toolCapsule(Strings.Menus.allowList, enabled: activeTool("allowList", configured: rules.allowList.contains(where: \.enabled))) { appState.openTool(.allowList) }
+        toolCapsule(Strings.Menus.mapLocal, enabled: activeTool("mapLocal", configured: rules.mapLocal.contains(where: \.enabled))) { appState.openTool(.mapLocal) }
+        toolCapsule(Strings.Menus.scripting, enabled: activeTool("rewrite", configured: configuration.rewrite.value.contains(where: \.enabled))) { openWindow(id: "scripting") }
+        toolCapsule(Strings.Menus.mapRemote, enabled: activeTool("mapRemote", configured: rules.mapRemote.contains(where: \.enabled))) { appState.openTool(.mapRemote) }
+        toolCapsule(Strings.Menus.breakpoints, enabled: breakpoints.enabled && !organization.disabledTools.contains("breakpoints")) { openWindow(id: "breakpoints") }
+        toolCapsule(Strings.Menus.noCaching, enabled: activeTool("noCaching", configured: rules.noCaching)) { rules.noCaching.toggle() }
+        toolCapsule(Strings.Menus.customCertificates, enabled: activeTool("customCertificates", configured: rules.customCertificates.contains(where: \.enabled))) { openWindow(id: "certificate-manager") }
+        toolCapsule(Strings.Menus.networkConditions, enabled: activeTool("latency", configured: LatencyConditions.snapshot().enabled)) { openWindow(id: "network-conditions") }
+        toolCapsule(Strings.Menus.reverseProxy, enabled: activeTool("reverse", configured: configuration.reverse.value.contains(where: \.enabled))) { appState.openTool(.reverseProxy) }
+        toolCapsule(Strings.Menus.dnsMapping, enabled: activeTool("dns", configured: configuration.dnsSpoof.value.contains(where: \.enabled))) { appState.openTool(.dnsMapping) }
+        toolCapsule(Strings.Menus.tlsKeyLogging, enabled: appState.tlsKeyLogURL != nil) { appState.toggleTLSKeyLogging() }
+        toolCapsule(Strings.Menus.externalProxy, enabled: activeTool("external", configured: configuration.externalProxy.value.enabled)) { revealSettings(.upstreamProxy) }
+        toolCapsule("SOCKS", enabled: appState.proxyRunning) { revealSettings(.listenPort) }
+        toolCapsule(Strings.Menus.proxyOverridden, enabled: appState.systemProxyActive) { toggleSystemProxy() }
+        toolCapsule(Strings.Menus.networkExtension, enabled: appState.transparentProxyState == .running) { revealSettings(.networkExtension) }
+    }
+
+    private func activeTool(_ name: String, configured: Bool) -> Bool {
+        configured && !organization.disabledTools.contains(name)
+    }
+
+    private func toolCapsule(_ title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(enabled ? Color.accentColor : Color.secondary)
+                .padding(.horizontal, 6).frame(height: 18)
+                .background(enabled ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08), in: Capsule())
+        }.buttonStyle(.plain).help(title).accessibilityValue(enabled ? Strings.Traffic.enabled : Strings.Traffic.disabled)
+    }
+
+    private func revealSettings(_ target: SettingsSearchTarget) {
+        appState.settingsTarget = target
+        if #available(macOS 14, *) { environment.openSettings() }
+        else { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private var listenFooter: String {

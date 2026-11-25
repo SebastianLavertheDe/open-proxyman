@@ -298,7 +298,7 @@ struct SessionFile: Codable, Sendable {
     }
 
     @MainActor
-    static func selectFile(extensions: [String] = [fileExtension, "har", "xml", "chlsx", "chlsj", "chls", "chlz"]) -> URL? {
+    static func selectFile(extensions: [String] = [fileExtension, "har", "xml", "chlsx", "chlsj", "chls", "chlz"] + SessionImportCompatibility.proxymanExtensions) -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
         guard panel.runModal() == .OK else { return nil }

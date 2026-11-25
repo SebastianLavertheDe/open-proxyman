@@ -8,6 +8,12 @@ func checkLocalization(_ test: CoreAssertions) throws {
     let cases: [(String, [String], AppLanguage)] = [
         ("en", ["zh-Hans"], .english),
         ("zh-Hans", ["en"], .simplifiedChinese),
+        ("es-419", ["en"], .spanish),
+        ("ja", ["en"], .japanese),
+        ("pt-BR", ["en"], .portuguese),
+        ("system", ["es-ES"], .spanish),
+        ("system", ["ja-JP"], .japanese),
+        ("system", ["pt-PT"], .portuguese),
         ("system", ["fr-FR", "en-GB", "zh-Hans"], .english),
         ("system", ["fr-FR", "zh-Hans"], .simplifiedChinese),
         ("system", ["zh-CN"], .simplifiedChinese),
@@ -41,9 +47,12 @@ func checkLocalization(_ test: CoreAssertions) throws {
     let resourceDirectory = resourceRoot
     let infoURL = resourceRoot.appendingPathComponent("Info.plist")
     #endif
-    for language in ["en", "zh-Hans"] {
+    for language in AppLanguage.allCases.map(\.rawValue) {
         try fileManager.createDirectory(at: resourceDirectory.appendingPathComponent(language + ".lproj"),
                                         withIntermediateDirectories: true)
+        if !["en", "zh-Hans"].contains(language) {
+            try "\"hello\" = \"Preview\";".write(to: resourceDirectory.appendingPathComponent(language + ".lproj/Fixture.strings"), atomically: true, encoding: .utf8)
+        }
     }
     let info = ["CFBundleIdentifier": "com.proxymirror.localization-fixture.\(UUID().uuidString)", "CFBundleDevelopmentRegion": "en"]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: infoURL)

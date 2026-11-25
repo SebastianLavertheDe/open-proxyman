@@ -14,7 +14,12 @@ struct BreakpointMenu: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button(Strings.Tools.breakpointQueueRules) { openWindow(id: "breakpoints") }
+        Menu(Strings.Tools.breakpoints) {
+            Button(Strings.Tools.breakpointQueueRules) { openWindow(id: "breakpoints") }
+                .keyboardShortcut("b", modifiers: [.option, .command])
+            Toggle(Strings.Tools.enableThisTool, isOn: Binding(get: { BreakpointManager.shared.enabled }, set: { BreakpointManager.shared.enabled = $0 }))
+                .keyboardShortcut("b", modifiers: [.option, .shift, .command])
+        }
     }
 }
 

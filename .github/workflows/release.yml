@@ -1,0 +1,122 @@
+name: Signed release
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signed-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    environment: release
+    env:
+      PM_ENABLE_SPARKLE: '1'
+      PM_DEVELOPER_ID: ${{ secrets.PM_DEVELOPER_ID }}
+      PM_APPCAST_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+      PM_UPDATE_PUBLIC_KEY: ${{ vars.PM_UPDATE_PUBLIC_KEY }}
+      PM_NOTARY_APPLE_ID: ${{ secrets.PM_NOTARY_APPLE_ID }}
+      PM_NOTARY_PASSWORD: ${{ secrets.PM_NOTARY_PASSWORD }}
+      PM_NOTARY_TEAM_ID: ${{ secrets.PM_NOTARY_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate release configuration
+        env:
+          PM_CERTIFICATE_P12: ${{ secrets.PM_CERTIFICATE_P12 }}
+          PM_CERTIFICATE_PASSWORD: ${{ secrets.PM_CERTIFICATE_PASSWORD }}
+          PM_UPDATE_PRIVATE_KEY: ${{ secrets.PM_UPDATE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          for required in PM_DEVELOPER_ID PM_UPDATE_PUBLIC_KEY PM_NOTARY_APPLE_ID PM_NOTARY_PASSWORD PM_NOTARY_TEAM_ID PM_CERTIFICATE_P12 PM_CERTIFICATE_PASSWORD PM_UPDATE_PRIVATE_KEY; do
+            [[ -n "${!required}" ]] || { echo "Missing release configuration: $required" >&2; exit 1; }
+          done
+          printf 'PM_RELEASE_VERSION=%s\n' "${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          # One globally serialized workflow; retries keep the same bundle version.
+          printf 'PM_BUILD_NUMBER=%s\n' "$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
+      - name: Prepare pinned SwiftGen
+        run: bash Scripts/ci_install_swiftgen.sh
+      - name: Import Developer ID into an isolated keychain
+        env:
+          PM_CERTIFICATE_P12: ${{ secrets.PM_CERTIFICATE_P12 }}
+          PM_CERTIFICATE_PASSWORD: ${{ secrets.PM_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          release_keychain="$RUNNER_TEMP/proxymirror-release.keychain-db"
+          release_password="$(openssl rand -base64 32)"
+          echo "::add-mask::$release_password"
+          python3 -c 'import base64,os,pathlib; pathlib.Path(os.environ["RUNNER_TEMP"],"developer-id.p12").write_bytes(base64.b64decode(os.environ["PM_CERTIFICATE_P12"],validate=True))'
+          security create-keychain -p "$release_password" "$release_keychain"
+          security set-keychain-settings -lut 21600 "$release_keychain"
+          security unlock-keychain -p "$release_password" "$release_keychain"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$release_keychain" -P "$PM_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$release_password" "$release_keychain"
+          security list-keychains -d user -s "$release_keychain" "$HOME/Library/Keychains/login.keychain-db"
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          # Select one exact imported Developer ID identity and its notary team.
+          # Later signing operations receive the SHA-1 identity, never a substring.
+          python3 - <<'PY'
+          import os, pathlib, sys
+          sys.path.insert(0, "Scripts")
+          from configure_release import signing_identity
+          identity = signing_identity(os.environ, pathlib.Path(os.environ["RUNNER_TEMP"], "proxymirror-release.keychain-db"))
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write("PM_DEVELOPER_ID=" + identity + "\n")
+          PY
+      - name: Build and verify
+        run: |
+          set -euo pipefail
+          bash Scripts/generate_localization.sh --check
+          swift test -j 2 --filter ProxyMirrorFoundationTests
+          Scripts/make_app.sh release
+          swift build -c release -j 2 --product ProxyMirrorSelfTest
+          .build/release/ProxyMirrorSelfTest --core-unit
+          codesign --verify --deep --strict build_app/ProxyMirror.app
+      - name: Notarize the application and disk image
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          ditto -c -k --keepParent build_app/ProxyMirror.app "$RUNNER_TEMP/ProxyMirror-notary.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/ProxyMirror-notary.zip" --apple-id "$PM_NOTARY_APPLE_ID" --password "$PM_NOTARY_PASSWORD" --team-id "$PM_NOTARY_TEAM_ID" --wait
+          xcrun stapler staple build_app/ProxyMirror.app
+          xcrun stapler validate build_app/ProxyMirror.app
+          spctl --assess --type execute --verbose build_app/ProxyMirror.app
+          hdiutil create -volname ProxyMirror -srcfolder build_app/ProxyMirror.app -ov -format UDZO "release-artifacts/ProxyMirror-$PM_RELEASE_VERSION.dmg"
+          codesign --sign "$PM_DEVELOPER_ID" --timestamp "release-artifacts/ProxyMirror-$PM_RELEASE_VERSION.dmg"
+          xcrun notarytool submit "release-artifacts/ProxyMirror-$PM_RELEASE_VERSION.dmg" --apple-id "$PM_NOTARY_APPLE_ID" --password "$PM_NOTARY_PASSWORD" --team-id "$PM_NOTARY_TEAM_ID" --wait
+          xcrun stapler staple "release-artifacts/ProxyMirror-$PM_RELEASE_VERSION.dmg"
+          xcrun stapler validate "release-artifacts/ProxyMirror-$PM_RELEASE_VERSION.dmg"
+      - name: Generate signed Sparkle feed
+        env:
+          PM_UPDATE_PRIVATE_KEY: ${{ secrets.PM_UPDATE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz -o "$RUNNER_TEMP/sparkle.tar.xz"
+          printf '%s  %s\n' 1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27 "$RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 --check
+          mkdir "$RUNNER_TEMP/sparkle-tools"
+          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle-tools"
+          printf '%s\n' "$PM_UPDATE_PRIVATE_KEY" | "$RUNNER_TEMP/sparkle-tools/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" -o release-artifacts/appcast.xml release-artifacts
+          test -s release-artifacts/appcast.xml
+          swiftc -swift-version 5 -parse-as-library Scripts/verify_release_appcast.swift -o "$RUNNER_TEMP/verify-appcast"
+          "$RUNNER_TEMP/verify-appcast" release-artifacts/appcast.xml "release-artifacts/ProxyMirror-$PM_RELEASE_VERSION.dmg" "$PM_UPDATE_PUBLIC_KEY" "$PM_RELEASE_VERSION" "$PM_BUILD_NUMBER" "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/ProxyMirror-$PM_RELEASE_VERSION.dmg"
+          shasum -a 256 release-artifacts/*.dmg > release-artifacts/SHA256SUMS
+      - name: Publish release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/appcast.xml release-artifacts/SHA256SUMS --verify-tag --generate-notes --title "ProxyMirror $PM_RELEASE_VERSION"
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/proxymirror-release.keychain-db" || true
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/ProxyMirror-notary.zip"

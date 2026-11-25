@@ -42,7 +42,7 @@ let test = CoreAssertions()
 try checkLocalization(test)
 let expectedLanguage = CommandLine.arguments[1]
 guard L10n.effectiveLanguage == expectedLanguage else { fatalError("explicit process language") }
-let expectedCancel = expectedLanguage == "en" ? "Cancel" : "取消"
+let expectedCancel = ["en": "Cancel", "zh-Hans": "取消", "es-419": "Cancelar", "ja": "キャンセル", "pt-BR": "Cancelar"][expectedLanguage]!
 guard Strings.Common.cancel == expectedCancel else { fatalError("typed real-resource lookup") }
 setenv("PM_SETTINGS_LANGUAGE", expectedLanguage == "en" ? "zh-Hans" : "en", 1)
 guard L10n.effectiveLanguage == expectedLanguage else { fatalError("running language must stay frozen") }
@@ -55,7 +55,7 @@ print("Native stringsdict plural behavior requires the macOS test lane.")
         executable = directory / "localization-test"
         subprocess.run([args.swiftc, "-swift-version", "5", *[str(ROOT / path) for path in SOURCES],
                         str(directory / "Assertions.swift"), str(directory / "main.swift"), "-o", str(executable)], check=True)
-        for language in ("en", "zh-Hans"):
+        for language in ("en", "zh-Hans", "es-419", "ja", "pt-BR"):
             environment = dict(os.environ, PM_SETTINGS_LANGUAGE=language,
                                PM_LOCALIZATION_RESOURCE_DIR=str(ROOT / "Sources/ProxyMirrorCore/Resources"))
             subprocess.run([str(executable), language], cwd=directory, env=environment, check=True)

@@ -35,7 +35,7 @@ struct BodyContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if kind == .image {
-            ImageViewer(data: data, complete: complete, revision: revision)
+            ImageViewer(data: data, complete: complete, revision: revision, generation: generation)
         } else if Self.isBinary(data: data, contentType: contentType) {
             HexView(data: data, generation: generation)
         } else {
@@ -132,6 +132,7 @@ struct ImageViewer: View {
     let data: Data
     let complete: Bool
     let revision: UInt64
+    let generation: UInt64
     @State private var preview: Thumbnail?
     @State private var failed = false
     @State private var memoryEpoch: UInt64 = 0
@@ -158,6 +159,7 @@ struct ImageViewer: View {
             } else if failed {
                 Text(Strings.Detail.unableToDecodeImage)
                     .foregroundColor(.secondary)
+                HexView(data: data, generation: generation)
             } else {
                 ProgressView(complete ? Strings.Detail.decoding : Strings.Detail.receiving)
                     .controlSize(.small)

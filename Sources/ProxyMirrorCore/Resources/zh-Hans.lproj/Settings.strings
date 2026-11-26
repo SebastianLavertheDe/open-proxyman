@@ -48,6 +48,8 @@
 "capture" = "捕获：";
 "capture_appearance" = "捕获与显示";
 "capture_http_and_https_traffic_on_this_mac" = "捕获 Mac 上的 HTTP 和 HTTPS 流量，包括忽略代理设置的应用。";
+"capture_local_requests" = "捕获本机请求";
+"capture_local_requests_help" = "使用系统代理的 Chrome 等 Chromium 浏览器会将发往 localhost 等回环地址的请求交给 ProxyMirror。匹配直连例外的请求仍会直连。";
 "captured_traffic_is_stored_on_this_mac_review" = "捕获的流量保存在此 Mac。通过 MCP、导出或 GitHub Gist 分享之前，请检查 URL、正文和注释。";
 "captures_tcp_ports_80_and_443_udp_quic" = "当前捕获 TCP 80/443。UDP、QUIC、HTTP/3、其他端口和回环连接继续直连。";
 "certificate_import_wizard" = "证书导入向导…";
@@ -77,6 +79,7 @@
 "content_layout" = "内容布局：";
 "content_layout_2" = "内容布局";
 "copy" = "复制";
+"copy_bypass_after_local_capture" = "当前列表包含抓包用的临时规则。恢复系统代理后即可复制原列表。";
 "copy_current_service_list" = "复制当前服务列表";
 "copy_repeat" = "复制与重放";
 "copy_sha_256_fingerprint" = "复制 SHA-256 指纹";

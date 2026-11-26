@@ -78,6 +78,7 @@ struct RuleBackup: Codable {
             var showMinimap: Bool?
             var systemBypassHosts: [String]?
             var usesCustomSystemBypass: Bool?
+            var captureLocalRequests: Bool?
             var monospacedFontFamily: String?
             var codeTabWidth: Int?
             var use24HourClock: Bool?
@@ -130,6 +131,7 @@ struct RuleBackup: Codable {
                 wordWrap = settings.wordWrap; showInvisibles = settings.showInvisibles; showMinimap = settings.showMinimap
                 systemBypassHosts = settings.systemBypassHosts
                 usesCustomSystemBypass = systemBypassHosts != nil
+                captureLocalRequests = settings.captureLocalRequests
                 monospacedFontFamily = settings.monospacedFontFamily
                 codeTabWidth = settings.codeTabWidth
                 use24HourClock = settings.use24HourClock
@@ -176,6 +178,7 @@ struct RuleBackup: Codable {
                 if let usesCustomSystemBypass {
                     settings.systemBypassHosts = usesCustomSystemBypass ? systemBypassHosts ?? [] : nil
                 }
+                if let captureLocalRequests { settings.captureLocalRequests = captureLocalRequests }
                 if let monospacedFontFamily { settings.monospacedFontFamily = monospacedFontFamily }
                 if let codeTabWidth { settings.codeTabWidth = codeTabWidth }
                 if let use24HourClock { settings.use24HourClock = use24HourClock }

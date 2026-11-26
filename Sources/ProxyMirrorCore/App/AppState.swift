@@ -55,6 +55,7 @@ final class AppState: ObservableObject, TrafficSink {
     private var bridgeListener: BridgeListener?
     private var bridgeSessionID: UUID?
     @Published var systemProxyActive = false
+    @Published private(set) var systemProxyCapturesLocalRequests = false
     @Published private(set) var systemProxyServiceInstalled = false
     @Published private(set) var systemProxyBusy = false
     @Published private(set) var proxyRestarting = false
@@ -660,19 +661,35 @@ final class AppState: ObservableObject, TrafficSink {
             return
         }
         let port = engine.port
+        let captureLocalRequests = settings.captureLocalRequests
         systemProxyBusy = true
         systemProxyMessage = Strings.Errors.appStateEnablingTheSystemProxy
-        SystemProxyController.shared.enable(port: port, onDisconnect: { [weak self] in
+        SystemProxyController.shared.enable(port: port, captureLocalRequests: captureLocalRequests, onDisconnect: { [weak self] in
             guard let self, self.systemProxyActive else { return }
             self.systemProxyActive = false
+            self.systemProxyCapturesLocalRequests = false
             self.systemProxyMessage = Strings.Errors.appStateTheSystemProxyServiceDisconnectedTheBackgroundService
         }) { [weak self] ok, msg in
             guard let self else { return }
             self.systemProxyBusy = false
             self.systemProxyActive = ok
+            self.systemProxyCapturesLocalRequests = ok && captureLocalRequests
             self.systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
             self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyEnabled127001(Int(port)) : Strings.Errors.appStateUnableToEnableTheSystemProxy(String(msg))
             onComplete?(ok, msg)
+        }
+    }
+
+    func updateSystemProxyBypass(_ hosts: [String]?, captureLocalRequests: Bool, completion: @escaping (Bool, String) -> Void) {
+        guard systemProxyActive, !systemProxyBusy, !proxyRestarting else {
+            completion(false, systemProxyMessage ?? Strings.Errors.systemProxyEnableTheSystemProxyFirst)
+            return
+        }
+        systemProxyBusy = true
+        SystemProxyController.shared.updateBypass(hosts, captureLocalRequests: captureLocalRequests) { [weak self] ok, message in
+            self?.systemProxyBusy = false
+            if ok { self?.systemProxyCapturesLocalRequests = captureLocalRequests }
+            completion(ok, message)
         }
     }
 
@@ -698,7 +715,10 @@ final class AppState: ObservableObject, TrafficSink {
         SystemProxyController.shared.disable(restorePrevious: restorePrevious) { [weak self] ok, msg in
             guard let self else { return }
             self.systemProxyBusy = false
-            if ok { self.systemProxyActive = false }
+            if ok {
+                self.systemProxyActive = false
+                self.systemProxyCapturesLocalRequests = false
+            }
             self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyRestored : Strings.Errors.appStateUnableToDisableTheSystemProxy(String(msg))
             onComplete?(ok)
         }

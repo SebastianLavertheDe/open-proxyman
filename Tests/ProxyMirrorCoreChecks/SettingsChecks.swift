@@ -56,6 +56,7 @@ private func checkSettingsSearchDestinations(_ test: CoreAssertions) {
         ("MCP privacy", .mcpPrivacy, .mcp, false), ("AI 脱敏", .mcpPrivacy, .mcp, false),
         ("脱敏 敏感头", .privacy, .privacy, false),
         ("h2c", .h2c, .advanced, true), ("明文上游", .h2c, .advanced, true),
+        ("捕获本机请求", .bypassProxy, .advanced, true), ("Capture local requests", .bypassProxy, .advanced, true),
         ("HTTP/2", .http2, .general, false),
         ("Content layout", .contentLayout, .general, false),
         ("Preserve original headers", .copyBehavior, .tools, false),

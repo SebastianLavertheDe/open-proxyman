@@ -18,6 +18,7 @@ final class AppSettings: ObservableObject {
         static let mitmExcluded = "proxy.mitmExcludedHosts"
         static let autoStart = "proxy.autoStart"
         static let autoTakeOver = "proxy.autoTakeOverSystemProxy"
+        static let captureLocalRequests = "proxy.captureLocalRequests"
         static let maxBodyMB = "capture.maxBodyMB"
         static let maxTransactions = "capture.maxTransactions"
         static let followLatest = "ui.followLatest"
@@ -75,6 +76,11 @@ final class AppSettings: ObservableObject {
     var autoTakeOverSystemProxy: Bool {
         get { d.object(forKey: Keys.autoTakeOver) as? Bool ?? true }
         set { d.set(newValue, forKey: Keys.autoTakeOver); notifyChange() }
+    }
+
+    var captureLocalRequests: Bool {
+        get { d.object(forKey: Keys.captureLocalRequests) as? Bool ?? true }
+        set { d.set(newValue, forKey: Keys.captureLocalRequests); notifyChange() }
     }
 
     var maxBodyMB: Int {

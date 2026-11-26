@@ -52,6 +52,7 @@ expect(source.contentDividerIsVertical, "default Vertical layout separates Reque
 expect(source.autoStartRecording && !source.warnBeforeQuit && source.showUpdateNotifications, "launch defaults")
 expect(source.applicationLanguage == "system" && source.mcpEnabled && source.mcpRedactSensitiveData, "language and private MCP defaults")
 expect(!source.preserveOriginalHeaders && source.restorePreviousSystemProxy, "tool and proxy defaults")
+expect(source.captureLocalRequests, "system proxy captures loopback requests by default")
 expect(source.automaticTrafficCleanup && source.cleanupMemoryLimitMB == 3072 && source.cleanupIntervalMinutes == 5, "cleanup defaults")
 let changes = NotificationCounter()
 let observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
@@ -64,6 +65,7 @@ source.contentLayout = "horizontal"; source.appIconStyle = "mars"; source.appear
 source.autoStartRecording = false; source.warnBeforeQuit = true; source.showUpdateNotifications = false
 source.applicationLanguage = "en"; source.mcpEnabled = false; source.mcpRedactSensitiveData = false
 source.preserveOriginalHeaders = true; source.restorePreviousSystemProxy = false
+source.captureLocalRequests = false
 source.automaticTrafficCleanup = false; source.cleanupMemoryLimitMB = 4096; source.cleanupIntervalMinutes = 10
 source.proxymanCompatibleShortcuts = true
 let saved = RuleBackup.Preferences(source)
@@ -79,6 +81,7 @@ expect(target.applicationLanguage == "en" && !target.mcpEnabled && !target.mcpRe
 expect(target.preserveOriginalHeaders && !target.restorePreviousSystemProxy, "tools and restore backup roundtrip")
 expect(!target.automaticTrafficCleanup && target.cleanupMemoryLimitMB == 4096 && target.cleanupIntervalMinutes == 10, "cleanup backup roundtrip")
 let reloaded = AppSettings(defaults: targetDefaults)
+expect(!reloaded.captureLocalRequests, "local capture opt-out survives backup, import and reload")
 expect(reloaded.fontSize == 18 && reloaded.contentLayout == "horizontal" && !reloaded.mcpEnabled, "real UserDefaults reload")
 expect(!reloaded.contentDividerIsVertical, "persisted Horizontal layout uses a horizontal divider for stacked panes")
 source.fontSize = .nan; expect(source.fontSize == 12, "nonfinite font size normalizes")
@@ -100,6 +103,12 @@ for (key, invalid) in [("fontSize", 7 as Any), ("fontSize", 33 as Any), ("conten
         from: JSONSerialization.data(withJSONObject: object))
     expect(!invalidPayload.valid, "reject invalid imported " + key)
 }
+var olderExtras = extras
+olderExtras.removeValue(forKey: "captureLocalRequests")
+object["extras"] = olderExtras
+let older = try JSONDecoder().decode(RuleBackup.Preferences.self, from: JSONSerialization.data(withJSONObject: object))
+older.apply(to: target)
+expect(!target.captureLocalRequests, "old backup preserves local capture opt-out")
 object.removeValue(forKey: "extras")
 let partial = try JSONDecoder().decode(RuleBackup.Preferences.self, from: JSONSerialization.data(withJSONObject: object))
 target.fontSize = 14; target.mcpRedactSensitiveData = true; target.applicationLanguage = "zh-Hans"

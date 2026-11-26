@@ -50,7 +50,8 @@ final class SystemProxyController {
         }
     }
 
-    func enable(port: UInt16, onDisconnect: @escaping () -> Void, completion: @escaping (Bool, String) -> Void) {
+    func enable(port: UInt16, captureLocalRequests: Bool, onDisconnect: @escaping () -> Void,
+                completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
             guard self.session == nil else { throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyIsEnabledRestoreTheOriginal) }
             let helper = try Self.bundledHelper()
@@ -81,10 +82,9 @@ final class SystemProxyController {
             }
             connection.resume()
             do {
-                if let hosts = SystemProxyBypass.savedHosts {
-                    try Self.request(on: connection) { $0.enableWithBypass(Int(port), hosts: hosts, reply: $1) }
-                } else {
-                    try Self.request(on: connection) { $0.enable(Int(port), reply: $1) }
+                try Self.request(on: connection) { service, reply in
+                    service.enable(Int(port), hosts: SystemProxyBypass.savedHosts,
+                                   captureLocalRequests: captureLocalRequests, reply: reply)
                 }
                 self.session = (id, connection)
             } catch {
@@ -106,11 +106,11 @@ final class SystemProxyController {
         }
     }
 
-    func updateBypass(_ hosts: [String]?, completion: @escaping (Bool, String) -> Void) {
+    func updateBypass(_ hosts: [String]?, captureLocalRequests: Bool, completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
             guard let connection = self.session?.connection else { throw SystemProxyOperationError(OperationIssue.systemProxyEnableTheSystemProxyFirst) }
             if let hosts, let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
-            try Self.request(on: connection) { $0.updateBypass(hosts, reply: $1) }
+            try Self.request(on: connection) { $0.updateBypass(hosts, captureLocalRequests: captureLocalRequests, reply: $1) }
         }
     }
 

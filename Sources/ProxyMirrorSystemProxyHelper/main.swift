@@ -29,7 +29,8 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         return true
     }
 
-    func enable(_ port: Int, bypassHosts: [String]? = nil, for peer: Peer, reply: @escaping (String?) -> Void) {
+    func enable(_ port: Int, bypassHosts: [String]?, captureLocalRequests: Bool,
+                for peer: Peer, reply: @escaping (String?) -> Void) {
         queue.async {
             do {
                 guard let port = UInt16(exactly: port), port >= 1024 else {
@@ -60,7 +61,8 @@ private final class Service: NSObject, NSXPCListenerDelegate {
                     Darwin.close(lock)
                     throw issue
                 }
-                try self.enable(port, bypassHosts: bypassHosts, owner: peer.id, holding: lock)
+                try self.enable(port, bypassHosts: bypassHosts, captureLocalRequests: captureLocalRequests,
+                                owner: peer.id, holding: lock)
                 reply(nil)
             } catch {
                 reply(SystemProxyError.wireValue(for: error))
@@ -68,8 +70,10 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         }
     }
 
-    private func enable(_ port: UInt16, bypassHosts: [String]?, owner: UUID, holding lock: Int32) throws {
-        let settings = SystemProxySettings(port: port, journal: SystemProxyService.journal, bypassHosts: bypassHosts)
+    private func enable(_ port: UInt16, bypassHosts: [String]?, captureLocalRequests: Bool,
+                        owner: UUID, holding lock: Int32) throws {
+        let settings = SystemProxySettings(port: port, journal: SystemProxyService.journal,
+                                           bypassHosts: bypassHosts, captureLocalRequests: captureLocalRequests)
         lease = Lease(owner: owner, settings: settings, lock: lock)
         do {
             try settings.enable()
@@ -88,13 +92,18 @@ private final class Service: NSObject, NSXPCListenerDelegate {
         }
     }
 
-    func updateBypass(_ hosts: [String]?, for peer: Peer, reply: @escaping (String?) -> Void) {
+    func updateBypass(_ hosts: [String]?, captureLocalRequests: Bool,
+                      for peer: Peer, reply: @escaping (String?) -> Void) {
         queue.async {
             guard let lease = self.lease, lease.owner == peer.id, !peer.closed else {
                 reply(SystemProxyError(.notOwner).wireValue); return
             }
-            do { try lease.settings.updateBypass(hosts); reply(nil) }
-            catch { reply(SystemProxyError.wireValue(for: error)) }
+            do {
+                try lease.settings.updateBypass(hosts, captureLocalRequests: captureLocalRequests)
+                reply(nil)
+            } catch {
+                reply(SystemProxyError.wireValue(for: error))
+            }
         }
     }
 
@@ -179,16 +188,12 @@ private final class Peer: NSObject, SystemProxyServiceProtocol {
 
     init(service: Service) { self.service = service }
 
-    func enable(_ port: Int, reply: @escaping (String?) -> Void) {
-        service.enable(port, for: self, reply: reply)
+    func enable(_ port: Int, hosts: [String]?, captureLocalRequests: Bool, reply: @escaping (String?) -> Void) {
+        service.enable(port, bypassHosts: hosts, captureLocalRequests: captureLocalRequests, for: self, reply: reply)
     }
 
-    func enableWithBypass(_ port: Int, hosts: [String], reply: @escaping (String?) -> Void) {
-        service.enable(port, bypassHosts: hosts, for: self, reply: reply)
-    }
-
-    func updateBypass(_ hosts: [String]?, reply: @escaping (String?) -> Void) {
-        service.updateBypass(hosts, for: self, reply: reply)
+    func updateBypass(_ hosts: [String]?, captureLocalRequests: Bool, reply: @escaping (String?) -> Void) {
+        service.updateBypass(hosts, captureLocalRequests: captureLocalRequests, for: self, reply: reply)
     }
 
     func restore(reply: @escaping (String?) -> Void) {

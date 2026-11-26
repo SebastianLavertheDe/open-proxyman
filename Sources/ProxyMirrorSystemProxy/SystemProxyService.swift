@@ -4,9 +4,8 @@ import Security
 
 @objc(ProxyMirrorSystemProxyServiceProtocol)
 package protocol SystemProxyServiceProtocol {
-    func enable(_ port: Int, reply: @escaping (String?) -> Void)
-    func enableWithBypass(_ port: Int, hosts: [String], reply: @escaping (String?) -> Void)
-    func updateBypass(_ hosts: [String]?, reply: @escaping (String?) -> Void)
+    func enable(_ port: Int, hosts: [String]?, captureLocalRequests: Bool, reply: @escaping (String?) -> Void)
+    func updateBypass(_ hosts: [String]?, captureLocalRequests: Bool, reply: @escaping (String?) -> Void)
     func restore(reply: @escaping (String?) -> Void)
     func disableOwned(reply: @escaping (String?) -> Void)
 }
@@ -15,15 +14,17 @@ package enum SystemProxyService {
     package static func interface() -> NSXPCInterface {
         let result = NSXPCInterface(with: SystemProxyServiceProtocol.self)
         let arrays = NSSet(array: [NSArray.self, NSString.self]) as! Set<AnyHashable>
-        result.setClasses(arrays, for: #selector(SystemProxyServiceProtocol.enableWithBypass(_:hosts:reply:)), argumentIndex: 1, ofReply: false)
-        result.setClasses(arrays, for: #selector(SystemProxyServiceProtocol.updateBypass(_:reply:)), argumentIndex: 0, ofReply: false)
+        result.setClasses(arrays, for: #selector(SystemProxyServiceProtocol.enable(_:hosts:captureLocalRequests:reply:)),
+                          argumentIndex: 1, ofReply: false)
+        result.setClasses(arrays, for: #selector(SystemProxyServiceProtocol.updateBypass(_:captureLocalRequests:reply:)),
+                          argumentIndex: 0, ofReply: false)
         return result
     }
 
     package static let name = "com.sebastianLavertheDe.proxymirror.system-proxy"
     package static let appIdentifier = "com.sebastianLavertheDe.proxymirror"
     package static let helperName = "ProxyMirrorSystemProxyHelper"
-    package static let version = "1.1.0"
+    package static let version = "1.2.0"
     package static let executable = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/\(name)")
     package static let plist = URL(fileURLWithPath: "/Library/LaunchDaemons/\(name).plist")
     package static let journal = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/\(name).recovery.plist")

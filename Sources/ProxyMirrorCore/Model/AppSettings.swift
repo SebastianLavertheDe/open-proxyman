@@ -18,6 +18,7 @@ final class AppSettings: ObservableObject {
         static let mitmExcluded = "proxy.mitmExcludedHosts"
         static let autoStart = "proxy.autoStart"
         static let autoTakeOver = "proxy.autoTakeOverSystemProxy"
+        static let captureLocalRequests = "proxy.captureLocalRequests"
         static let maxBodyMB = "capture.maxBodyMB"
         static let maxTransactions = "capture.maxTransactions"
         static let followLatest = "ui.followLatest"
@@ -40,6 +41,11 @@ final class AppSettings: ObservableObject {
         static let automaticTrafficCleanup = "capture.automaticTrafficCleanup"
         static let cleanupMemoryLimitMB = "capture.cleanupMemoryLimitMB"
         static let cleanupIntervalMinutes = "capture.cleanupIntervalMinutes"
+    }
+
+    var proxymanCompatibleShortcuts: Bool {
+        get { d.bool(forKey: "ui.proxymanCompatibleShortcuts") }
+        set { d.set(newValue, forKey: "ui.proxymanCompatibleShortcuts"); notifyChange() }
     }
 
     var port: UInt16 {
@@ -70,6 +76,11 @@ final class AppSettings: ObservableObject {
     var autoTakeOverSystemProxy: Bool {
         get { d.object(forKey: Keys.autoTakeOver) as? Bool ?? true }
         set { d.set(newValue, forKey: Keys.autoTakeOver); notifyChange() }
+    }
+
+    var captureLocalRequests: Bool {
+        get { d.object(forKey: Keys.captureLocalRequests) as? Bool ?? true }
+        set { d.set(newValue, forKey: Keys.captureLocalRequests); notifyChange() }
     }
 
     var maxBodyMB: Int {
@@ -215,6 +226,9 @@ final class AppSettings: ObservableObject {
         get { Self.choice(d.string(forKey: Keys.contentLayout), in: ["vertical", "horizontal"], fallback: "vertical") }
         set { d.set(Self.choice(newValue, in: ["vertical", "horizontal"], fallback: "vertical"), forKey: Keys.contentLayout); notifyChange() }
     }
+    /// Layout names describe the divider: vertical places Request beside Response.
+    var contentDividerIsVertical: Bool { contentLayout == "vertical" }
+    /// Retained for older preference backups; the app always uses its bundled icon.
     var appIconStyle: String {
         get { Self.choice(d.string(forKey: Keys.appIconStyle), in: ["earth", "mars", "candy", "classic"], fallback: "earth") }
         set { d.set(Self.choice(newValue, in: ["earth", "mars", "candy", "classic"], fallback: "earth"), forKey: Keys.appIconStyle); notifyChange() }
@@ -232,8 +246,8 @@ final class AppSettings: ObservableObject {
         set { d.set(newValue, forKey: Keys.showUpdateNotifications); notifyChange() }
     }
     var applicationLanguage: String {
-        get { Self.choice(d.string(forKey: Keys.applicationLanguage), in: ["system", "zh-Hans", "en"], fallback: "system") }
-        set { d.set(Self.choice(newValue, in: ["system", "zh-Hans", "en"], fallback: "system"), forKey: Keys.applicationLanguage); notifyChange() }
+        get { Self.choice(d.string(forKey: Keys.applicationLanguage), in: ["system"] + AppLanguage.allCases.map(\.rawValue), fallback: "system") }
+        set { d.set(Self.choice(newValue, in: ["system"] + AppLanguage.allCases.map(\.rawValue), fallback: "system"), forKey: Keys.applicationLanguage); notifyChange() }
     }
     var mcpEnabled: Bool {
         get { d.object(forKey: Keys.mcpEnabled) as? Bool ?? true }
@@ -269,7 +283,7 @@ final class AppSettings: ObservableObject {
         let keys = [Keys.fontSize, Keys.useMonospacedFont, Keys.scrollBeyondLastLine, Keys.appIconStyle,
                     "ui.monospacedFontFamily", "ui.codeTabWidth", "ui.wordWrap", "ui.showInvisibles",
                     "ui.showMinimap", "ui.showAlternatingRows", "ui.showResourceUsage", "ui.use24HourClock",
-                    "ui.showFullDate", "ui.appearance"]
+                    "ui.showFullDate", "ui.appearance", "ui.proxymanCompatibleShortcuts"]
         keys.forEach { d.removeObject(forKey: $0) }
         notifyChange()
     }

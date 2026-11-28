@@ -1,0 +1,20 @@
+/* Initial translation; missing entries use the English fallback. */
+"add" = "追加";
+"cancel" = "キャンセル";
+"close" = "閉じる";
+"copy" = "コピー";
+"delete" = "削除";
+"edit" = "編集";
+"error" = "エラー";
+"language_japanese_preview" = "日本語（初期翻訳）";
+"language_portuguese_preview" = "Português brasileiro（初期翻訳）";
+"language_restart_notice" = "再起動後に反映されます。";
+"language_spanish_preview" = "Español latinoamericano（初期翻訳）";
+"loading" = "読み込み中…";
+"none" = "なし";
+"ok" = "OK";
+"remove" = "削除";
+"resource_unavailable" = "言語リソースが見つかりません。ProxyMirror を再インストールしてください。";
+"save" = "保存";
+"search" = "検索";
+"unknown" = "不明";

@@ -1,4 +1,5 @@
 import Foundation
+import NIOCore
 import NIOEmbedded
 @testable import ProxyMirrorCore
 
@@ -137,9 +138,54 @@ func checkSSEInspection(_ test: CoreAssertions) throws {
     invalid[invalid.count - 8] ^= 1
     test.expect(SSEBodyRecovery.recover(invalid, headers: gzipHeaders, complete: true, truncated: false).issue != nil,
                 "Corrupt gzip checksums are shown as SSE decoding failures")
-    let unsupported = SSEBodyStream(headers: HTTPHeaders([("Content-Encoding", "zstd")]))
-    test.expect(unsupported.snapshot.issue?.contains("zstd") == true && !unsupported.snapshot.deferred,
+    let unsupported = SSEBodyStream(headers: HTTPHeaders([("Content-Encoding", "compress")]))
+    test.expect(unsupported.snapshot.issue?.code == "sse_encoding_unsupported" &&
+                unsupported.snapshot.issue?.arguments == ["compress"] && !unsupported.snapshot.deferred,
                 "Unsupported SSE encodings have an explicit reason instead of an empty waiting page")
+    tx.applySSESnapshot(unsupported.snapshot)
+    let issueSession = try JSONEncoder().encode(SessionFile(transactions: [tx], pinnedDomains: [], selected: []))
+    let issueRestored = try SessionFile.decode(issueSession).records[0].transaction()
+    test.equal(issueRestored.sseParseIssue, unsupported.snapshot.issue, "Session retains SSE issue code and arguments")
+    let issueHAR = try JSONSerialization.data(withJSONObject: ExportService.buildHAR([tx]))
+    let issueImported = try SessionFile.importHAR(issueHAR)[0]
+    test.equal(issueImported.sseParseIssue, unsupported.snapshot.issue, "HAR retains the SSE inspection issue identity")
+    test.equal(issueImported.sseParseIssue?.localizedPresentation, Strings.Errors.sseEncodingUnsupported("compress"),
+               "Restored SSE issues render in the current application language")
+    let legacyIssue = try JSONSerialization.data(withJSONObject: [
+        "events": [], "truncated": false, "deferred": false,
+        "issue": "暂不支持 SSE Content-Encoding: compress。可在原文查看捕获字节。"
+    ])
+    let legacySnapshot = try JSONDecoder().decode(SSEInspectionSnapshot.self, from: legacyIssue)
+    test.equal(legacySnapshot.issue?.code, "sse_encoding_unsupported", "Known legacy SSE messages regain their stable identity")
+    test.equal(legacySnapshot.issue?.arguments, ["compress"], "Legacy migration retains the encoding parameter")
+    test.equal(legacySnapshot.issue?.localizedPresentation, Strings.Errors.sseEncodingUnsupported("compress"),
+               "Legacy Chinese SSE messages render through native resources")
+    let externalIssue = try JSONSerialization.data(withJSONObject: [
+        "events": [], "truncated": false, "deferred": false, "issue": "external decoder diagnostic / 原文"
+    ])
+    test.equal(try JSONDecoder().decode(SSEInspectionSnapshot.self, from: externalIssue).issue?.localizedPresentation,
+               "external decoder diagnostic / 原文", "Unknown legacy SSE diagnostics remain verbatim")
+    let pacingFailure = NetworkFailure.capture(BytePacingQueue.QueueError.capacityExceeded)
+    test.equal(pacingFailure.code, "network_pacing_capacity_exceeded", "Throttling failures retain their own issue identity")
+    test.equal(pacingFailure.localizedPresentation, Strings.Errors.networkPacingCapacityExceeded,
+               "Throttling failure presentation uses the current UI language")
+    final class OverflowState {
+        var failure: CapturedFailure?
+        var sends = 0
+    }
+    let overflowLoop = EmbeddedEventLoop()
+    let overflow = OverflowState()
+    let overflowQueue = BytePacingQueue(loop: overflowLoop, onFailure: { overflow.failure = NetworkFailure.capture($0) })
+    var overflowBytes = ByteBufferAllocator().buffer(capacity: 4 * 1024 * 1024 + 1)
+    overflowBytes.writeRepeatingByte(0, count: 4 * 1024 * 1024 + 1)
+    overflowQueue.write(overflowBytes, kilobitsPerSecond: 1) { _ in
+        overflow.sends += 1
+        return overflowLoop.makeSucceededVoidFuture()
+    }
+    test.equal(overflow.failure?.code, "network_pacing_capacity_exceeded", "Actual pacing overflow propagates its typed code through the failure callback")
+    test.equal(overflow.failure?.localizedPresentation, Strings.Errors.networkPacingCapacityExceeded,
+               "Actual pacing overflow renders through the application language resources")
+    test.expect(overflow.sends == 0 && !overflowQueue.hasPendingWrites, "Overflow stops and empties the queue before sending payload bytes")
 
     let combinedHeaders = HTTPHeaders([("Content-Encoding", "gzip, gzip")])
     let combined = Data(base64Encoded: "H4sIAAAAAAACA5Pv5mAAASZmb08dzy1BGl6+5/S9db18Hz5iYiid9URMECgJAEWj+IolAAAA")!
@@ -153,11 +199,11 @@ func checkSSEInspection(_ test: CoreAssertions) throws {
     let deferred = SSEBodyStream(headers: HTTPHeaders([("Content-Encoding", "br")]))
     test.expect(deferred.snapshot.deferred, "Brotli SSE explains that event recovery waits for a complete body")
     deferred.finish(complete: false)
-    test.expect(!deferred.snapshot.deferred && deferred.snapshot.issue?.contains("连接已结束") == true,
+    test.expect(!deferred.snapshot.deferred && deferred.snapshot.issue?.code == "sse_body_incomplete",
                 "A failed deferred SSE stream stops waiting and explains that the body cannot be recovered")
     let failedRecovery = SSEBodyRecovery.recover(Data([1]), headers: HTTPHeaders([("Content-Encoding", "br")]),
                                                 complete: false, truncated: false, failed: true)
-    test.expect(!failedRecovery.deferred && failedRecovery.issue?.contains("连接已结束") == true,
+    test.expect(!failedRecovery.deferred && failedRecovery.issue?.code == "sse_body_incomplete",
                 "Old failed compressed SSE captures do not promise future event recovery")
     let limited = SSEBodyStream(headers: gzipHeaders)
     limited.append(Data(base64Encoded: "H4sIAAAAAAAAA+zBMQ0AMAgAsB8V6JgbEiRwTD7BR9uuqZcfAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATsQCAAD//w==")!)

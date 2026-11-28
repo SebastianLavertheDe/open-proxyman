@@ -10,8 +10,33 @@ final class AppState: ObservableObject, TrafficSink {
 
     let store = TrafficStore()
     let settings: AppSettings
+    private let engineFactory: () -> ProxyEngine
+    private let usesSharedRuntime: Bool
+    private let ownsEngine: Bool
+    private let temporaryCertificateDirectory: URL?
+    private let customCertificateProvider: (@Sendable (String) -> CertificateAuthority.CustomChain?)?
+    private var resolvedEngine: ProxyEngine?
+    var hasResolvedEngine: Bool { resolvedEngine != nil }
+    private var resolvedReverseProxy: ReverseProxyController?
+    private var reverseProxy: ReverseProxyController {
+        if let resolvedReverseProxy { return resolvedReverseProxy }
+        let controller = usesSharedRuntime ? ReverseProxyController.shared : ReverseProxyController()
+        resolvedReverseProxy = controller
+        return controller
+    }
+
+    /// Creating a preview/test state does not resolve or reconfigure global services.
+    var engine: ProxyEngine {
+        if let resolvedEngine { return resolvedEngine }
+        let created = engineFactory()
+        resolvedEngine = created
+        created.sink = self
+        return created
+    }
+    var certificateAuthority: CertificateAuthority { engine.certificateAuthority }
+    var runtimeContext: ProxyRuntimeContext { ProxyRuntimeContext(engine: engine, settings: settings) }
     /// A pending preference must never be advertised as an already bound endpoint.
-    var listenerPort: UInt16 { ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : settings.port }
+    var listenerPort: UInt16 { resolvedEngine.flatMap { $0.isRunning ? $0.port : nil } ?? settings.port }
     @Published private(set) var tabs: [TrafficStore] = []
     @Published private(set) var activeTabIndex = 0
     @Published private(set) var splitStore: TrafficStore?
@@ -21,7 +46,7 @@ final class AppState: ObservableObject, TrafficSink {
 
     @Published var proxyRunning = false
     @Published var recordingEnabled = true {
-        didSet { ProxyEngine.shared.recordingEnabled = recordingEnabled }
+        didSet { resolvedEngine?.recordingEnabled = recordingEnabled }
     }
     @Published var proxyStartError: String?
     @Published var settingsTarget: SettingsSearchTarget?
@@ -30,7 +55,8 @@ final class AppState: ObservableObject, TrafficSink {
     private var bridgeListener: BridgeListener?
     private var bridgeSessionID: UUID?
     @Published var systemProxyActive = false
-    @Published private(set) var systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
+    @Published private(set) var systemProxyCapturesLocalRequests = false
+    @Published private(set) var systemProxyServiceInstalled = false
     @Published private(set) var systemProxyBusy = false
     @Published private(set) var proxyRestarting = false
     @Published var systemProxyMessage: String?
@@ -55,6 +81,8 @@ final class AppState: ObservableObject, TrafficSink {
     @Published private(set) var tlsKeyLogURL: URL?
     @Published var showCommentSheet = false
     @Published var caBannerDismissed = UserDefaults.standard.bool(forKey: "caBannerDismissed")
+    @Published var requestedRuleWindow: String?
+    @Published var requestedAuxiliaryWindow: String?
     @Published var activeTool: ToolKind?
     private(set) var toolTransaction: Transaction?
     private(set) var commentTargets: [Transaction] = []
@@ -73,6 +101,7 @@ final class AppState: ObservableObject, TrafficSink {
     private var settingsChanges: AnyCancellable?
     private var certificateChanges: AnyCancellable?
     private var certificateStatusTask: Task<Void, Never>?
+    private var presentedSavedError: String?
     @Published var dockRight = UserDefaults.standard.bool(forKey: "ui.dockRight") {
         didSet { UserDefaults.standard.set(dockRight, forKey: "ui.dockRight") }
     }
@@ -83,11 +112,36 @@ final class AppState: ObservableObject, TrafficSink {
         didSet { UserDefaults.standard.set(pinnedDomains, forKey: "pinnedDomains") }
     }
 
-    init(settings: AppSettings = .shared, launchServices: Bool = true) {
+    init(settings: AppSettings = .shared, engine: ProxyEngine? = nil,
+         certificateAuthority: CertificateAuthority? = nil,
+         certificateProvider: (@Sendable (String) -> CertificateAuthority.CustomChain?)? = nil,
+         launchServices: Bool = true) {
         self.settings = settings
+        usesSharedRuntime = launchServices && engine == nil && certificateAuthority == nil
+        ownsEngine = engine == nil && !usesSharedRuntime
+        if let engine {
+            temporaryCertificateDirectory = nil
+            precondition(certificateAuthority == nil || engine.certificateAuthority === certificateAuthority,
+                         "AppState and its proxy engine must use the same certificate authority")
+            engineFactory = { engine }
+        } else if usesSharedRuntime {
+            temporaryCertificateDirectory = nil
+            engineFactory = { ProxyEngine.shared }
+        } else {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ProxyMirror-Isolated-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("CA", isDirectory: true)
+            temporaryCertificateDirectory = certificateAuthority == nil ? directory.deletingLastPathComponent() : nil
+            engineFactory = { ProxyEngine(certificateAuthority: certificateAuthority ?? CertificateAuthority(storageDirectory: directory)) }
+        }
+        if let certificateProvider {
+            customCertificateProvider = certificateProvider
+        } else if usesSharedRuntime {
+            customCertificateProvider = { host in CustomCertificateStore.shared.chain(forHost: host) }
+        } else {
+            customCertificateProvider = nil
+        }
         recordingEnabled = settings.autoStartRecording
-        ProxyEngine.shared.recordingEnabled = recordingEnabled
-        ProxyEngine.shared.sink = self
         tabs = [store]
         observeActiveWorkspace()
         store.maxTransactions = settings.maxTransactions
@@ -95,13 +149,6 @@ final class AppState: ObservableObject, TrafficSink {
         settingsChanges = settings.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in
             self?.objectWillChange.send()
         }
-        ProxyEngine.shared.mitmEnabled = settings.mitmEnabled
-        ProxyEngine.shared.http2Enabled = settings.http2Enabled
-        ProxyEngine.shared.mitmExcludedHosts = settings.mitmExcludedHosts
-        CertificateAuthority.shared.setCustomCertificateProvider { host in
-            CustomCertificateStore.shared.chain(forHost: host)
-        }
-        ProxyEngine.shared.captureLimit = settings.maxBodyMB * 1024 * 1024
         transparentProxyChanges = transparentProxy.$state.dropFirst().sink { [weak self] state in
             guard let self else { return }
             self.transparentProxyState = state
@@ -109,13 +156,15 @@ final class AppState: ObservableObject, TrafficSink {
             case .awaitingApproval:
                 self.systemProxyMessage = Strings.Errors.appStateAllowTheProxymirrorNetworkExtensionInMacosSystem
             case .idle, .failed:
-                if !self.transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
+                if !self.transparentProxyNeedsStop { self.resolvedEngine?.stopTransparentIngress() }
                 if case .failed(let message) = state { self.systemProxyMessage = message }
             default:
                 break
             }
         }
         guard launchServices, ProcessInfo.processInfo.environment["PM_SETTINGS_SNAPSHOT"] == nil else { return }
+        applyRuntimeSettings()
+        systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
         pinnedDomains = UserDefaults.standard.stringArray(forKey: "pinnedDomains") ?? []
         certificateChanges = NotificationCenter.default.publisher(for: .proxyMirrorCertificatesChanged)
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshCertificateStatus() }
@@ -135,10 +184,39 @@ final class AppState: ObservableObject, TrafficSink {
         maybeSnapshotForDebug()
     }
 
+    deinit {
+        guard ownsEngine, let engine = resolvedEngine else { return }
+        let controller = resolvedReverseProxy
+        let directory = temporaryCertificateDirectory
+        Task { @MainActor in
+            controller?.stop()
+            engine.stop()
+            engine.group.shutdownGracefully { _ in
+                if let directory { try? FileManager.default.removeItem(at: directory) }
+            }
+        }
+    }
+
     private func observeActiveWorkspace() {
         store.setWorkspaceVisible(store === activeTab)
         for tab in tabs { tab.setWorkspaceVisible(tab === activeTab) }
-        storeChanges = activeStore.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        storeChanges = activeStore.objectWillChange.sink { [weak self] in
+            guard let self else { return }
+            if self.store.savedError == nil { self.presentedSavedError = nil }
+            self.objectWillChange.send()
+        }
+    }
+
+    func markSavedErrorPresented() {
+        presentedSavedError = store.savedError
+    }
+
+    func shouldPresentSavedError(_ message: String?) -> Bool {
+        guard let message else { presentedSavedError = nil; return false }
+        // Every main window observes the same data. Keep the acknowledgement
+        // until recovery so a second window cannot repeat the modal quit alert.
+        if presentedSavedError == message { return false }
+        return true
     }
 
     func addWorkspace() {
@@ -211,10 +289,10 @@ final class AppState: ObservableObject, TrafficSink {
         guard !proxyRunning, !proxyRestarting || duringRestart else { return }
         applyRuntimeSettings()
         do {
-            try CertificateAuthority.shared.ensureCA()
+            try certificateAuthority.ensureCA()
             UpstreamTrust.prewarm()
-            try ProxyEngine.shared.start(port: settings.port, lan: settings.lanAccess)
-            ReverseProxyController.shared.start(engine: ProxyEngine.shared)
+            try engine.start(port: settings.port, lan: settings.lanAccess)
+            reverseProxy.start(engine: engine)
             proxyRunning = true
             DiagnosticLog.record("listener started port=\(settings.port) lan=\(settings.lanEnabled) http2=\(settings.http2Enabled) mitm=\(settings.mitmEnabled)")
             proxyStartError = nil
@@ -244,8 +322,8 @@ final class AppState: ObservableObject, TrafficSink {
             }
             return
         }
-        ReverseProxyController.shared.stop()
-        ProxyEngine.shared.stop()
+        reverseProxy.stop()
+        engine.stop()
         stopBridgeCapture()
         proxyRunning = false
         DiagnosticLog.record("listener stopped")
@@ -278,14 +356,14 @@ final class AppState: ObservableObject, TrafficSink {
 
     private func startTransparentProxy() async -> Bool {
         do {
-            let ingress = try ProxyEngine.shared.startTransparentIngress()
+            let ingress = try engine.startTransparentIngress()
             try await transparentProxy.start(port: ingress.port, token: ingress.token)
             return true
         } catch is CancellationError {
-            if !transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
+            if !transparentProxyNeedsStop { engine.stopTransparentIngress() }
         } catch {
-            if !transparentProxyNeedsStop { ProxyEngine.shared.stopTransparentIngress() }
-            systemProxyMessage = error.localizedDescription
+            if !transparentProxyNeedsStop { engine.stopTransparentIngress() }
+            systemProxyMessage = LocalizedErrorPresentation.message(for: error)
         }
         return false
     }
@@ -295,7 +373,7 @@ final class AppState: ObservableObject, TrafficSink {
             try await transparentProxy.stop()
             return true
         } catch {
-            systemProxyMessage = error.localizedDescription
+            systemProxyMessage = LocalizedErrorPresentation.message(for: error)
             return false
         }
     }
@@ -332,7 +410,7 @@ final class AppState: ObservableObject, TrafficSink {
     func setMITMExcludedHosts(_ text: String) {
         let hosts = Self.mitmExcludedHosts(from: text)
         settings.mitmExcludedHosts = hosts
-        ProxyEngine.shared.mitmExcludedHosts = hosts
+        engine.mitmExcludedHosts = hosts
     }
 
     static func mitmExcludedHosts(from text: String) -> [String] {
@@ -348,13 +426,14 @@ final class AppState: ObservableObject, TrafficSink {
 
     private func applyRuntimeSettings() {
         DiagnosticLog.record("applying runtime settings bodyLimitMB=\(settings.maxBodyMB) maxTransactions=\(settings.maxTransactions)")
-        ProxyEngine.shared.mitmEnabled = settings.mitmEnabled
-        ProxyEngine.shared.http2Enabled = settings.http2Enabled
-        ProxyEngine.shared.mitmExcludedHosts = settings.mitmExcludedHosts
-        CertificateAuthority.shared.setCustomCertificateProvider { host in
-            CustomCertificateStore.shared.chain(forHost: host)
+        engine.recordingEnabled = recordingEnabled
+        engine.mitmEnabled = settings.mitmEnabled
+        engine.http2Enabled = settings.http2Enabled
+        engine.mitmExcludedHosts = settings.mitmExcludedHosts
+        if let customCertificateProvider {
+            certificateAuthority.setCustomCertificateProvider(customCertificateProvider)
         }
-        ProxyEngine.shared.captureLimit = settings.maxBodyMB * 1024 * 1024
+        engine.captureLimit = settings.maxBodyMB * 1024 * 1024
         store.maxTransactions = settings.maxTransactions
         activeStore.followLatest = settings.followLatest
     }
@@ -363,7 +442,7 @@ final class AppState: ObservableObject, TrafficSink {
     func applyAndRestartIfNeeded() {
         applyRuntimeSettings()
         guard !systemProxyBusy, !proxyRestarting else { return }
-        let engine = ProxyEngine.shared
+        let engine = self.engine
         if proxyRunning, settings.port != engine.port || settings.lanAccess != engine.lanAccess {
             let oldPort = engine.port
             let oldLAN = engine.lanAccess
@@ -387,8 +466,8 @@ final class AppState: ObservableObject, TrafficSink {
             systemProxyMessage = Strings.Errors.appStateSettingsAppliedTheListenerIsNotRunning
             return
         }
-        let oldPort = ProxyEngine.shared.port
-        let oldLAN = ProxyEngine.shared.lanAccess
+        let oldPort = engine.port
+        let oldLAN = engine.lanAccess
         let resumeSystemProxy = systemProxyActive
         let resumeTransparentProxy = transparentProxyNeedsStop
         proxyRestarting = true
@@ -418,8 +497,8 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     private func restartListener(oldPort: UInt16, oldLAN: LANAccess?) {
-        ReverseProxyController.shared.stop()
-        ProxyEngine.shared.stop()
+        reverseProxy.stop()
+        engine.stop()
         stopBridgeCapture()
         proxyRunning = false
         startProxy(automaticallyTakeOver: false, duringRestart: true)
@@ -467,7 +546,7 @@ final class AppState: ObservableObject, TrafficSink {
             if bridgePairingCode != nil { showBridgePairing = true }
             return
         }
-        guard proxyRunning, let lan = ProxyEngine.shared.lanAccess else {
+        guard proxyRunning, let lan = engine.lanAccess else {
             systemProxyMessage = Strings.Errors.appStateEnableLanAccessInSettingsGeneralConfigureThe
             return
         }
@@ -477,7 +556,7 @@ final class AppState: ObservableObject, TrafficSink {
             let receiver = try BridgeListener(address: lan.address, policy: policy) { [weak self] capture, address in
                 guard let self, self.bridgeSessionID == sessionID, self.recordingEnabled,
                       let tx = Transaction(bridge: capture, deviceAddress: address,
-                                           limit: ProxyEngine.shared.captureLimit, sink: self) else { return }
+                                           limit: engine.captureLimit, sink: self) else { return }
                 self.store.ingestCaptured(tx)
             }
             bridgeListener = receiver
@@ -540,12 +619,12 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     nonisolated func transactionBodyUpdated(_ tx: Transaction) {
-        onMain { [store] in
+        onMain { [weak self] in
             MainActor.assumeIsolated {
-                store.recordBodyBytes(tx)
-                let app = AppState.shared
-                app.activeTab.noteBodyCaptureUpdate(tx)
-                app.splitStore?.noteBodyCaptureUpdate(tx)
+                guard let self else { return }
+                self.store.recordBodyBytes(tx)
+                self.activeTab.noteBodyCaptureUpdate(tx)
+                self.splitStore?.noteBodyCaptureUpdate(tx)
             }
         }
     }
@@ -554,7 +633,7 @@ final class AppState: ObservableObject, TrafficSink {
 
     func clearTraffic() {
         if !activeStore.isBrowsingSavedRequests && activeStore.filterMode != .archive {
-            ProxyEngine.shared.clearBreakpointSession()
+            engine.clearBreakpointSession()
             BreakpointManager.shared.discardAll()
         }
         activeStore.clear()
@@ -581,20 +660,36 @@ final class AppState: ObservableObject, TrafficSink {
             onComplete?(false, message)
             return
         }
-        let port = ProxyEngine.shared.port
+        let port = engine.port
+        let captureLocalRequests = settings.captureLocalRequests
         systemProxyBusy = true
         systemProxyMessage = Strings.Errors.appStateEnablingTheSystemProxy
-        SystemProxyController.shared.enable(port: port, onDisconnect: { [weak self] in
+        SystemProxyController.shared.enable(port: port, captureLocalRequests: captureLocalRequests, onDisconnect: { [weak self] in
             guard let self, self.systemProxyActive else { return }
             self.systemProxyActive = false
+            self.systemProxyCapturesLocalRequests = false
             self.systemProxyMessage = Strings.Errors.appStateTheSystemProxyServiceDisconnectedTheBackgroundService
         }) { [weak self] ok, msg in
             guard let self else { return }
             self.systemProxyBusy = false
             self.systemProxyActive = ok
+            self.systemProxyCapturesLocalRequests = ok && captureLocalRequests
             self.systemProxyServiceInstalled = SystemProxyController.shared.hasInstalledService
             self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyEnabled127001(Int(port)) : Strings.Errors.appStateUnableToEnableTheSystemProxy(String(msg))
             onComplete?(ok, msg)
+        }
+    }
+
+    func updateSystemProxyBypass(_ hosts: [String]?, captureLocalRequests: Bool, completion: @escaping (Bool, String) -> Void) {
+        guard systemProxyActive, !systemProxyBusy, !proxyRestarting else {
+            completion(false, systemProxyMessage ?? Strings.Errors.systemProxyEnableTheSystemProxyFirst)
+            return
+        }
+        systemProxyBusy = true
+        SystemProxyController.shared.updateBypass(hosts, captureLocalRequests: captureLocalRequests) { [weak self] ok, message in
+            self?.systemProxyBusy = false
+            if ok { self?.systemProxyCapturesLocalRequests = captureLocalRequests }
+            completion(ok, message)
         }
     }
 
@@ -620,7 +715,10 @@ final class AppState: ObservableObject, TrafficSink {
         SystemProxyController.shared.disable(restorePrevious: restorePrevious) { [weak self] ok, msg in
             guard let self else { return }
             self.systemProxyBusy = false
-            if ok { self.systemProxyActive = false }
+            if ok {
+                self.systemProxyActive = false
+                self.systemProxyCapturesLocalRequests = false
+            }
             self.systemProxyMessage = ok ? Strings.Errors.appStateSystemProxyRestored : Strings.Errors.appStateUnableToDisableTheSystemProxy(String(msg))
             onComplete?(ok)
         }
@@ -629,10 +727,11 @@ final class AppState: ObservableObject, TrafficSink {
     func runSimulatorAutomation() {
         if !proxyRunning { startProxy(automaticallyTakeOver: false) }
         guard proxyRunning else { return }
+        let authority = certificateAuthority
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try CertificateAuthority.shared.ensureCA()
-                let ca = CertificateAuthority.shared.caCertPath.path
+                try authority.ensureCA()
+                let ca = authority.caCertPath.path
                 let message = try DeviceAutomation.setupSimulators(certificatePath: ca)
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -652,10 +751,11 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func runAndroidEmulatorAutomation() {
+        let authority = certificateAuthority
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                try CertificateAuthority.shared.ensureCA()
-                let ca = CertificateAuthority.shared.caCertPath.path
+                try authority.ensureCA()
+                let ca = authority.caCertPath.path
                 let message = try DeviceAutomation.setupAndroidEmulator(certificatePath: ca)
                 DispatchQueue.main.async { self?.systemProxyMessage = message }
             } catch {
@@ -665,9 +765,10 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func prepareAndroidUserCertificate() {
+        let authority = certificateAuthority
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let data = try CertificateAuthority.shared.caDER()
+                let data = try authority.caDER()
                 let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("pm-android-\(UUID().uuidString).cer")
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 try data.write(to: temporary)
@@ -680,7 +781,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func installCACertificate() {
-        CertInstaller.installSystemWide { [weak self] ok, msg in
+        CertInstaller.installSystemWide(authority: certificateAuthority) { [weak self] ok, msg in
             guard let self else { return }
             guard ok else {
                 self.systemProxyMessage = Strings.Errors.appStateCaInstallationFailed(String(msg))
@@ -699,8 +800,9 @@ final class AppState: ObservableObject, TrafficSink {
 
     func refreshCertificateStatus(completion: ((Bool) -> Void)? = nil) {
         certificateStatusTask?.cancel()
+        let authority = certificateAuthority
         certificateStatusTask = Task { [weak self] in
-            let status = await Task.detached(priority: .utility) { CertInstaller.certificateStatus() }.value
+            let status = await Task.detached(priority: .utility) { CertInstaller.certificateStatus(authority: authority) }.value
             guard !Task.isCancelled, let self else { return }
             self.caInstalled = status.trusted
             completion?(status.trusted)
@@ -736,7 +838,7 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func revealCAFile() {
-        CertInstaller.revealCAFile()
+        CertInstaller.revealCAFile(authority: certificateAuthority)
     }
 
     // MARK: Flow 动作（对齐 Proxyman Flow 菜单交互）
@@ -748,7 +850,8 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func copyRequestsAsCurl(_ transactions: [Transaction]) {
-        copyText(transactions.map(ExportService.curlCommand).joined(separator: "\n"))
+        let runtime = runtimeContext
+        copyText(transactions.map { ExportService.curlCommand($0, runtime: runtime) }.joined(separator: "\n"))
     }
 
     func copyRequestsUsingDefaultFormat(_ transactions: [Transaction]) {
@@ -758,7 +861,8 @@ final class AppState: ObservableObject, TrafficSink {
             systemProxyMessage = Strings.Errors.appStateTheSelectedRequestsCannotBeCopiedAsCheck(String(format.title))
             return
         }
-        copyText(transactions.map { RequestCode.generate($0, format: format) }.joined(separator: "\n\n"))
+        let runtime = runtimeContext
+        copyText(transactions.map { RequestCode.generate($0, format: format, runtime: runtime) }.joined(separator: "\n\n"))
     }
 
     private func withSelected(_ f: @escaping (Transaction) -> Void) {
@@ -775,7 +879,7 @@ final class AppState: ObservableObject, TrafficSink {
         guard tx.canReplay else { return }
         if !direct && !proxyRunning { startProxy(automaticallyTakeOver: false) }
         if !direct && !proxyRunning { return }
-        RepeatService.resend(tx, proxyPort: direct ? nil : ProxyEngine.shared.port) { [store] result in
+        RepeatService.resend(tx, runtime: runtimeContext, proxyPort: direct ? nil : engine.port) { [store] result in
             if direct || result.state == .failed { store.add(result) }
         }
     }
@@ -799,8 +903,16 @@ final class AppState: ObservableObject, TrafficSink {
     }
 
     func openTool(_ kind: ToolKind, transaction: Transaction? = nil) {
-        toolTransaction = transaction
-        activeTool = kind
+        let ruleKinds: Set<ToolKind> = [.mapLocal, .mapRemote, .blockList, .allowList, .sslProxyingList]
+        if ruleKinds.contains(kind) {
+            let pattern = transaction.map { kind == .sslProxyingList ? $0.host : $0.originalURL ?? $0.fullURL } ?? ""
+            requestedRuleWindow = kind.rawValue + "\n" + pattern
+        } else if kind == .customCertificates {
+            requestedAuxiliaryWindow = "certificate-manager"
+        } else {
+            toolTransaction = transaction
+            activeTool = kind
+        }
     }
 
     func dismissTool() {
@@ -859,7 +971,7 @@ final class AppState: ObservableObject, TrafficSink {
         let redact = settings.redactSensitiveHeaders
         SessionFile.fileQueue.async { [weak self] in
             do { try snapshot.write(to: url, redactSensitiveHeaders: redact) }
-            catch { DispatchQueue.main.async { [weak self] in self?.systemProxyMessage = error.localizedDescription } }
+            catch { DispatchQueue.main.async { [weak self] in self?.systemProxyMessage = LocalizedErrorPresentation.message(for: error) } }
         }
     }
 
@@ -870,6 +982,7 @@ final class AppState: ObservableObject, TrafficSink {
 
     func openSession(_ url: URL? = nil, charles: Bool = false) {
         guard let url = url ?? SessionFile.selectFile() else { return }
+        guard !SessionImportGuide.presentIfNeeded(url) else { return }
         let isCharles = charles || CharlesImport.sessionExtensions.contains(url.pathExtension.lowercased())
         let workspace = activeStore
         let workspaceID = workspace.id
@@ -946,6 +1059,9 @@ final class AppState: ObservableObject, TrafficSink {
 }
 
 extension Notification.Name {
+    static let focusBodySearch = Notification.Name("ProxyMirror.focusBodySearch")
+    static let toggleAdvancedTrafficFilter = Notification.Name("ProxyMirror.toggleAdvancedTrafficFilter")
+    static let pmNewSourceFolder = Notification.Name("ProxyMirror.newSourceFolder")
     static let focusTrafficFilter = Notification.Name("ProxyMirror.focusTrafficFilter")
     static let focusSourceFilter = Notification.Name("ProxyMirror.focusSourceFilter")
 }

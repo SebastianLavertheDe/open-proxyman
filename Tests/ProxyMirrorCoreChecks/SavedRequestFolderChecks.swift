@@ -80,10 +80,51 @@ func checkSavedRequestFolders(_ test: CoreAssertions) throws {
     let mode = try FileManager.default.attributesOfItem(atPath: canonical.path)[.posixPermissions] as? NSNumber
     test.equal(mode?.intValue, 0o600, "Saved request libraries containing captured credentials are written privately")
 
+    let beforeFailure = try Data(contentsOf: canonical)
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+    let retryFolder = try store.createSavedRequestFolder(name: "Retry after write failure")
+    let failureDeadline = Date().addingTimeInterval(4)
+    while store.savedError == nil, Date() < failureDeadline {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+    }
+    test.expect(store.savedError != nil, "Failed Saved writes are reported")
+    test.equal(try Data(contentsOf: canonical), beforeFailure, "A failed Saved write leaves the committed library unchanged")
+    var failedRetry: Bool?
+    test.expect(store.finishSaving { failedRetry = $0 }, "Quit retries a dirty snapshot after the original write has finished")
+    let quitDeadline = Date().addingTimeInterval(4)
+    while failedRetry == nil, Date() < quitDeadline {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+    }
+    test.equal(failedRetry, false, "A failed quit retry prevents termination")
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+    try finishSavedFolderWrite(store)
+    test.equal(store.savedError, nil, "A successful retry clears the Saved error")
+    let recovered = try SavedRequestFolderArchive.load(legacy: legacy).archive
+    test.expect(recovered.folders.contains { $0.id == retryFolder }, "Quit persists the failed snapshot after storage recovers without another edit")
+
     let wrong = directory.appendingPathComponent("wrong.proxymirror")
     try SourceFolderArchive.write([SourceFolder(name: "source", members: [.domain("example.test")])], to: SavedRequestFolderArchive.fileURL(for: wrong))
     do { _ = try SavedRequestFolderArchive.load(legacy: wrong); test.expect(false, "Source-folder JSON is not a saved-request archive") }
     catch { test.expect(true, "Source-folder JSON is not a saved-request archive") }
+
+    let invalidMetrics = Transaction()
+    invalidMetrics.requestBytes = Int.max
+    invalidMetrics.responseBytes = Int.max
+    var invalidArchive = SavedRequestFolderArchive()
+    invalidArchive.unfiled = [SessionRecord(invalidMetrics)]
+    test.rejects(try invalidArchive.validate(), with: SavedRequestFolderArchive.Failure.self,
+                 "Saved archives reject overflowing imported byte counts")
+    invalidMetrics.requestBytes = 0
+    invalidMetrics.responseBytes = -1
+    invalidArchive.unfiled = [SessionRecord(invalidMetrics)]
+    test.rejects(try invalidArchive.validate(), with: SavedRequestFolderArchive.Failure.self,
+                 "Saved archives reject negative imported byte counts")
+    invalidMetrics.responseBytes = 0
+    invalidMetrics.duration = .infinity
+    invalidArchive.unfiled = [SessionRecord(invalidMetrics)]
+    test.rejects(try invalidArchive.validate(), with: SavedRequestFolderArchive.Failure.self,
+                 "Saved archives reject non-finite imported duration")
 }
 
 @MainActor

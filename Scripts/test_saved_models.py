@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Compile and execute the actual SavedRequestFolderArchive Swift source on Linux.
 
-Only the unrelated SessionRecord payload and private-file writer are tiny test
-boundaries. The archive's version checks, ID collision handling, hierarchy, validation,
-copy/move/delete and rollback code is compiled verbatim from the repository.
+SessionRecord remains a platform boundary with actual numeric/body fields; its
+metrics validation delegates to the compiled production Foundation module. The
+private-file writer is also a boundary. The archive's version checks, ID collision
+handling, hierarchy, validation, copy/move/delete and rollback code is compiled
+verbatim from the repository.
 This is not a macOS UI, TrafficStore, or SessionFile integration test.
 """
 import argparse
 import os
 from pathlib import Path
+from foundation_test_support import build_foundation_module
 from localization_model_test_support import localization_sources
 import shutil
 import subprocess
@@ -17,12 +20,33 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 BOUNDARIES = r'''
 import Foundation
+import ProxyMirrorFoundation
 struct SessionRecord: Codable, Sendable, Equatable {
     let id: UUID
     let host: String
-    let body: Data
+    let requestBody: Data
+    let responseBody: Data
+    let requestBytes: Int
+    let responseBytes: Int
+    let duration: TimeInterval
     let comment: String
     let startedAt: Date
+
+    var body: Data { responseBody }
+
+    init(id: UUID, host: String, body: Data, comment: String, startedAt: Date,
+         requestBody: Data = Data(), requestBytes: Int = 0, responseBytes: Int? = nil,
+         duration: TimeInterval = 0) {
+        self.id = id; self.host = host; self.requestBody = requestBody; self.responseBody = body
+        self.requestBytes = requestBytes; self.responseBytes = responseBytes ?? body.count
+        self.duration = duration; self.comment = comment; self.startedAt = startedAt
+    }
+
+    func validatedMetrics() throws -> ImportedTrafficMetrics {
+        try ImportedTrafficMetrics(requestBytes: requestBytes, responseBytes: responseBytes,
+                                   capturedRequest: requestBody.count, capturedResponse: responseBody.count,
+                                   durationSeconds: duration)
+    }
 }
 enum PrivateAppFile {
     static func write(_ data: Data, to target: URL) throws {
@@ -33,6 +57,7 @@ enum PrivateAppFile {
 '''
 HARNESS = r'''
 import Foundation
+import ProxyMirrorFoundation
 @main struct SavedModelChecks {
     static func main() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pm-saved-native-" + UUID().uuidString)
@@ -113,7 +138,46 @@ import Foundation
         var obsolete = loaded.archive
         obsolete.version = 1
         rejects("obsolete folder archive accepted") { try obsolete.validate() }
-        print("PASS: \(checks) actual Swift Saved archive checks; no macOS UI or TrafficStore runtime executed")
+
+        let malicious = directory.appendingPathComponent("Malicious.proxymirror")
+        for (request, response, duration, label) in [
+            (Int.max, Int.max, 0.0, "overflowing byte sum"),
+            (-1, 0, 0.0, "negative request bytes"),
+            (0, -1, 0.0, "negative response bytes"),
+            (Int.max, 0, 0.0, "overflow using captured body count"),
+            (0, 0, -1.0, "negative duration"),
+            (0, 0, Double.infinity, "infinite duration"),
+            (0, 0, Double.nan, "NaN duration"),
+            (0, 0, ImportedTrafficMetrics.maximumDurationSeconds * 2, "duration outside display range")
+        ] {
+            let record = SessionRecord(id: UUID(), host: "malicious.saved.test", body: Data([1]), comment: label,
+                startedAt: Date(timeIntervalSince1970: 100), requestBytes: request, responseBytes: response, duration: duration)
+            var invalid = SavedRequestFolderArchive()
+            invalid.unfiled = [record]
+            rejects("accepted unfiled " + label) { try invalid.validate() }
+            let folder = SavedRequestFolder(name: "Invalid metrics")
+            invalid.folders = [folder]
+            invalid.unfiled = []
+            invalid.requestsByFolder = [folder.id.uuidString: [record]]
+            rejects("accepted folder " + label) { try invalid.validate() }
+            if duration.isFinite {
+                // Bypass write-time validation to simulate an externally edited
+                // on-disk archive, then execute production load-time validation.
+                let data = try JSONEncoder().encode(invalid)
+                let target = SavedRequestFolderArchive.fileURL(for: malicious)
+                try data.write(to: target)
+                rejects("loaded malicious " + label) { _ = try SavedRequestFolderArchive.load(legacy: malicious) }
+                try expect(Data(contentsOf: target) == data, "rejected metrics changed the on-disk archive")
+            }
+        }
+        let largest = SessionRecord(id: UUID(), host: "largest.saved.test", body: Data(), comment: "bounded",
+            startedAt: Date(timeIntervalSince1970: 100), requestBytes: Int.max,
+            responseBytes: 0, duration: ImportedTrafficMetrics.maximumDurationSeconds)
+        var boundary = SavedRequestFolderArchive()
+        boundary.unfiled = [largest]
+        try boundary.validate()
+        try expect(largest.validatedMetrics().requestBytes == Int.max, "valid extreme count was rejected or changed")
+        print("PASS: \(checks) actual Swift Saved archive/production Foundation metrics checks; no macOS UI or TrafficStore runtime executed")
     }
 }
 '''
@@ -127,11 +191,14 @@ def main():
         parser.error("set PM_SWIFTC or pass --swiftc to a Swift compiler")
     with tempfile.TemporaryDirectory(prefix="pm-saved-models-") as temporary:
         work = Path(temporary)
+        module_flags = build_foundation_module(args.swiftc, work)
         (work / "Boundaries.swift").write_text(BOUNDARIES)
         (work / "Harness.swift").write_text(HARNESS)
         executable = work / "saved-checks"
-        subprocess.run([args.swiftc, "-swift-version", "5", str(ROOT / "Sources/ProxyMirrorCore/Model/SavedRequestFolder.swift"),
-                        str(work / "Boundaries.swift"), str(work / "Harness.swift"), *localization_sources(work), "-o", str(executable)], check=True, timeout=120)
+        subprocess.run([args.swiftc, "-swift-version", "5", *module_flags, str(ROOT / "Sources/ProxyMirrorCore/Model/SavedRequestFolder.swift"),
+                        str(work / "Boundaries.swift"), str(work / "Harness.swift"), *localization_sources(work),
+                        str(ROOT / "Sources/ProxyMirrorCore/System/GeneratedOperationIssues.swift"),
+                        "-o", str(executable)], check=True, timeout=120)
         subprocess.run([str(executable)], check=True, timeout=30)
 
 

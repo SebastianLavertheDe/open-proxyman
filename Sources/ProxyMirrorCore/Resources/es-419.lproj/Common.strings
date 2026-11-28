@@ -1,0 +1,20 @@
+/* Initial translation; missing entries use the English fallback. */
+"add" = "Añadir";
+"cancel" = "Cancelar";
+"close" = "Cerrar";
+"copy" = "Copiar";
+"delete" = "Eliminar";
+"edit" = "Editar";
+"error" = "Error";
+"language_japanese_preview" = "日本語 (traducción parcial)";
+"language_portuguese_preview" = "Português brasileiro (traducción parcial)";
+"language_restart_notice" = "Se aplica al reiniciar.";
+"language_spanish_preview" = "Español latinoamericano (traducción parcial)";
+"loading" = "Cargando…";
+"none" = "Ninguno";
+"ok" = "Aceptar";
+"remove" = "Quitar";
+"resource_unavailable" = "Faltan recursos de idioma. Vuelve a instalar ProxyMirror.";
+"save" = "Guardar";
+"search" = "Buscar";
+"unknown" = "Desconocido";

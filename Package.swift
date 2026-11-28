@@ -1,21 +1,34 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 5.10
 import PackageDescription
 import Foundation
 
-// Distribution builds may opt into the signed Sparkle update framework.
+// This target graph keeps Foundation policies directly buildable on Linux.
+// macOS adds the desktop application, native services and integration checks.
 let includeSparkle = ProcessInfo.processInfo.environment["PM_ENABLE_SPARKLE"] == "1"
+var products: [Product] = [
+    .library(name: "ProxyMirrorFoundation", targets: ["ProxyMirrorFoundation"]),
+    .executable(name: "ProxyMirrorTransportFixture", targets: ["ProxyMirrorTransportFixture"]),
+]
+var dependencies: [Package.Dependency] = []
+var targets: [Target] = [
+    .target(name: "ProxyMirrorProcessSupport"),
+    .target(name: "ProxyMirrorFoundation", dependencies: ["ProxyMirrorProcessSupport"]),
+    .testTarget(name: "ProxyMirrorFoundationTests", dependencies: ["ProxyMirrorFoundation"]),
+    .executableTarget(name: "ProxyMirrorTransportFixture", dependencies: ["ProxyMirrorFoundation"],
+                      path: "Tests/Fixtures/ComposeTransport"),
+]
 
-let package = Package(
-    name: "ProxyMirror",
-    defaultLocalization: "en",
-    platforms: [.macOS(.v13)],
-    products: [
+#if os(macOS)
+products += [
+
         .executable(name: "ProxyMirror", targets: ["ProxyMirror"]),
         .executable(name: "ProxyMirrorScriptWorker", targets: ["ProxyMirrorScriptWorker"]),
         .executable(name: "ProxyMirrorSystemProxyHelper", targets: ["ProxyMirrorSystemProxyHelper"]),
         .executable(name: "ProxyMirrorTransparentExtension", targets: ["ProxyMirrorTransparentExtension"]),
-    ],
-    dependencies: [
+
+]
+dependencies += [
+
         .package(path: "ProxyMirrorBridgeKit"),
         // X.509 证书生成（CA + 动态叶子证书）
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
@@ -25,12 +38,15 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.60.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.25.0"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", exact: "1.38.0"),
-    ] + (includeSparkle ? [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")] : []),
-    targets: [
+
+] + (includeSparkle ? [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")] : [])
+targets += [
+
         // 核心库：代理引擎 + 数据层 + 系统集成 + UI 组件
         .target(
             name: "ProxyMirrorCore",
             dependencies: [
+                "ProxyMirrorFoundation",
                 "ProxyMirrorAuthorizedInstaller",
                 "ProxyMirrorSystemProxy",
                 "ProxyMirrorZstd",
@@ -61,8 +77,8 @@ let package = Package(
         .target(name: "ProxyMirrorZstd", exclude: ["LICENSE", "UPSTREAM.md"]),
         .target(name: "ProxyMirrorProtocolSupport"),
         .target(name: "ProxyMirrorAuthorizedInstaller"),
-        .target(name: "ProxyMirrorSystemProxy"),
-        .executableTarget(name: "ProxyMirrorSystemProxyHelper", dependencies: ["ProxyMirrorSystemProxy"]),
+        .target(name: "ProxyMirrorSystemProxy", dependencies: ["ProxyMirrorFoundation"]),
+        .executableTarget(name: "ProxyMirrorSystemProxyHelper", dependencies: ["ProxyMirrorSystemProxy", "ProxyMirrorFoundation"]),
         .executableTarget(name: "ProxyMirrorTransparentExtension"),
         .target(
             name: "ProxyMirrorCoreChecks",
@@ -97,5 +113,15 @@ let package = Package(
             ],
             path: "Sources/ProxyMirrorSelfTest"
         ),
-    ]
+
+]
+#endif
+
+let package = Package(
+    name: "ProxyMirror",
+    defaultLocalization: "en",
+    platforms: [.macOS(.v13)],
+    products: products,
+    dependencies: dependencies,
+    targets: targets
 )

@@ -17,6 +17,7 @@ import uuid
 
 from test_cli import prepare_bundle, write_preferences
 
+LANGUAGES = ("en", "zh-Hans", "es-419", "ja", "pt-BR")
 PAGES = ("general", "appearance", "privacy", "mcp", "github", "tools", "network", "advanced", "workspace", "products")
 
 
@@ -60,7 +61,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("build_app/preferences-review"))
     parser.add_argument("--pages", nargs="+", choices=PAGES, default=list(PAGES))
     parser.add_argument("--appearance", choices=("dark", "light", "both"), default="dark")
-    parser.add_argument("--language", choices=("zh-Hans", "en", "both"), default="both")
+    parser.add_argument("--language", choices=(*LANGUAGES, "both", "all"), default="both")
     parser.add_argument("--timeout", type=int, default=30)
     args = parser.parse_args()
     if sys.platform != "darwin":
@@ -71,7 +72,7 @@ def main():
     destination = args.output.resolve()
     destination.mkdir(parents=True, exist_ok=True)
     appearances = ("dark", "light") if args.appearance == "both" else (args.appearance,)
-    languages = ("zh-Hans", "en") if args.language == "both" else (args.language,)
+    languages = LANGUAGES if args.language == "all" else (("zh-Hans", "en") if args.language == "both" else (args.language,))
     manifest = []
     identifier = "com.proxymirror.tests.preferences." + uuid.uuid4().hex
     try:

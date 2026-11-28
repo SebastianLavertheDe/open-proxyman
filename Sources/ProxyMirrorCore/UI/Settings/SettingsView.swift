@@ -40,7 +40,7 @@ struct SettingsView: View {
                         pageContent
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .padding(.horizontal, 40)
-                            .padding(.top, 20)
+                            .padding(.top, page == .general ? 18 : 20)
                             .padding(.bottom, 32)
                     }
                     .onChange(of: revealRequest) { _ in
@@ -117,7 +117,7 @@ struct SettingsView: View {
                         Text(destination.title).fontWeight(.medium)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 9).frame(height: 32)
+                    .padding(.horizontal, 14).frame(height: 32)
                     .foregroundStyle(page == destination ? Color.white : Color.primary)
                     .background(page == destination ? PreferencesPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                     .contentShape(Rectangle())
@@ -155,6 +155,8 @@ struct SettingsView: View {
             Spacer()
         }
         .buttonStyle(.plain).padding(.horizontal, 20).frame(height: 52)
+        .fixedSize(horizontal: false, vertical: true)
+        .layoutPriority(1)
         .background(PreferencesPalette.header)
         .background(PreferencesHeaderAnchor())
     }

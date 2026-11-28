@@ -44,6 +44,11 @@ if CommandLine.arguments.contains("--concurrency") {
     finishChecks()
 }
 
+if CommandLine.arguments.contains("--http-transport-safety") {
+    runHTTPTransportSafetyChecks()
+    finishChecks()
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.first == "--benchmark-core" || arguments.first == "--benchmark-proxy" {
     do {
@@ -92,7 +97,8 @@ func XCTAssertNil(_ v: HTTPRequestHead?, _ name: String) {
 
 do {
     let raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Multi: a\r\nX-Multi: b\r\n\r\n{}"
-    let head = try ResponseHeadParser.parse(String(decoding: Data(raw.utf8), as: UTF8.self))
+    var parser = ResponseHeadParser()
+    let head = try parser.feed(Data(raw.utf8))!
     eq(head.status, 200, "响应头解析: status")
     eq(head.reason, "OK", "响应头解析: reason")
     eq(head.headers.values(of: "x-multi"), ["a", "b"], "响应头解析: 多值头保序")
@@ -136,7 +142,7 @@ do {
     headers.append("Proxy-Connection", "keep-alive")
     headers.append("Accept", "*/*")
     let head = HTTPRequestHead(method: "GET", target: "http://example.com/", version: "HTTP/1.1", headers: headers)
-    let text = String(decoding: sanitizedRequestHead(head: head, originFormTarget: "/", keepAlive: true), as: UTF8.self)
+    let text = String(decoding: try sanitizedRequestHead(head: head, originFormTarget: "/", keepAlive: true), as: UTF8.self)
     check(text.hasPrefix("GET / HTTP/1.1\r\n"), "sanitized: origin-form 请求行")
     check(text.contains("Host: example.com"), "sanitized: Host 保留")
     check(!text.contains("Proxy-Connection"), "sanitized: 代理头移除")

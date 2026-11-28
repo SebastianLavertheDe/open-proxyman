@@ -15,26 +15,13 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from foundation_test_support import build_foundation_module
+from runtime_adapter_test_support import RUNTIME_STUBS
 
 
-STUBS = r'''
+STUBS = RUNTIME_STUBS + r'''
 import Foundation
-final class AppSettings {
-    static let shared = AppSettings()
-    var port: UInt16 = 9090
-    var appendProxyToCommands = false
-    var preserveOriginalHeaders = false
-    var redactSensitiveHeaders = false
-}
-final class ProxyEngine {
-    static let shared = ProxyEngine()
-    var isRunning = false
-    var port: UInt16 = 9090
-}
-struct HTTPHeaders {
-    var pairs: [(name: String, value: String)]
-    init(_ pairs: [(String, String)] = []) { self.pairs = pairs.map { ($0.0, $0.1) } }
-}
+@_exported import ProxyMirrorFoundation
 final class Transaction {
     var isTunnel = false
     var host = "127.0.0.1"
@@ -44,11 +31,8 @@ final class Transaction {
     var requestBody = Data()
     var requestHeaders = HTTPHeaders()
 }
-enum URLParser {
-    static func authority(host: String, port: Int, scheme: String) -> String { host + ":" + String(port) }
-}
 enum ComposeService {
-    struct ParsedRequest { var method: String; var url: String; var headers: [(String, String)]; var body: Data? }
+    typealias ParsedRequest = HTTPRequest
     static func request(from tx: Transaction) -> ParsedRequest {
         ParsedRequest(method: tx.method, url: tx.fullURL,
                       headers: tx.requestHeaders.pairs.map { ($0.name, $0.value) }, body: tx.requestBody)
@@ -92,6 +76,28 @@ import Foundation
                             "headers": tx.requestHeaders.pairs.map { ["name": $0.name, "value": $0.value] },
                             "originalLength": body.count]
         }
+        let privateSettings = AppSettings()
+        privateSettings.appendProxyToCommands = true
+        privateSettings.redactSensitiveHeaders = true
+        privateSettings.maxBodyMB = 3
+        let privateEngine = ProxyEngine()
+        privateEngine.isRunning = true
+        privateEngine.port = 62714
+        let runtime = ProxyRuntimeContext(engine: privateEngine, settings: privateSettings)
+        privateSettings.appendProxyToCommands = false
+        privateSettings.redactSensitiveHeaders = false
+        privateSettings.maxBodyMB = 4
+        let privateRequest = Transaction()
+        privateRequest.requestHeaders = HTTPHeaders([("Authorization", "Bearer isolated-secret")])
+        let privateCurl = ExportService.curlCommand(privateRequest, runtime: runtime)
+        let privateHTTPie = ExportService.httpieCommand(privateRequest, runtime: runtime)
+        precondition(privateCurl.contains("127.0.0.1:62714") && privateHTTPie.contains("127.0.0.1:62714"))
+        precondition(!privateCurl.contains("isolated-secret") && !privateHTTPie.contains("isolated-secret"))
+        precondition(runtime.captureLimit == 3 * 1024 * 1024)
+        let trusted = try runtime.trustedCA(for: HTTPRequest(method: "GET", url: "https://runtime.example.test/", headers: [], body: nil))
+        precondition(trusted == privateEngine.certificateAuthority.caCertPath)
+        precondition(trusted != ProxyEngine.shared.certificateAuthority.caCertPath)
+        precondition(ProxyEngine.shared.port == 9090)
         FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: output))
     }
 }
@@ -138,17 +144,20 @@ def main():
     commands = "import Foundation\nenum ExportService {\n" + source[source.index("    /// 生成可复用的 cURL 命令"):source.index("\n}\n\n@MainActor")] + "\n}\n"
     with tempfile.TemporaryDirectory(prefix="pm-copy-framing-") as directory, ThreadingHTTPServer(("127.0.0.1", 0), Origin) as origin:
         target = Path(directory)
+        module_flags = build_foundation_module(args.swiftc, target)
         worker = threading.Thread(target=origin.serve_forever, daemon=True)
         worker.start()
         try:
             for name, content in [("Models.swift", STUBS), ("Commands.swift", commands), ("Main.swift", MAIN)]:
                 (target / name).write_text(content)
             executable = target / "copy-fixture"
-            subprocess.run([args.swiftc, "-parse-as-library", str(root / "Sources/ProxyMirrorCore/Export/ExportRedaction.swift"),
+            subprocess.run([args.swiftc, "-parse-as-library", *module_flags, str(root / "Sources/ProxyMirrorCore/Export/ExportRedaction.swift"),
+                            str(root / "Sources/ProxyMirrorCore/Export/ProxyRuntimeContext.swift"),
                             *(str(target / name) for name in ["Models.swift", "Commands.swift", "Main.swift"]), "-o", str(executable)], check=True, timeout=120)
             env = dict(os.environ, PM_COPY_URL=f"http://127.0.0.1:{origin.server_port}/copy",
                        PM_COPY_GZIP=base64.b64encode(gzip.compress(b'{"password":"body-secret"}', mtime=0)).decode())
             fixtures = json.loads(subprocess.check_output([str(executable)], env=env, timeout=15))
+            print("PASS 6 production runtime-context checks (selected endpoint/CA, settings snapshot, unchanged shared engine); platform engine/CA contracts are stubs")
             recorder = target / "http"
             recorder.write_text("#!/usr/bin/env python3\nimport base64,json,sys\nprint(json.dumps({'args':sys.argv[1:],'bodyBase64':base64.b64encode(sys.stdin.buffer.read()).decode()}))\n")
             recorder.chmod(0o755)

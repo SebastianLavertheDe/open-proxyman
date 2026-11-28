@@ -1,4 +1,5 @@
 import Foundation
+import ProxyMirrorFoundation
 import NIOCore
 
 /// Bounds retained payloads and bytes still queued for publication.
@@ -267,7 +268,7 @@ final class TransactionCapture: @unchecked Sendable {
     private var sseState: SSEBodyStream?
     private var publishedSSECount = 0
     private var publishedSSETruncated = false
-    private var publishedSSEIssue: String?
+    private var publishedSSEIssue: CapturedFailure?
     private var publishedSSEDeferred = false
     private var sseFinished = false
 

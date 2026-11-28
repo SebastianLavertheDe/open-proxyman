@@ -460,6 +460,12 @@
 "target_host_or_example_com" = "目标主机或 *.example.com";
 "target_https_newhost_base" = "目标（https://newhost/base）";
 "template" = "模板";
+"template_get_with_query" = "GET 查询参数";
+"template_post_form" = "POST 表单";
+"template_post_json" = "POST JSON";
+"template_post_multipart" = "POST 多部分表单";
+"template_query_with_body" = "QUERY 请求正文";
+"template_websocket" = "WebSocket";
 "text" = "文本";
 "the_base64_input_is_invalid" = "Base64 输入无效。";
 "the_ca_private_key_is_missing" = "缺少 CA 私钥。";
@@ -518,3 +524,36 @@
 "state_disabled" = "已停用";
 "rule_phase_status" = "%1$@ · %2$@";
 "gist_default_description" = "使用 ProxyMirror 捕获";
+
+"csv_exporting" = "正在导出 CSV…";
+
+"export_cancelled" = "导出已取消。";
+
+/* Rule tool windows */
+"rule_window_enable" = "启用%@工具";
+"rule_window_search" = "筛选规则、目标或备注";
+"rule_window_shortcuts" = "新增：⌘N     编辑：⌘⏎     删除：⌘⌫     复制：⌘D     启用/停用：空格";
+"rule_window_empty" = "点击“+”或按 ⌘N 添加规则";
+"rule_window_rename_folder" = "重命名文件夹…";
+"rule_window_new_folder" = "新建文件夹";
+"rule_window_new_rule" = "新建规则…";
+"rule_window_duplicate" = "创建副本";
+"rule_window_disable_rule" = "停用规则";
+"rule_window_export_selected" = "导出所选规则…";
+"rule_window_export_settings" = "导出设置…";
+"rule_window_show_enabled" = "仅显示已启用";
+"rule_window_more" = "更多";
+"rule_window_import_settings" = "导入设置";
+"rule_window_from_proxy_mirror" = "从 ProxyMirror 导入…";
+"rule_window_from_proxyman" = "从 Proxyman 导入…";
+"rule_window_from_charles" = "从 Charles Proxy 导入…";
+"rule_window_block_action" = "阻断方式";
+"rule_window_comment" = "备注";
+"rule_window_invalid" = "请输入匹配规则和有效目标。本地文件必须可读，状态码范围为 200–599。";
+"rule_window_proxyman_import_help" = "Proxyman 设置导出使用独立的 JSON 格式。直接导入需要经过核验的真实样例；此处不会修改规则。请先在 Proxyman 中导出设置并参阅其导入导出文档。ProxyMirror JSON 备份和 Charles XML 导出可从“导入设置”菜单预览后导入。";
+"rule_window_official_docs" = "打开官方导入导出指南";
+"rule_window_disconnect" = "断开连接，不返回 HTTP 响应";
+"rule_window_advanced" = "高级";
+"rule_window_stop_after_first" = "首条匹配规则执行后停止";
+"rule_window_include_list" = "包含列表";
+"rule_window_exclude_list" = "排除列表";

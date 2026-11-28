@@ -26,4 +26,19 @@ func checkMessagePack(_ test: CoreAssertions) {
     test.expect(MessagePackBody.decodeIfMessagePack(b64("aGVsbG8gd29ybGQ=")) == nil, "MessagePack: 非 map/array 根启发式拒绝")
     let hinted = MessagePackBody.decodeIfMessagePack(Data([0x01]), contentTypeHint: "application/msgpack")
     test.equal(String(decoding: hinted ?? Data(), as: UTF8.self), "1", "MessagePack: 内容类型提示时标量放行")
+    let nonJSONFixtures: [(Data, String)] = [
+        (Data([0x81, 0x01, 0xa1, 0x78]), #"{"_map":[[1,"x"]]}"#),
+        (Data([0x82, 0x01, 0xa1, 0x78, 0xa1, 0x31, 0xa1, 0x79]), #"{"_map":[[1,"x"],["1","y"]]}"#),
+        (Data([0x81, 0x91, 0x01, 0x02]), #"{"_map":[[[1],2]]}"#),
+        (Data([0xca, 0x7f, 0xc0, 0x00, 0x00]), #"{"_float":"NaN"}"#),
+        (Data([0xca, 0x7f, 0x80, 0x00, 0x00]), #"{"_float":"Infinity"}"#),
+        (Data([0xcb, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]), #"{"_float":"-Infinity"}"#),
+    ]
+    for (wire, expected) in nonJSONFixtures {
+        let inspection = MessagePackBody.inspect(wire, contentType: "application/msgpack")
+        test.expect(inspection.decoded && inspection.contentType == "application/json", "MessagePack: 非 JSON 类型使用明确的标记表示")
+        test.equal(String(decoding: inspection.data, as: UTF8.self), expected, "MessagePack: 类型和键序保留")
+        test.expect((try? JSONSerialization.jsonObject(with: inspection.data, options: [.fragmentsAllowed])) != nil,
+                    "MessagePack: 声明 application/json 前结果是合法 JSON")
+    }
 }

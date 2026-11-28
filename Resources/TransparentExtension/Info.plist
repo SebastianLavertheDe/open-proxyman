@@ -5,7 +5,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleLocalizations</key>
-	<array><string>en</string><string>zh-Hans</string></array>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+		<string>es-419</string>
+		<string>ja</string>
+		<string>pt-BR</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>ProxyMirror Transparent Proxy</string>
 	<key>CFBundleExecutable</key>
@@ -17,7 +23,9 @@
 	<key>CFBundlePackageType</key>
 	<string>SYSX</string>
 	<key>CFBundleSupportedPlatforms</key>
-	<array><string>MacOSX</string></array>
+	<array>
+		<string>MacOSX</string>
+	</array>
 	<key>NSSystemExtensionUsageDescription</key>
 	<string>ProxyMirror uses this extension to capture TCP connections when transparent proxying is enabled.</string>
 	<key>NetworkExtension</key>

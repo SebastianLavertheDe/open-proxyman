@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import ProxyMirrorFoundation
 
 @MainActor
 enum PresentationFonts {
@@ -32,42 +33,22 @@ enum PresentationFonts {
 
 /// One cache is shared by transaction and WebSocket timestamps. Its key includes every display choice.
 enum PresentationTime {
-    private struct Key: Hashable {
-        let uses24HourClock: Bool
-        let includesDate: Bool
-        let timezone: String
-        let locale: String
-    }
-    private static let lock = NSLock()
-    private static var formatters: [Key: DateFormatter] = [:]
-
     static func string(from date: Date, settings: AppSettings = .shared,
-                       timeZone: TimeZone = .autoupdatingCurrent,
-                       locale: Locale = .autoupdatingCurrent) -> String {
+                       timeZone: TimeZone = .autoupdatingCurrent, locale: Locale = .autoupdatingCurrent) -> String {
         string(from: date, uses24HourClock: settings.use24HourClock, includesDate: settings.showFullDate,
                timeZone: timeZone, locale: locale)
     }
 
     static func string(from date: Date, uses24HourClock: Bool, includesDate: Bool,
-                       timeZone: TimeZone = .autoupdatingCurrent,
-                       locale: Locale = .autoupdatingCurrent) -> String {
-        let key = Key(uses24HourClock: uses24HourClock, includesDate: includesDate,
-                      timezone: timeZone.identifier, locale: locale.identifier)
-        lock.lock(); defer { lock.unlock() }
-        let formatter: DateFormatter
-        if let existing = formatters[key] { formatter = existing }
-        else {
-            formatter = DateFormatter()
-            formatter.locale = locale
-            formatter.timeZone = timeZone
-            formatter.dateFormat = (includesDate ? "yyyy-MM-dd " : "")
-                + (uses24HourClock ? "HH:mm:ss.SSS" : "hh:mm:ss.SSS a") + (includesDate ? " xxx" : "")
-            if formatters.count >= 16 { formatters.removeAll() }
-            formatters[key] = formatter
-        }
-        return formatter.string(from: date)
+                       timeZone: TimeZone = .autoupdatingCurrent, locale: Locale = .autoupdatingCurrent) -> String {
+        DisplayTimeFormatter.string(from: date, uses24HourClock: uses24HourClock, includesDate: includesDate,
+                                    timeZone: timeZone, locale: locale)
     }
 }
+
+/// Region-sensitive UI numbers. Wire formats, request generators and HAR keep
+/// their own stable numeric serialization and never use this presentation API.
+
 
 @MainActor
 enum CodeTextStyle {

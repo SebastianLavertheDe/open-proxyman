@@ -1,11 +1,19 @@
 import Foundation
+import Combine
 import NIOPosix
 @testable import ProxyMirrorCore
 
 private final class LoopbackSink: TrafficSink {
     var records: [Transaction] = []
-    func transactionCreated(_ tx: Transaction) { records.append(tx) }
-    func transactionUpdated(_ tx: Transaction) {}
+    private var metadataSubscriptions: [AnyCancellable] = []
+    func transactionCreated(_ tx: Transaction) {
+        precondition(Thread.isMainThread, "Capture publication must run on the main thread")
+        records.append(tx)
+        metadataSubscriptions.append(tx.objectWillChange.sink { _ in
+            precondition(Thread.isMainThread, "Published HTTP/WS/SSE metadata changed off the main thread")
+        })
+    }
+    func transactionUpdated(_ tx: Transaction) { precondition(Thread.isMainThread) }
 }
 
 func runLoopbackTests() {
@@ -180,7 +188,8 @@ func runLoopbackTests() {
 
         let parsed = ComposeService.ParsedRequest(method: "GET", url: source + "/local", headers: [], body: nil)
         var replay: Transaction?
-        _ = ComposeService.execute(parsed, proxyPort: engine.port) { replay = $0 }
+        _ = ComposeService.execute(parsed, runtime: ProxyRuntimeContext(engine: engine, settings: .shared),
+                                   proxyPort: engine.port) { replay = $0 }
         let deadline = Date().addingTimeInterval(8)
         while replay == nil && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) }
         eq(replay?.responseBody, Data("local fixture".utf8), "loopback: Compose 经代理命中 Map Local")

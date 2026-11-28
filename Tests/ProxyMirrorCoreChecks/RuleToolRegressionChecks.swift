@@ -1,6 +1,7 @@
 import Foundation
 import NIOCore
 import NIOEmbedded
+import NIOHTTP1
 @testable import ProxyMirrorCore
 
 func checkCustomCertificateBackup(_ test: CoreAssertions) throws {
@@ -58,6 +59,22 @@ func checkTunnelRuleEnforcement(_ test: CoreAssertions) throws {
     test.expect(RulesSnapshot(blockList: [ProxyRule(pattern: "https://[::1]:8443/*")])
         .tunnelRejection(host: "::1", port: 8443) != nil, "Tunnel matching retains IPv6 and nondefault ports")
 
+    let legacy = try JSONDecoder().decode(ProxyRule.self, from: JSONEncoder().encode(block))
+    test.equal(legacy.blockAction, nil, "Old rule documents decode with the default Block action")
+    test.equal(RulesSnapshot(blockList: [legacy]).blockAction(for: "https://blocked.example.test/"), .forbidden,
+               "Missing Block actions retain HTTP 403 behavior")
+    for action in RuleBlockAction.allCases {
+        var rule = block
+        rule.blockAction = action
+        let snapshot = RulesSnapshot(blockList: [rule])
+        test.equal(snapshot.tunnelBlockAction(host: "blocked.example.test", port: 443), action,
+                   "Tunnel routing retains the selected Block action")
+        let data = try RuleBackup(blockList: [rule]).exportData()
+        let (roundTrip, unknown) = try RuleBackup.read(data)
+        test.equal(roundTrip.blockList?.first?.blockAction, action, "Block actions round-trip through rule backups")
+        test.expect(unknown.isEmpty, "Block action is a recognized rule backup field")
+    }
+
     // Exercise the real CONNECT handler; a denied tunnel must never acknowledge 200 or dial an origin.
     let engine = ProxyEngine.shared
     guard !engine.isRunning else {
@@ -97,5 +114,54 @@ func checkTunnelRuleEnforcement(_ test: CoreAssertions) throws {
         test.expect(sink.records.last?.matchedByBlock == true && sink.records.last?.statusCode == 403,
                     "Rejected tunnels appear in traffic with rule matching and a 403 status")
         _ = try? channel.finish()
+    }
+    for action in RuleBlockAction.allCases {
+        for connect in [false, true] {
+            var rule = ProxyRule(pattern: "*")
+            rule.blockAction = action
+            let snapshot = RulesSnapshot(blockList: [rule])
+            let handler = ProxyConnectionHandler(conn: ConnState(engine: engine), tunnelRules: { snapshot }, requestRules: { snapshot })
+            let channel = EmbeddedChannel(handler: handler)
+            try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 54322)).wait()
+            let line = connect ? "CONNECT blocked.example.test:443" : "GET http://blocked.example.test/"
+            _ = try channel.writeInbound(ByteBuffer(string: line + " HTTP/1.1\r\nHost: blocked.example.test\r\nConnection: close\r\n\r\n"))
+            var response = ""
+            while let bytes = try channel.readOutbound(as: ByteBuffer.self) {
+                response += String(decoding: bytes.readableBytesView, as: UTF8.self)
+            }
+            if let status = action.statusCode {
+                test.expect(response.hasPrefix("HTTP/1.1 \(status) "), "HTTP and CONNECT return the configured Block status")
+            } else {
+                test.expect(response.isEmpty, "Disconnect Block sends no fabricated HTTP response")
+                test.expect(!channel.isActive, "Disconnect Block closes the downstream transport")
+            }
+            test.equal(sink.records.last?.statusCode, Optional(action.statusCode ?? 0), "Captured Block status agrees with transport behavior")
+            _ = try? channel.finish()
+        }
+        var rule = ProxyRule(pattern: "*")
+        rule.blockAction = action
+        let snapshot = RulesSnapshot(blockList: [rule])
+        let parent = EmbeddedChannel()
+        let pool = HTTP2UpstreamPool(downstream: parent, listenerPort: engine.port)
+        let handler = HTTP2ProxyStream(engine: engine, pool: pool, authorityHost: "blocked.example.test", authorityPort: 443,
+                                      client: nil, clientApplication: nil, requestRules: { snapshot })
+        let stream = EmbeddedChannel(handler: handler)
+        try stream.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 54323)).wait()
+        let head = NIOHTTP1.HTTPRequestHead(version: .http1_1, method: .GET, uri: "/",
+                                          headers: NIOHTTP1.HTTPHeaders([("host", "blocked.example.test")]))
+        _ = try stream.writeInbound(HTTPServerRequestPart.head(head))
+        var observedStatus: Int?
+        var wroteResponse = false
+        while let part = try stream.readOutbound(as: HTTPServerResponsePart.self) {
+            wroteResponse = true
+            if case .head(let response) = part { observedStatus = Int(response.status.code) }
+        }
+        test.equal(observedStatus, action.statusCode, "HTTP/2 returns only the selected Block status")
+        if action == .disconnect {
+            test.expect(!wroteResponse && !stream.isActive, "HTTP/2 disconnect closes only the stream with no response")
+        }
+        test.equal(sink.records.last?.statusCode, Optional(action.statusCode ?? 0), "HTTP/2 Block capture is published, including disconnects")
+        _ = try? stream.finish()
+        _ = try? parent.finish()
     }
 }

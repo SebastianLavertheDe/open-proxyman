@@ -9,14 +9,12 @@ final class ResourceUsageMonitor: ObservableObject {
     @Published private(set) var memory: Int64 = 0
     @Published private(set) var upload: Int64 = 0
     @Published private(set) var download: Int64 = 0
-    private var previous: (time: TimeInterval, up: Int64, down: Int64)?
+    private var rates = TransferRateMeter()
 
     func sample(up: Int64, down: Int64, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
-        if let previous, now > previous.time {
-            upload = Int64(Double(max(0, up - previous.up)) / (now - previous.time))
-            download = Int64(Double(max(0, down - previous.down)) / (now - previous.time))
-        }
-        previous = (now, up, down)
+        rates.sample(up: up, down: down, now: now)
+        upload = rates.upload
+        download = rates.download
         if let resident = MemoryPressureController.residentMemory() { memory = Int64(clamping: resident) }
     }
 }

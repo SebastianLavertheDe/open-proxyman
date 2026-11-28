@@ -62,7 +62,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleLocalizations</key>
-	<array><string>zh-Hans</string><string>en</string></array>
+	<array><string>zh-Hans</string><string>en</string><string>es-419</string><string>ja</string><string>pt-BR</string></array>
 	<key>CFBundleDisplayName</key>
 	<string>ProxyMirror</string>
 	<key>CFBundleExecutable</key>
@@ -138,6 +138,27 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+python3 - "$APP/Contents/Info.plist" <<'PY'
+import plistlib,sys
+from pathlib import Path
+path = Path(sys.argv[1])
+info = plistlib.loads(path.read_bytes())
+info['CFBundleDocumentTypes'].append({
+    'CFBundleTypeName': 'Proxyman Capture (convert to HAR)',
+    'CFBundleTypeExtensions': ['proxymanlog','proxymansession'],
+    'LSTypeIsPackage': True,
+    'CFBundleTypeRole': 'Viewer', 'LSHandlerRank': 'Alternate',
+})
+info['CFBundleDocumentTypes'].append({
+    'CFBundleTypeName': 'Proxyman Capture V2 (convert to HAR)',
+    'CFBundleTypeExtensions': ['proxymanlogv2','proxymansessionv2'],
+    'CFBundleTypeRole': 'Viewer', 'LSHandlerRank': 'Alternate',
+})
+path.write_bytes(plistlib.dumps(info, sort_keys=False))
+PY
+
+python3 Scripts/configure_release.py "$APP"
+
 signature_args=(--force --sign -)
 if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 ]]; then
   signature_args=(--force --sign "$PM_DEVELOPER_ID" --options runtime --timestamp)
@@ -148,13 +169,14 @@ if (( TRANSPARENT )); then
   signature_args=(--force --sign "$fingerprint" --options runtime --timestamp)
 fi
 
-build_flags=()
-# The app imports the core module's internal UI and controller APIs via @testable.
-if [[ "$CONFIG" == release ]]; then
-  build_flags=(-Xswiftc -enable-testing)
-fi
 python3 Scripts/check_localization.py
-swift build -j "${PM_BUILD_JOBS:-2}" -c "$CONFIG" "${build_flags[@]}" 2>&1 | tail -10
+build_products=(ProxyMirror ProxyMirrorScriptWorker ProxyMirrorSystemProxyHelper)
+if [[ "$TRANSPARENT" == 1 ]]; then
+  build_products+=(ProxyMirrorTransparentExtension)
+fi
+for product in "${build_products[@]}"; do
+  swift build -j "${PM_BUILD_JOBS:-2}" -c "$CONFIG" --product "$product" 2>&1 | tail -10
+done
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 LOCALIZATION_BUNDLE="ProxyMirror_ProxyMirrorCore.bundle"
 if [[ ! -d "$BIN_DIR/$LOCALIZATION_BUNDLE" ]]; then
@@ -176,14 +198,14 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Ship licenses for the embedded scripting libraries and Zstandard decoder.
 mkdir -p "$APP/Contents/Resources/ThirdParty"
-for language in en zh-Hans; do
+for language in en zh-Hans es-419 ja pt-BR; do
   localization="Resources/$language.lproj"
   [[ -f "$localization/InfoPlist.strings" ]]
   mkdir -p "$APP/Contents/Resources/$language.lproj"
   cp "$localization/InfoPlist.strings" "$APP/Contents/Resources/$language.lproj/InfoPlist.strings"
 done
-cp "ThirdParty/ScriptingLibraries.md" "$APP/Contents/Resources/ThirdParty/ScriptingLibraries.md"
-cp "Sources/ProxyMirrorZstd/LICENSE" "$APP/Contents/Resources/ThirdParty/Zstandard-LICENSE"
+python3 Scripts/prepare_app_resources.py \
+  "$APP/Contents/Resources/$LOCALIZATION_BUNDLE" "$APP/Contents/Resources/ThirdParty"
 
 if [[ "${PM_ENABLE_SPARKLE:-0}" == 1 ]]; then
   sparkle_framework=$(python3 - <<'PY'
@@ -199,16 +221,14 @@ PY
   python3 Scripts/configure_updates.py "$APP"
 fi
 
-# 图标（若存在）
-if [ -f "Resources/AppIcon.icns" ]; then
-  cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-fi
+# 启动和运行时统一使用原有宇航员图标；缺失图标时让打包失败。
+cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 if (( TRANSPARENT )); then
   host_id=$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")
   extension="$APP/Contents/Library/SystemExtensions/$host_id.transparent-proxy.systemextension"
   cp "$BIN_DIR/ProxyMirrorTransparentExtension" "$extension/Contents/MacOS/ProxyMirrorTransparentExtension"
-  for language in en zh-Hans; do
+  for language in en zh-Hans es-419 ja pt-BR; do
     mkdir -p "$extension/Contents/Resources/$language.lproj"
     cp "Resources/TransparentExtension/$language.lproj/InfoPlist.strings" "$extension/Contents/Resources/$language.lproj/InfoPlist.strings"
   done
@@ -232,6 +252,9 @@ signature_args+=(--entitlements "$STAGING/app.entitlements")
 codesign "${signature_args[@]}" --options runtime "$APP"
 codesign --verify --deep --strict "$APP"
 plutil -lint "$APP/Contents/Info.plist"
+bundle_check_flags=()
+if (( TRANSPARENT )); then bundle_check_flags=(--expect-transparent); fi
+python3 Scripts/test_app_bundle.py --app "$APP" "${bundle_check_flags[@]}"
 if [[ -e "$DESTINATION" ]]; then mv "$DESTINATION" "$PREVIOUS"; fi
 mv "$APP" "$DESTINATION"
 

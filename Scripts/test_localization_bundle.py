@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 
-LANGUAGES = ("en", "zh-Hans")
+LANGUAGES = ("en", "zh-Hans", "es-419", "ja", "pt-BR")
 CORE_BUNDLE = "ProxyMirror_ProxyMirrorCore.bundle"
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = re.compile(r'\s+|/\*.*?\*/|//[^\n]*|("(?:\\.|[^"\\])*")\s*=\s*("(?:\\.|[^"\\])*")\s*;', re.S)
@@ -61,7 +61,7 @@ def verify_resources(app, expect_transparent=False):
     contents = app / "Contents"
     info = plistlib.loads((contents / "Info.plist").read_bytes())
     if set(info.get("CFBundleLocalizations", [])) != set(LANGUAGES):
-        raise ValueError("The app must declare exactly en and zh-Hans")
+        raise ValueError("The app must declare exactly the supported language identifiers")
     if info.get("CFBundleDevelopmentRegion") != "en":
         raise ValueError("The app development language must match the English fallback")
     resources = contents / "Resources"
@@ -115,6 +115,16 @@ def verify_resources(app, expect_transparent=False):
     return len(tables["en"])
 
 
+def verify_selection_count(item, language):
+    count = item["count"]
+    # Foundation can apply locale grouping even to the same native plural rule.
+    numbers = {str(count), f"{count:,}"}
+    expected = {(f"已选择 {number} 条请求" if language == "zh-Hans" else
+                 f"{number} request{'s' if count != 1 else ''} selected") for number in numbers}
+    if item["text"] not in expected:
+        raise ValueError(f"Incorrect native plural result: {item!r}, expected one of {sorted(expected)!r}")
+
+
 def verify_runtime(app):
     if sys.platform != "darwin":
         raise RuntimeError("The packaged App runtime probe requires macOS")
@@ -133,7 +143,7 @@ def verify_runtime(app):
             record = json.loads(result.stdout)
             if record.get("version") != 1:
                 raise ValueError("Unknown localization probe format")
-            expected = "Application Language" if language == "en" else "应用语言"
+            expected = {"en": "Application Language", "zh-Hans": "应用语言", "es-419": "Idioma de la aplicación", "ja": "アプリの言語", "pt-BR": "Idioma do aplicativo"}[language]
             if record["language"] != language or record["label"] != expected:
                 raise ValueError(f"Incorrect packaged language selection: {record}")
             resource = Path(record["resourceBundle"]).resolve()
@@ -142,11 +152,7 @@ def verify_runtime(app):
             if [item["count"] for item in record["counts"]] != [0, 1, 2, 101, 1000]:
                 raise ValueError("The native probe did not exercise the complete plural matrix")
             for item in record["counts"]:
-                count = item["count"]
-                expected = (f"{count} request{'s' if count != 1 else ''} selected"
-                            if language == "en" else f"已选择 {count} 条请求")
-                if item["text"] != expected:
-                    raise ValueError(f"Incorrect native plural result: {item!r}, expected {expected!r}")
+                verify_selection_count(item, language)
             records.append(record)
         # 移除复制品的资源，证明不会借用原 App 或构建目录。
         shutil.rmtree(moved / "Contents/Resources" / CORE_BUNDLE)

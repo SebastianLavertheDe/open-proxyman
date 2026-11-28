@@ -1,52 +1,31 @@
 import Foundation
+import ProxyMirrorFoundation
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 
 /// Compose 和 Repeat 共用请求解析与发送逻辑
 enum ComposeService {
 
-    struct ParsedRequest: Sendable, Codable {
-        var method: String
-        var url: String           // 绝对 URL
-        var headers: [(String, String)]
-        var body: Data?
-        /// 0 disables the overall deadline; connection setup remains bounded.
-        var timeoutSeconds: Int = 60
-        var followRedirects: Bool = false
-
-        private enum CodingKeys: String, CodingKey {
-            case method, url, headers, body, timeoutSeconds, followRedirects
-        }
-        private struct Header: Codable { let name: String; let value: String }
-
-        init(method: String, url: String, headers: [(String, String)], body: Data?,
-             timeoutSeconds: Int = 60, followRedirects: Bool = false) {
-            self.method = method; self.url = url; self.headers = headers; self.body = body
-            self.timeoutSeconds = timeoutSeconds; self.followRedirects = followRedirects
-        }
-
-        init(from decoder: Decoder) throws {
-            let fields = try decoder.container(keyedBy: CodingKeys.self)
-            method = try fields.decode(String.self, forKey: .method)
-            url = try fields.decode(String.self, forKey: .url)
-            headers = try fields.decode([Header].self, forKey: .headers).map { ($0.name, $0.value) }
-            body = try fields.decodeIfPresent(Data.self, forKey: .body)
-            timeoutSeconds = try fields.decodeIfPresent(Int.self, forKey: .timeoutSeconds) ?? 60
-            followRedirects = try fields.decodeIfPresent(Bool.self, forKey: .followRedirects) ?? false
-        }
-
-        func encode(to encoder: Encoder) throws {
-            var fields = encoder.container(keyedBy: CodingKeys.self)
-            try fields.encode(method, forKey: .method); try fields.encode(url, forKey: .url)
-            try fields.encode(headers.map { Header(name: $0.0, value: $0.1) }, forKey: .headers)
-            try fields.encodeIfPresent(body, forKey: .body)
-            try fields.encode(timeoutSeconds, forKey: .timeoutSeconds)
-            try fields.encode(followRedirects, forKey: .followRedirects)
-        }
-    }
+    typealias ParsedRequest = HTTPRequest
 
     enum Template: String, CaseIterable, Identifiable {
         case get = "GET with Query", json = "POST JSON", form = "POST Form"
         case multipart = "POST Multipart", query = "QUERY with Body", websocket = "WebSocket"
         var id: String { rawValue }
+
+        var localizedTitle: String {
+            switch self {
+            case .get: return Strings.Tools.templateGetWithQuery
+            case .json: return Strings.Tools.templatePostJson
+            case .form: return Strings.Tools.templatePostForm
+            case .multipart: return Strings.Tools.templatePostMultipart
+            case .query: return Strings.Tools.templateQueryWithBody
+            case .websocket: return Strings.Tools.templateWebsocket
+            }
+        }
 
         func request(url: String = "") -> ParsedRequest {
             let target = url.isEmpty ? "https://example.com/" : url
@@ -207,14 +186,18 @@ enum ComposeService {
 
     final class RequestTask: @unchecked Sendable {
         private let lock = NSLock()
-        private var process: Process?
+        fileprivate let transportCancellation = HTTPRequestTransport.Cancellation()
         private var cancelled = false
         private var networkTask: URLSessionTask?
         private var networkSession: URLSession?
+        fileprivate var wasCancelled: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return cancelled
+        }
 
         fileprivate func start(_ task: URLSessionTask, session: URLSession) throws {
             lock.lock(); defer { lock.unlock() }
-            guard !cancelled else { throw RequestError(message: "Request cancelled") }
+            guard !cancelled else { throw NetworkFailure(.networkRequestCancelled) }
             self.networkTask = task; self.networkSession = session
             task.resume()
         }
@@ -225,29 +208,23 @@ enum ComposeService {
             networkTask = nil; networkSession = nil
         }
 
-        fileprivate func start(_ process: Process) throws {
-            lock.lock()
-            defer { lock.unlock() }
-            guard !cancelled else { throw RequestError(message: "Request cancelled") }
-            try process.run()
-            self.process = process
-        }
-
         func cancel() {
             lock.lock()
             defer { lock.unlock() }
             cancelled = true
-            if let process, process.isRunning { process.terminate() }
+            transportCancellation.cancel()
             networkTask?.cancel()
             networkSession?.invalidateAndCancel()
         }
+
+
     }
 
     @discardableResult
-    static func execute(_ parsed: ParsedRequest, proxyPort: UInt16? = nil,
+    static func execute(_ parsed: ParsedRequest, runtime: ProxyRuntimeContext, proxyPort: UInt16? = nil,
                         onResult: @escaping (Transaction) -> Void) -> RequestTask? {
         if let scheme = URL(string: parsed.url)?.scheme?.lowercased(), ["ws", "wss"].contains(scheme) {
-            return executeWebSocket(parsed, proxyPort: proxyPort, onResult: onResult)
+            return executeWebSocket(parsed, runtime: runtime, proxyPort: proxyPort, onResult: onResult)
         }
         guard (0...86400).contains(parsed.timeoutSeconds),
               let destination = URLParser.parse(target: parsed.url),
@@ -256,7 +233,7 @@ enum ComposeService {
               !parsed.method.isEmpty, parsed.method.utf8.allSatisfy(isTokenByte) else { return nil }
 
         let task = RequestTask()
-        let captureLimit = AppSettings.shared.maxBodyMB * 1024 * 1024
+        let captureLimit = runtime.captureLimit
         requestQueue.async {
             let tx = Transaction(captureBudget: .live)
             tx.method = parsed.method
@@ -269,132 +246,32 @@ enum ComposeService {
             tx.appendRequestBody(parsed.body ?? Data())
             tx.requestBodyComplete = true
             tx.state = .awaiting
-            send(parsed, tx: tx, proxyPort: proxyPort, task: task)
+            send(parsed, tx: tx, runtime: runtime, proxyPort: proxyPort, task: task)
             DispatchQueue.main.async { onResult(tx) }
         }
         return task
     }
 
-    private static func send(_ parsed: ParsedRequest, tx: Transaction, proxyPort: UInt16?, task: RequestTask) {
-        let files = FileManager.default
-        let directory = files.temporaryDirectory.appendingPathComponent("proxymirror-send-\(UUID().uuidString)")
-        let requestBodyFile = directory.appendingPathComponent("request")
-        let headersFile = directory.appendingPathComponent("headers")
-        let configFile = directory.appendingPathComponent("curl.conf")
-        let errorFile = directory.appendingPathComponent("error")
-        let process = Process()
-        var captured = Data()
-        var count = 0
-        defer { try? files.removeItem(at: directory) }
-
-        do {
-            try files.createDirectory(at: directory, withIntermediateDirectories: false,
-                                      attributes: [.posixPermissions: 0o700])
-            var config = [
-                "silent", "show-error", "http1.1", "suppress-connect-headers",
-                "connect-timeout = 20", "max-time = \(parsed.timeoutSeconds)", "proto = \"=http,https\"",
-                "url = \(quoted(parsed.url))", "request = \(quoted(parsed.method))",
-                "output = \"-\"", "dump-header = \(quoted(headersFile.path))",
-                "stderr = \(quoted(errorFile.path))",
-            ]
-            if parsed.method == "HEAD" { config.append("head") }
-            if parsed.followRedirects { config += ["location", "max-redirs = 10", "proto-redir = \"=http,https\""] }
-            if let proxyPort {
-                config += ["proxy = \"http://127.0.0.1:\(proxyPort)\"", "noproxy = \"\""]
-                if tx.scheme == "https", ConnState(engine: .shared).shouldMITM(host: tx.host) {
-                    try CertificateAuthority.shared.ensureCA()
-                    config.append("cacert = \(quoted(CertificateAuthority.shared.caCertPath.path))")
-                }
-            } else {
-                config.append("noproxy = \"*\"")
-            }
-
-            let framing: Set<String> = ["host", "content-length", "transfer-encoding", "trailer",
-                                        "connection", "proxy-connection", "proxy-authorization"]
-            for (key, value) in parsed.headers where !framing.contains(key.lowercased()) {
-                guard !key.isEmpty, key.utf8.allSatisfy(isTokenByte),
-                      !value.contains("\r"), !value.contains("\n"), !value.contains("\0") else {
-                    throw RequestError(message: "Invalid request headers")
-                }
-                let header = value.isEmpty ? "\(key);" : "\(key): \(value)"
-                config.append("header = \(quoted(header))")
-            }
-            if let body = parsed.body, parsed.method != "HEAD" {
-                try body.write(to: requestBodyFile)
-                config.append("data-binary = \(quoted("@" + requestBodyFile.path))")
-            }
-            try Data((config.joined(separator: "\n") + "\n").utf8).write(to: configFile)
-
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-            process.arguments = ["-q", "--config", configFile.path]
-            let output = Pipe()
-            process.standardOutput = output
-            process.standardError = FileHandle.nullDevice
-            try task.start(process)
-            let reader = output.fileHandleForReading
-            try? output.fileHandleForWriting.close()
-            defer { try? reader.close() }
-            var truncated = false
-            while let bytes = try reader.read(upToCount: 64 * 1024), !bytes.isEmpty {
-                if tx.method == "HEAD" { continue }
-                count += bytes.count
-                guard !truncated else { continue }
-                let wanted = min(bytes.count, tx.captureLimit - captured.count)
-                let accepted = wanted == 0 ? 0 : tx.captureReservation?.reserve(wanted) ?? wanted
-                if accepted > 0 { captured.append(contentsOf: bytes.prefix(accepted)) }
-                truncated = accepted < bytes.count
-            }
-            process.waitUntilExit()
-            let headerData = (try? Data(contentsOf: headersFile, options: .mappedIfSafe)) ?? Data()
-            let head = finalHead(from: headerData)
-            if let head {
-                tx.statusCode = head.status
-                tx.statusReason = head.reason
-                tx.responseVersion = head.version
-                tx.responseHeaders = head.headers
-                tx.contentType = head.headers.value(of: "Content-Type") ?? ""
-            }
-            let error: String?
-            if process.terminationReason == .uncaughtSignal {
-                error = "Request cancelled"
-            } else if process.terminationStatus != 0 {
-                error = (try? String(contentsOf: errorFile, encoding: .utf8))
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    ?? "Send failed (curl \(process.terminationStatus))"
-            } else {
-                error = head == nil ? "No HTTP response received" : nil
-            }
-            tx.receiveCapture(response: captured, responseBytes: count, charge: captured.count)
-            tx.responseBodyComplete = error == nil
-            tx.state = error == nil ? .completed : .failed
-            tx.errorText = error
-            tx.duration = Date().timeIntervalSince(tx.startedAt)
-        } catch {
-            task.cancel()
-            if process.isRunning { process.waitUntilExit() }
-            tx.receiveCapture(response: captured, responseBytes: count, charge: captured.count)
-            tx.state = .failed
-            tx.errorText = error.localizedDescription
+    private static func send(_ parsed: ParsedRequest, tx: Transaction, runtime: ProxyRuntimeContext,
+                             proxyPort: UInt16?, task: RequestTask) {
+        let options = HTTPRequestTransport.Options(proxyPort: proxyPort, captureLimit: tx.captureLimit,
+            reserve: { tx.captureReservation?.reserve($0) ?? $0 }, trustedCA: runtime.trustedCA)
+        let result = HTTPRequestTransport.send(parsed, options: options, cancellation: task.transportCancellation)
+        if let head = result.head {
+            tx.statusCode = head.status; tx.statusReason = head.reason; tx.responseVersion = head.version
+            tx.responseHeaders = head.headers; tx.contentType = head.headers.value(of: "Content-Type") ?? ""
         }
+        tx.responseTrailers = result.trailers
+        tx.receiveCapture(response: result.body, responseBytes: result.receivedBytes, charge: result.body.count)
+        tx.responseBodyComplete = result.failure == nil
+        tx.state = result.failure == nil ? .completed : .failed
+        if let failure = result.failure { tx.recordFailure(failure) }
+        else { tx.setFailure(nil) }
+        tx.duration = Date().timeIntervalSince(tx.startedAt)
     }
 
-    private static func quoted(_ value: String) -> String {
-        let escaped = value.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        return "\"" + escaped + "\""
-    }
-
-    private static func finalHead(from data: Data) -> HTTPResponseHead? {
-        String(decoding: data, as: UTF8.self).components(separatedBy: "\r\n\r\n")
-            .compactMap { try? ResponseHeadParser.parse($0) }
-            .last { $0.status >= 200 || $0.status == 101 }
-    }
-
-    private struct RequestError: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+    static func redirectedRequest(_ request: ParsedRequest, status: Int, location: String) throws -> ParsedRequest? {
+        try HTTPRequestTransport.redirectedRequest(request, status: status, location: location)
     }
 
     /// 从已有 Transaction 生成可编辑的原始报文（Edit URL / Edit and Repeat 用）
@@ -428,7 +305,7 @@ enum ComposeService {
 extension ComposeService {
     /// Sends an optional initial message, receives one message, then closes the socket.
     /// WSS uses the system trust store, including an installed ProxyMirror CA.
-    static func executeWebSocket(_ parsed: ParsedRequest, proxyPort: UInt16?,
+    static func executeWebSocket(_ parsed: ParsedRequest, runtime: ProxyRuntimeContext, proxyPort: UInt16?,
                                  onResult: @escaping (Transaction) -> Void) -> RequestTask? {
         guard let url = URL(string: parsed.url), let host = url.host,
               ["ws", "wss"].contains(url.scheme?.lowercased() ?? ""),
@@ -441,7 +318,7 @@ extension ComposeService {
                                           "sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions"]
             if !reserved.contains(name.lowercased()) { request.addValue(value, forHTTPHeaderField: name) }
         }
-        let captureLimit = AppSettings.shared.maxBodyMB * 1024 * 1024
+        let captureLimit = runtime.captureLimit
         guard (parsed.body?.count ?? 0) <= captureLimit else { return nil }
         let tx = Transaction(captureBudget: .live)
         tx.method = "GET"; tx.scheme = url.scheme == "wss" ? "https" : "http"
@@ -490,7 +367,7 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
     func scheduleDeadline() {
         guard request.timeoutSeconds > 0 else { return }
         queue.asyncAfter(deadline: .now() + Double(request.timeoutSeconds)) { [weak self] in
-            self?.finish(error: "WebSocket request timed out")
+            self?.finish(error: NetworkFailure(.networkWsTimeout))
         }
     }
 
@@ -509,7 +386,7 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
                     guard let self else { return }
                     self.queue.async {
                         guard !self.finished else { return }
-                        if let error { self.finish(error: error.localizedDescription); return }
+                        if let error { self.finish(error: error); return }
                         self.transaction.websocketFrames = [WSFrame(direction: .upstream, opcode: text == nil ? 2 : 1,
                                                                       fin: true, masked: true, payload: body)]
                         self.receive()
@@ -530,7 +407,7 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
                     switch message {
                     case .string(let value): bytes = Data(value.utf8); opcode = 1
                     case .data(let value): bytes = value; opcode = 2
-                    @unknown default: self.finish(error: "Unrecognized WebSocket message"); return
+                    @unknown default: self.finish(error: NetworkFailure(.networkWsUnknownMessage)); return
                     }
                     self.transaction.appendResponseBody(bytes)
                     var frames = self.transaction.websocketFrames
@@ -539,7 +416,7 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
                     self.transaction.websocketFrames = frames
                     self.transaction.contentType = opcode == 1 ? "text/plain; charset=utf-8" : "application/octet-stream"
                     self.finish(error: nil)
-                case .failure(let error): self.finish(error: error.localizedDescription)
+                case .failure(let error): self.finish(error: error)
                 }
             }
         }
@@ -551,14 +428,14 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
             if let response = task.response as? HTTPURLResponse, transaction.statusCode == 0 {
                 transaction.statusCode = response.statusCode
             }
-            finish(error: error?.localizedDescription ?? (transaction.statusCode == 101 ? nil : "WebSocket handshake failed"))
+            finish(error: error ?? (transaction.statusCode == 101 ? nil : NetworkFailure(.networkWsHandshakeFailed)))
         }
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         queue.async { [self] in
-            finish(error: closeCode == .normalClosure ? nil : "WebSocket closed (\(closeCode.rawValue))")
+            finish(error: closeCode == .normalClosure ? nil : NetworkFailure(.networkWsClosed(closeCode.rawValue)))
         }
     }
 
@@ -568,14 +445,16 @@ private final class ComposeWebSocketDelegate: NSObject, URLSessionWebSocketDeleg
     }
 
     /// All callers run on queue; completion is exactly once, including cancel and timeout.
-    private func finish(error: String?) {
+    private func finish(error: Error?) {
         guard !finished else { return }
         finished = true
+        let error: Error? = owner.wasCancelled ? NetworkFailure(.networkRequestCancelled) : error
         socket?.cancel(with: .normalClosure, reason: nil)
         socket = nil
         transaction.duration = Date().timeIntervalSince(transaction.startedAt)
         transaction.responseBodyComplete = error == nil
-        transaction.errorText = error
+        if let error { transaction.recordFailure(error) }
+        else { transaction.setFailure(nil) }
         transaction.state = error == nil ? .completed : .failed
         transaction.captureReservation?.finish(transaction: transaction)
         owner.releaseNetwork()

@@ -847,3 +847,170 @@
 "transparent_system_operation_failed" = "%@（%@ %ld）。";
 
 "transparent_capture_cleanup_failed" = "捕获失败：%@ 清理失败：%@";
+
+/* Stable captured network/device failures. */
+"device_command_timeout" = "设备命令执行超时。";
+"device_command_cancelled" = "设备命令已取消。";
+"device_command_output_limit" = "设备命令输出超过大小限制。";
+"device_command_failed" = "设备命令执行失败（状态 %ld）。%@";
+"network_request_cancelled" = "请求已取消";
+"network_request_timeout" = "请求超时";
+"network_response_headers_too_large" = "响应头超过 %ld 字节";
+"network_redirect_limit" = "重定向次数过多（最多 %ld 次）";
+"network_invalid_redirect" = "HTTP 重定向目标无效";
+"network_invalid_request_headers" = "请求头无效：%@";
+"network_no_http_response" = "未收到 HTTP 响应";
+"network_tunnel_failed" = "隧道建立失败：%@";
+"network_upstream_connection_failed" = "无法连接上游：%@";
+"network_client_write_failed" = "向客户端写入响应失败：%@";
+"network_ws_write_failed" = "WebSocket 限速写入失败：%@";
+"network_throttled_write_failed" = "限速写入失败：%@";
+"network_upstream_interrupted" = "上游连接中断";
+"network_upstream_no_response" = "上游未响应";
+"network_upstream_response_timeout" = "等待上游响应超时";
+"network_invalid_response" = "响应解析失败";
+"network_invalid_response_framing" = "响应 framing 无效：%@";
+"network_invalid_chunked_response" = "分块响应无效";
+"network_ws_handshake_failed" = "WebSocket 握手校验失败";
+"network_client_closed" = "客户端连接已关闭";
+"network_connection_error" = "连接错误：%@";
+"network_breakpoint_timeout" = "断点等待超时";
+"network_script_timeout" = "等待脚本报文超时";
+"network_breakpoint_upstream_interrupted" = "断点等待期间上游连接中断";
+"network_local_file_failed" = "本地文件发送失败：%@";
+"network_request_body_too_large" = "拦截请求正文超过 %ld 字节";
+"network_response_body_too_large" = "拦截响应正文超过 %ld 字节";
+"network_session_cleared" = "抓包会话已清空";
+"network_h2_cancelled" = "客户端取消了 HTTP/2 流";
+"network_random_disconnect" = "弱网模拟：随机断连";
+"network_http2_invalid_headers" = "HTTP/2 头部字段无效";
+"network_http2_invalid_authority" = "HTTP/2 目标与 CONNECT 主机不一致";
+"network_http2_invalid_message" = "HTTP/2 报文顺序或长度无效";
+"network_tls_negotiation_timeout" = "上游 TLS 协商超时";
+"network_upstream_closed" = "上游连接提前关闭";
+"network_push_unsupported" = "代理不接受服务端推送流";
+"network_connection_limit" = "上游连接池繁忙，请重试";
+"network_proxy_shutdown" = "代理已停止";
+"network_invalid_lan_access" = "选择明确的本机局域网地址，并填写至少一个有效的设备 IP 或 CIDR 范围。";
+"network_unapproved_device" = "此设备未加入代理访问名单";
+"network_ws_timeout" = "WebSocket 请求超时";
+"network_ws_unknown_message" = "无法识别的 WebSocket 消息";
+"network_ws_closed" = "WebSocket 已关闭（%ld）";
+"network_route_blocked" = "请求已被规则阻止";
+"network_route_not_allowed" = "请求不在允许名单内";
+
+"proxy_pac_target_host" = "无法解析 PAC 请求目标主机。";
+
+"proxy_pac_invalid_url" = "PAC URL 无效。";
+
+"proxy_pac_timeout" = "PAC 解析超时。";
+
+"proxy_pac_busy" = "PAC 解析繁忙，请重试。";
+
+"proxy_pac_failed" = "PAC 下载或执行失败（%ld）。";
+
+"proxy_pac_no_result" = "PAC 未返回可用结果。";
+
+"proxy_pac_file_invalid" = "PAC 文件必须是 256 KiB 以内的普通文件。";
+
+"proxy_pac_file_too_large" = "PAC 文件超过 256 KiB。";
+
+"proxy_pac_file_encoding" = "PAC 文件不是 UTF-8 文本。";
+
+"proxy_pac_no_route" = "PAC 未返回可用路由。";
+
+"proxy_pac_socks_version" = "PAC 未明确返回 SOCKS5 版本。";
+
+"proxy_pac_route_unsupported" = "PAC 首选路由类型暂不支持。";
+
+"proxy_pac_route_invalid" = "PAC 返回了无效的代理主机或端口。";
+
+"proxy_target_url_invalid" = "外部代理目标 URL 无效。";
+
+"proxy_tls_ip_unsupported" = "外部代理连接 HTTPS 时需要目标域名以验证证书。";
+
+"proxy_pac_resolution_required" = "请先解析 PAC 路由。";
+
+"proxy_target_invalid" = "外部代理目标地址无效。";
+
+"proxy_target_self" = "目标不能指向 ProxyMirror 自身监听端口。";
+
+"proxy_target_is_proxy" = "目标与外部代理地址相同。";
+
+"proxy_endpoint_self" = "外部代理不能指向 ProxyMirror 自身。";
+
+"proxy_handshake_timeout" = "外部代理握手超时。";
+
+"proxy_protocol_negotiation" = "HTTPS 代理未协商 HTTP/1.1。";
+
+"proxy_tunnel_buffer_limit" = "初始化期间的隧道缓存超过 256 KiB。";
+
+"proxy_handshake_closed" = "外部代理在握手时关闭连接。";
+
+"proxy_http_rejected" = "外部 HTTP 代理拒绝 CONNECT（%ld）。";
+
+"proxy_socks_auth_method" = "SOCKS5 代理未接受配置的认证方式。";
+
+"proxy_socks_credentials" = "SOCKS5 用户名或密码验证失败。";
+
+"proxy_http_status_invalid" = "外部 HTTP 代理返回了无效的状态行。";
+
+"proxy_http_headers_limit" = "外部 HTTP 代理响应头超过 32 KiB。";
+
+"proxy_socks_reply_invalid" = "SOCKS5 CONNECT 响应无效。";
+
+"proxy_socks_rejected" = "SOCKS5 代理拒绝 CONNECT（%@）。";
+
+"proxy_socks_empty_address" = "SOCKS5 返回了空地址。";
+
+"proxy_socks_address_type" = "SOCKS5 CONNECT 响应地址类型无效。";
+
+"network_request_headers_invalid" = "请求头无效";
+
+"network_curl_failed" = "发送失败（curl %ld）";
+
+"network_request_buffer_full" = "请求发送缓冲区已满。";
+
+"network_pipeline_buffer_full" = "后续请求的缓冲区已满。";
+
+"network_tunnel_buffer_full" = "隧道上游发送缓冲区已满。";
+
+"network_breakpoint_buffer_limit" = "断点等待期间的缓冲超过 %ld 字节。";
+
+"network_breakpoint_connection_closed" = "断点等待期间连接已关闭。";
+
+"network_local_file_busy" = "本地文件响应繁忙，请重试。";
+
+"network_local_file_truncated" = "本地文件在发送期间被截短。";
+
+"network_http_incomplete" = "HTTP 报文不完整。";
+
+"network_http_malformed" = "HTTP 报文无效：%@";
+
+"sse_decoding_deferred" = "SSE 的 %@ 正文将在接收完成后解析。";
+
+"sse_encoding_unsupported" = "暂不支持 SSE Content-Encoding: %@。可在原文查看捕获字节。";
+
+"sse_body_output_limit" = "SSE 正文超过 32 MiB 解析上限，后续事件未解析。";
+
+"sse_body_incomplete" = "连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。可在原文查看捕获字节。";
+
+"sse_compressed_body_incomplete" = "SSE 压缩正文不完整，已显示可恢复的事件。";
+
+"sse_decoder_initialization_failed" = "无法初始化 SSE 压缩解码。";
+
+"sse_compressed_body_extra_data" = "SSE 压缩正文包含多余数据。";
+
+"sse_compressed_body_invalid" = "SSE 压缩正文损坏，已显示可恢复的事件。";
+
+"sse_compressed_body_truncated" = "SSE 压缩正文已截断，无法完整解码。";
+
+"sse_compressed_body_output_limit" = "SSE 解压正文超过 32 MiB。";
+
+"sse_decode_failed" = "无法解码 SSE 压缩正文。可在原文查看捕获字节。";
+
+"sse_no_decodable_body" = "没有可解码的 SSE 正文。";
+
+"network_pacing_capacity_exceeded" = "弱网限速缓冲已满。";
+
+"session_invalid_metrics" = "会话包含无效的字节数或耗时。";

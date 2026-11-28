@@ -1,3 +1,4 @@
+import ProxyMirrorFoundation
 import SwiftUI
 import AppKit
 import ImageIO
@@ -20,6 +21,7 @@ struct BodyContentView: View {
     let truncated: Bool
     let revision: UInt64
     var generation: UInt64 = 0
+    var inspectionKey: BodyInspectionKey?
 
     var body: some View {
         if data.isEmpty {
@@ -33,12 +35,12 @@ struct BodyContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if kind == .image {
-            ImageViewer(data: data, complete: complete, revision: revision)
+            ImageViewer(data: data, complete: complete, revision: revision, generation: generation)
         } else if Self.isBinary(data: data, contentType: contentType) {
             HexView(data: data, generation: generation)
         } else {
             TextViewer(data: data, pretty: pretty && complete && !truncated && Self.isJSON(data: data, contentType: contentType),
-                       revision: revision)
+                       revision: revision, generation: generation, inspectionKey: inspectionKey)
         }
     }
 
@@ -78,55 +80,50 @@ struct TextViewer: View {
     let data: Data
     let pretty: Bool
     let revision: UInt64
+    var generation: UInt64 = 0
+    var inspectionKey: BodyInspectionKey?
 
-    private static let maxRender = 1 * 1024 * 1024
-    @State private var rendered: Rendered?
+    @State private var rendered: Prepared?
     @State private var memoryEpoch: UInt64 = 0
     @ObservedObject private var settings = AppSettings.shared
 
-    private struct Input: Equatable {
+    private struct Input: Equatable, Sendable {
         let revision: UInt64
+        let generation: UInt64
+        let inspectionKey: BodyInspectionKey?
         let pretty: Bool
         let memoryEpoch: UInt64
     }
 
-    private struct Rendered: Sendable {
-        let plain: String
-        let formatted: AttributedString?
+    private struct Prepared: Sendable {
+        let input: Input
+        let document: JSONDocumentRenderer.Document
     }
 
     var body: some View {
-        let input = Input(revision: revision, pretty: pretty, memoryEpoch: memoryEpoch)
-        let formatted = rendered?.formatted
-        let displayedText = formatted.map { String($0.characters) } ?? rendered?.plain ?? ""
-        CodeDocument(text: displayedText, attributed: formatted)
+        let input = Input(revision: revision, generation: generation, inspectionKey: inspectionKey,
+                          pretty: pretty, memoryEpoch: memoryEpoch)
+        let document = rendered?.input == input ? rendered?.document : nil
+        let displayedText = (document?.text ?? "")
+            + (document?.truncated == true ? Strings.Detail.over1MibShowingTheFirst1Mib : "")
+        CodeDocument(text: displayedText, highlights: document?.highlights)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: input) {
             let worker = Task.detached(priority: .userInitiated) {
-                Self.render(data, pretty: input.pretty)
+                await JSONDocumentRenderer.shared.render(data, pretty: input.pretty)
             }
             let result = await withTaskCancellationHandler {
                 await worker.value
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled, input.memoryEpoch == memoryEpoch { rendered = result }
+            if !Task.isCancelled, input.memoryEpoch == memoryEpoch, let result {
+                rendered = Prepared(input: input, document: result)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in rendered = nil; memoryEpoch &+= 1 }
     }
 
-    private static func render(_ data: Data, pretty: Bool) -> Rendered {
-        let plain = String(decoding: data.prefix(maxRender), as: UTF8.self)
-            + (data.count > maxRender ? Strings.Detail.over1MibShowingTheFirst1Mib : "")
-        guard pretty, data.count <= maxRender, !Task.isCancelled,
-              let obj = try? JSONSerialization.jsonObject(with: data),
-              let prettyData = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
-              prettyData.count <= maxRender, !Task.isCancelled,
-              let text = String(data: prettyData, encoding: .utf8) else {
-            return Rendered(plain: plain, formatted: nil)
-        }
-        return Rendered(plain: plain, formatted: JSONHighlighter.highlight(text))
-    }
 }
 
 // MARK: - 图片
@@ -135,6 +132,7 @@ struct ImageViewer: View {
     let data: Data
     let complete: Bool
     let revision: UInt64
+    let generation: UInt64
     @State private var preview: Thumbnail?
     @State private var failed = false
     @State private var memoryEpoch: UInt64 = 0
@@ -161,6 +159,7 @@ struct ImageViewer: View {
             } else if failed {
                 Text(Strings.Detail.unableToDecodeImage)
                     .foregroundColor(.secondary)
+                HexView(data: data, generation: generation)
             } else {
                 ProgressView(complete ? Strings.Detail.decoding : Strings.Detail.receiving)
                     .controlSize(.small)

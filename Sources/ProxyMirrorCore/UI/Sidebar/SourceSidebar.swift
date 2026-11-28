@@ -41,6 +41,9 @@ struct SourceSidebar: View {
         }
         .frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
         .background(ProxymanTheme.sidebarBackground.ignoresSafeArea(edges: .top))
+        .onReceive(NotificationCenter.default.publisher(for: .pmNewSourceFolder)) { _ in
+            folderRequest = FolderRequest()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .focusSourceFilter)) { _ in
             searchFocused = true
         }
@@ -127,6 +130,10 @@ struct SourceSidebar: View {
             }
             .contextMenu {
                 Button(Strings.Traffic.newRequestFolder) { savedFolderRequest = SavedFolderRequest() }
+                Menu(Strings.Export.exportFolder) {
+                    Button(Strings.Export.asPostman) { ExportService.exportPostman(store.savedRequests(in: nil)) }
+                    Button(Strings.Export.asOpenapi) { ExportService.exportOpenAPI(store.savedRequests(in: nil)) }
+                }.disabled(store.savedRequests(in: nil).isEmpty)
                 Button(Strings.Traffic.copyCurrentSelectionHere, action: { savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: nil) } })
                     .disabled(store.selectedTransactions.isEmpty)
             }
@@ -139,6 +146,10 @@ struct SourceSidebar: View {
                 .contextMenu {
                     Button(Strings.Traffic.newSubfolder) { savedFolderRequest = SavedFolderRequest(parent: entry.folder.id) }
                     Button(Strings.Traffic.renameChangeParent) { savedFolderRequest = SavedFolderRequest(folder: entry.folder) }
+                    Menu(Strings.Export.exportFolder) {
+                        Button(Strings.Export.asPostman) { ExportService.exportPostman(store.savedRequests(in: entry.folder.id)) }
+                        Button(Strings.Export.asOpenapi) { ExportService.exportOpenAPI(store.savedRequests(in: entry.folder.id)) }
+                    }.disabled(store.savedRequests(in: entry.folder.id).isEmpty)
                     Button(Strings.Traffic.copyCurrentSelectionHere) {
                         savedOperation { try store.copyRequests(store.selectedTransactions, toSavedFolder: entry.folder.id) }
                     }.disabled(store.selectedTransactions.isEmpty)
@@ -327,7 +338,7 @@ struct SourceSidebar: View {
             HStack(spacing: 5) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.secondary)
-                TextField(Strings.Traffic.filterF2, text: $search)
+                TextField(appState.settings.proxymanCompatibleShortcuts ? Strings.Traffic.filterOptionCommandF : Strings.Traffic.filterF2, text: $search)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .onExitCommand { search = "" }

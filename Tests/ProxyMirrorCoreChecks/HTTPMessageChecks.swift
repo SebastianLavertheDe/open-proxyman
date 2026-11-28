@@ -1,4 +1,5 @@
 import Foundation
+import NIOCore
 import NIOEmbedded
 @testable import ProxyMirrorCore
 
@@ -52,14 +53,61 @@ func checkHTTPMessages(_ test: CoreAssertions) throws {
     let requestHead = HTTPRequestHead(method: "GET", target: "https://example.test/sample", version: "HTTP/1.1",
         headers: HTTPHeaders([("Host", "example.test"), ("Proxy-Connection", "keep-alive"),
                               ("Connection", "Upgrade"), ("Upgrade", "websocket")]))
-    let forwarded = String(decoding: sanitizedRequestHead(head: requestHead, originFormTarget: "/sample", keepAlive: false),
+    let forwarded = String(decoding: try sanitizedRequestHead(head: requestHead, originFormTarget: "/sample", keepAlive: false),
                            as: UTF8.self)
     test.expect(forwarded.hasPrefix("GET /sample HTTP/1.1\r\n"), "Forwarded request uses origin form")
     test.expect(forwarded.contains("Connection: Upgrade\r\n"), "WebSocket upgrade connection is preserved")
     test.expect(!forwarded.contains("Proxy-Connection"), "Forwarded request drops proxy-specific header")
 
+    try checkHTTPTransportPolicies(test)
+    try checkRequestRoutePlans(test)
+    try test.run("checkMetadataOwnership") { try checkMetadataOwnership(test) }
+    try test.run("checkHTTP2EarlyResponseLifecycle") { try checkHTTP2EarlyResponseLifecycle(test) }
+    try test.run("checkAsyncMailbox") { try checkAsyncMailbox(test) }
+
     checkWebSocketCapture(test)
     checkWebSocketCompression(test)
+}
+
+@MainActor
+private func checkHTTPTransportPolicies(_ test: CoreAssertions) throws {
+    for fields in ["Content-Length: 1\r\nContent-Length: 2", "Content-Length: 1, 2", "Content-Length: +1",
+                   "Content-Length: -1", "Transfer-Encoding: chunked\r\nContent-Length: 0",
+                   "Transfer-Encoding: chunked, gzip", "Transfer-Encoding: gzip", "Content-Length : 1"] {
+        test.rejects(try RequestHeadParser.parse("POST / HTTP/1.1\r\nHost: fixture.test\r\n" + fields),
+                     with: HTTPParseError.self, "Ingress rejects ambiguous HTTP framing: \(fields)")
+        if fields != "Transfer-Encoding: gzip" {
+            test.rejects(try ResponseHeadParser.parse("HTTP/1.1 200 OK\r\n" + fields),
+                         with: HTTPParseError.self, "Origin response rejects ambiguous HTTP framing: \(fields)")
+        }
+    }
+    let lengths = try RequestHeadParser.parse("POST / HTTP/1.1\r\nContent-Length: 05,5\r\nContent-Length: 5")
+    test.equal(lengths.headers.values(of: "Content-Length"), ["5"], "Equal CL values have one canonical wire field")
+    let absolute = try RequestHeadParser.parse("GET http://allowed.test:8080/x HTTP/1.1\r\nHost: other.test")
+    test.equal(absolute.headers.value(of: "Host"), "allowed.test:8080", "Absolute target owns the routing and forwarded Host")
+    let ipv6 = try RequestHeadParser.parse("GET https://[::1]:9443/x HTTP/1.1\r\nHost: other.test")
+    test.equal(ipv6.headers.value(of: "Host"), "[::1]:9443", "IPv6 authority remains bracketed")
+    for address in ["127.0.0.1", "::1", "::ffff:127.0.0.1", "192.0.2.7", "::ffff:192.0.2.7", "2001:db8::7"] {
+        let guardHandler = ProxySelfConnectionGuard(port: 9090, addresses: ["192.0.2.7", "2001:db8:0:0::7"])
+        let socket = try SocketAddress(ipAddress: address, port: 9090)
+        test.expect(guardHandler.rejects(socket), "Resolved own-listener address is rejected: \(address)")
+        test.expect(!guardHandler.rejects(try SocketAddress(ipAddress: address, port: 8080)), "Other local service ports remain accessible")
+        let channel = EmbeddedChannel(handler: guardHandler)
+        test.rejects(try channel.connect(to: socket).wait(), with: ProxySelfConnectionGuard.Rejected.self,
+                     "NIO connect event enforces self-target rejection")
+        _ = try? channel.finish()
+    }
+    var clock = HTTPTransferTimeoutPolicy(interval: 30, now: 0)
+    clock.uploaded(at: 40)
+    test.equal(clock.deadline(requestPending: true, responseStarted: false, eventStream: false), 70,
+               "Continuous upload refreshes its timeout after thirty seconds")
+    test.equal(clock.deadline(requestPending: false, responseStarted: false, eventStream: false), 70,
+               "Waiting for the response starts after the final upload")
+    clock.downloaded(at: 60)
+    test.equal(clock.deadline(requestPending: false, responseStarted: true, eventStream: false), 90,
+               "Response body timeout follows read progress")
+    test.expect(clock.deadline(requestPending: false, responseStarted: true, eventStream: true) == nil,
+                "Established event streams permit quiet intervals")
 }
 
 @MainActor

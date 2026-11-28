@@ -16,8 +16,8 @@ import tempfile
 
 FORMATS = (
     "curl", "httpie", "python", "fetch", "swift", "alamofire", "moya", "go",
-    "nodeHTTP", "axios", "got", "nodeRequest", "jquery", "kotlin", "java", "dart",
-    "php", "rust", "objectiveC", "har", "postman",
+    "nodeHTTP", "nodeFetch", "axios", "got", "nodeRequest", "jquery", "kotlin", "java", "dart",
+    "php", "phpGuzzle", "rust", "objectiveC", "har", "postman",
 )
 
 
@@ -46,7 +46,7 @@ def check_snippet(language, code, directory):
         filename.write_text(code, encoding="utf-8")
         checked(["/bin/sh", "-n", str(filename)])
         return True
-    if language in {"fetch", "nodeHTTP", "axios", "got", "nodeRequest", "jquery"}:
+    if language in {"fetch", "nodeHTTP", "nodeFetch", "axios", "got", "nodeRequest", "jquery"}:
         if not (node := shutil.which("node")):
             return False
         filename = directory / f"{language}.{'mjs' if language == 'got' else 'cjs'}"
@@ -74,7 +74,7 @@ def check_snippet(language, code, directory):
         filename.write_text(code, encoding="utf-8")
         checked([javac, "-d", str(directory), str(filename)])
         return True
-    if language == "php":
+    if language in {"php", "phpGuzzle"}:
         if not (php := shutil.which("php")):
             return False
         filename = directory / "request.php"

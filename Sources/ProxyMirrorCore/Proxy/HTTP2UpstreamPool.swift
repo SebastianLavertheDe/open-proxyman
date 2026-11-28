@@ -37,28 +37,31 @@ struct HTTPOrigin: Hashable {
         let scheme = tls || tunnel ? "https" : "http"
         let authority = URLParser.authority(host: host, port: port, scheme: scheme)
         guard let url = URL(string: "\(scheme)://\(authority)\(path.hasPrefix("/") ? path : "/")") else {
-            return loop.makeFailedFuture(ExternalProxyError("外部代理目标 URL 无效。"))
+            return loop.makeFailedFuture(ExternalProxyError(.proxyTargetUrlInvalid))
         }
         return external.resolve(for: url, on: loop).map {
             Self(host: self.host, dialHost: self.dialHost, port: self.port, tls: self.tls, external: $0, proxyResolved: true)
         }
     }
 
-    func connect(on loop: EventLoop, listenerPort: UInt16, resolver: TimedDNSResolver?,
+    func connect(on loop: EventLoop, listenerPort: UInt16, listenerAddresses: [String] = ["127.0.0.1"], resolver: TimedDNSResolver?,
                  initialize: @escaping (Channel) -> EventLoopFuture<Void>) -> EventLoopFuture<Channel> {
         if let external {
             // NIOSSL uses the socket peer for IP SAN verification when it cannot send an SNI name.
             if tls && URLParser.isIPAddress(host) {
-                return loop.makeFailedFuture(ExternalProxyError("外部代理连接 HTTPS 时需要目标域名以验证证书。"))
+                return loop.makeFailedFuture(ExternalProxyError(.proxyTlsIpUnsupported))
             }
             return ExternalProxyConnector.connect(via: external, host: dialHost, port: port, on: loop,
-                localListenerPort: Int(listenerPort), initialize: initialize)
+                localListenerPort: Int(listenerPort), localListenerAddresses: listenerAddresses, initialize: initialize)
         }
         return ClientBootstrap(group: loop)
             .connectTimeout(.seconds(20))
             .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
             .resolver(resolver)
-            .channelInitializer(initialize)
+            .channelInitializer { channel in
+                channel.pipeline.addHandler(ProxySelfConnectionGuard(port: Int(listenerPort), addresses: listenerAddresses))
+                    .flatMap { initialize(channel) }
+            }
             .connect(host: dialHost, port: port)
     }
 
@@ -67,33 +70,12 @@ struct HTTPOrigin: Hashable {
     }
 }
 
-struct ProxyConnectionDetails: Codable {
-    var address: String?
-    var dnsMilliseconds: Double?
-    var tcpMilliseconds: Double?
-    var tlsMilliseconds: Double?
-    var alpn: String?
-    var externalProxy: String?
-    var reused = false
-    var downstreamStream: Int?
-    var upstreamStream: Int?
-}
-
 enum ProxyHTTP2Error: LocalizedError {
     case invalidHeaders, invalidAuthority, invalidMessage, negotiationTimeout, responseTimeout, connectionClosed, pushUnsupported
     case connectionLimit
 
     var errorDescription: String? {
-        switch self {
-        case .invalidHeaders: return "HTTP/2 头部字段无效"
-        case .invalidAuthority: return "HTTP/2 目标与 CONNECT 主机不一致"
-        case .invalidMessage: return "HTTP/2 报文顺序或长度无效"
-        case .negotiationTimeout: return "上游 TLS 协商超时"
-        case .responseTimeout: return "等待上游响应超时"
-        case .connectionClosed: return "上游连接提前关闭"
-        case .pushUnsupported: return "代理不接受服务端推送流"
-        case .connectionLimit: return "上游连接池繁忙，请重试"
-        }
+        operationIssue.diagnostic
     }
 }
 
@@ -182,6 +164,7 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
 
     private let loop: EventLoop
     private let listenerPort: UInt16
+    private let listenerAddresses: [String]
     private var tlsDials: [HTTPOrigin: Dial] = [:]
     // A slot is reserved before a dial starts and released when its parent has closed.
     private var parents: [ObjectIdentifier: Dial] = [:]
@@ -192,9 +175,16 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
     private static let maxWaiting = 128
     private static let idleTimeout = TimeAmount.seconds(30)
 
-    init(downstream: Channel, listenerPort: UInt16) {
+    /// Event-loop confined count of acquired HTTP/2 stream slots.
+    var activeStreamCount: Int {
+        loop.assertInEventLoop()
+        return parents.values.reduce(0) { $0 + $1.activeStreams }
+    }
+
+    init(downstream: Channel, listenerPort: UInt16, listenerAddresses: [String] = ["127.0.0.1"]) {
         loop = downstream.eventLoop
         self.listenerPort = listenerPort
+        self.listenerAddresses = listenerAddresses
         downstream.closeFuture.whenComplete { [weak self] _ in self?.closeAll() }
     }
 
@@ -301,7 +291,7 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
         parents[id] = dial
         let started = Date()
         let resolver = URLParser.isIPAddress(origin.dialHost) || origin.external != nil ? nil : TimedDNSResolver(loop: loop)
-        origin.connect(on: loop, listenerPort: listenerPort, resolver: resolver) { channel in
+        origin.connect(on: loop, listenerPort: listenerPort, listenerAddresses: listenerAddresses, resolver: resolver) { channel in
                 guard !dial.closing else {
                     return channel.eventLoop.makeFailedFuture(ProxyHTTP2Error.connectionClosed)
                 }
@@ -323,6 +313,7 @@ final class HTTP2UpstreamPool: @unchecked Sendable {
                         var details = ProxyConnectionDetails(address: channel.remoteAddress?.ipAddress,
                                                              dnsMilliseconds: resolver?.milliseconds, alpn: alpn,
                                                              externalProxy: origin.externalLabel)
+                        TLSConnectionMetadata.captureUpstream(on: channel, into: &details)
                         if let connected = relay.tcpConnectedAt {
                             details.tcpMilliseconds = max(0, connected.timeIntervalSince(started) * 1000 - (resolver?.milliseconds ?? 0))
                             details.tlsMilliseconds = now.timeIntervalSince(connected) * 1000

@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "ProxyMirror";
+"NSSystemExtensionUsageDescription" = "ProxyMirror は透過プロキシが有効なときに、この拡張機能で TCP 接続をキャプチャします。";
+"NSAppleEventsUsageDescription" = "ProxyMirror はプロキシを設定した Terminal または iTerm ウインドウを開きます。";
+"ProxyMirror Session" = "ProxyMirror Session";
+"ProxyMirror HAR" = "ProxyMirror HAR";

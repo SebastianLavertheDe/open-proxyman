@@ -2,6 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if [[ "$#" -gt 0 ]]; then
+  if [[ "$#" == 1 && "$1" == --check ]]; then
+    exec python3 Scripts/check_localization.py
+  fi
+  printf '%s\n' 'Usage: Scripts/generate_localization.sh [--check]' >&2
+  exit 2
+fi
+
 readonly expected_version=6.6.3
 generator="$(printenv SWIFTGEN_BIN || true)"
 if [[ -z "$generator" ]]; then generator=swiftgen; fi
@@ -10,7 +18,7 @@ if ! command -v "$generator" >/dev/null 2>&1; then
   exit 1
 fi
 version="$("$generator" --version)"
-if [[ ! "$version" =~ (^|[^0-9.])6\.6\.3([^0-9.]|$) ]]; then
+if [[ ! "$version" =~ ^SwiftGen[[:space:]]v?6\.6\.3([[:space:]]|\(|$) ]]; then
   printf 'Expected SwiftGen %s; found %s\n' "$expected_version" "$version" >&2
   exit 1
 fi
@@ -26,12 +34,8 @@ python3 Scripts/check_localization.py --resources-only --stage-input "$temporary
   --param "resourceFingerprint=$fingerprint" \
   --output "$temporary/Strings.swift" \
   "$temporary/en.lproj"
-if [[ "$#" -gt 0 && "$1" == --check ]]; then
-  cmp "$temporary/Strings.swift" "$destination/Strings.swift"
-else
-  mv "$temporary/Strings.swift" "$destination/Strings.swift"
-  python3 Scripts/check_localization.py --write-support --resources-only
-  python3 Scripts/generate_error_issues.py
-  python3 Scripts/generate_model_issues.py
-fi
+mv "$temporary/Strings.swift" "$destination/Strings.swift"
+python3 Scripts/check_localization.py --write-support --resources-only
+python3 Scripts/generate_error_issues.py
+python3 Scripts/generate_model_issues.py
 python3 Scripts/check_localization.py

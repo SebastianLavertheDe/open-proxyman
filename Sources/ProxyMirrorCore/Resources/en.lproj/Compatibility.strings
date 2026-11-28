@@ -1,0 +1,4 @@
+"import_title" = "Open a Proxyman capture";
+"import_instructions" = "Export the requests from Proxyman as HAR, then open that HAR file in ProxyMirror. With Proxyman running, you can also export the loaded requests from Terminal using the command below. Proxyman's private log and session formats cannot be read directly.";
+"copy_export_command" = "Copy Export Command";
+"open_documentation" = "Open Proxyman Documentation";

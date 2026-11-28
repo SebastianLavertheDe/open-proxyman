@@ -6,6 +6,7 @@ rest of SystemProxySettings imports SystemConfiguration. No proxy operation runs
 """
 import argparse,json,os,plistlib,shutil,subprocess,tempfile,sys
 from pathlib import Path
+from foundation_test_support import build_foundation_module
 ROOT=Path(__file__).resolve().parents[1]
 MAIN=r'''
 import Foundation
@@ -65,6 +66,60 @@ import ProxyMirrorSystemProxy
         let malformed="pm-error-v1:{\"version\":1,\"domain\":\"ProxyMirror.SystemProxy\",\"code\":\"bypassInvalid\",\"arguments\":[]}"
         check(SystemProxyError.fromWire(malformed).code == nil, "reject malformed parameter count")
         check(SystemProxyError.fromWire("pm-error-v1:"+String(repeating:"x",count:66000)).code == nil, "bound transport data")
+        for (failure, english, chinese) in [
+            (DeviceCommandRunner.Failure.timedOut, "The device command exceeded its time limit.", "设备命令执行超时。"),
+            (.cancelled, "The device command was cancelled.", "设备命令已取消。"),
+            (.outputTooLarge, "The device command output exceeded its size limit.", "设备命令输出超过大小限制。"),
+        ] {
+            check(failure.localizedDescription == english, "device diagnostics remain stable")
+            check(LocalizedErrorPresentation.message(for: failure) == (language == "en" ? english : chinese),
+                  "device failure retains typed localization identity")
+        }
+        let timeout = OperationIssue.networkUpstreamResponseTimeout
+        let captured = timeout.capturedFailure
+        let persisted = try JSONEncoder().encode(captured)
+        let restored = try JSONDecoder().decode(CapturedFailure.self, from: persisted)
+        check(restored == captured, "captured failure identity roundtrip")
+        check(restored.diagnostic == "Timed out waiting for the upstream response", "persisted diagnostic stays English")
+        check(restored.localizedPresentation == (language == "en" ? restored.diagnostic : "等待上游响应超时"),
+              "reopened failure renders selected language")
+        let detail = "curl: (7) original 原文 100% %@"
+        let parameterized = OperationIssue.networkUpstreamConnectionFailed(detail).capturedFailure
+        check(parameterized.arguments == [detail], "failure stores parameters separately")
+        check(parameterized.localizedPresentation == (language == "en" ? "Unable to connect to the upstream: " : "无法连接上游：") + detail,
+              "foreign details are not translated or interpreted as a format")
+        let numeric = OperationIssue.networkResponseHeadersTooLarge(65536).capturedFailure
+        check(numeric.arguments == ["65536"], "numeric parameters persist canonically")
+        check(numeric.localizedPresentation.contains("65536") || numeric.localizedPresentation.contains("65,536"), "numeric restoration uses its real type")
+        let foreign = CapturedFailure(code: "external_detail", diagnostic: detail)
+        check(foreign.localizedPresentation == detail, "foreign diagnostic is verbatim")
+        let future = CapturedFailure(code: "future_failure", arguments: ["x"], diagnostic: detail)
+        check(future.localizedPresentation == detail, "unknown future codes remain readable")
+        let badArguments = CapturedFailure(code: numeric.code, arguments: ["not-an-integer"], diagnostic: detail)
+        check(badArguments.localizedPresentation == detail, "malformed persisted parameters cannot reach printf")
+        let modelFailure = OperationIssue.modelNetworkRandomDisconnect.capturedFailure
+        check(modelFailure.localizedPresentation == (language == "en" ? "Network simulation: random disconnect" : "弱网模拟：随机断连"),
+              "persisted model failures also resolve by code")
+        let externalValidation = CapturedFailure(code: "external_proxy.external_invalid_target", arguments: ["invalid target"],
+                                                diagnostic: "Invalid included target: invalid target")
+        check(externalValidation.localizedPresentation == Strings.Integration.externalInvalidTarget("invalid target"),
+              "proxy validation failures retain typed parameters")
+        let curlFailure = NetworkFailure.capture(HTTPRequestTransport.Failure.curlFailure(7, detail))
+        check(curlFailure.diagnostic == detail && curlFailure.localizedPresentation == detail,
+              "actual HTTP transport keeps foreign curl stderr verbatim")
+        let ownTransportTimeout = NetworkFailure.capture(HTTPRequestTransport.Failure.timedOut)
+        check(ownTransportTimeout.code == "network_request_timeout", "transport own timeout is typed")
+        check(ownTransportTimeout.localizedPresentation == (language == "en" ? "Request timed out" : "请求超时"),
+              "transport own timeout uses selected language")
+        let cancelled = DeviceCommandRunner.Cancellation(); cancelled.cancel()
+        do {
+            _ = try DeviceAutomation.adb(["devices"], cancellation: cancelled)
+            preconditionFailure("cancelled device command")
+        } catch {
+            check((error as? OperationIssueProviding)?.operationIssue.code == "device_command_cancelled", "device wrapper retains failure code")
+            check(LocalizedErrorPresentation.message(for: error) == (language == "en" ? "The device command was cancelled." : "设备命令已取消。"),
+                  "device GUI path avoids nested English error descriptions")
+        }
         print("PASS: \(count) production diagnostic/presentation/guide/transport checks [\(language)]")
     }
 }
@@ -72,12 +127,12 @@ import ProxyMirrorSystemProxy
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--swiftc',default='swiftc');args=parser.parse_args();swiftc=shutil.which(args.swiftc) or args.swiftc
     with tempfile.TemporaryDirectory(prefix='pm-localized-errors-') as directory:
-        folder=Path(directory); entry=folder/'Checks.swift';entry.write_text(MAIN)
+        folder=Path(directory); module_flags=build_foundation_module(swiftc, folder); entry=folder/'Checks.swift';entry.write_text('@_exported import ProxyMirrorFoundation\n' + MAIN)
         shared=(ROOT/'Sources/ProxyMirrorSystemProxy/SystemProxySettings.swift').read_text();start=shared.index('package struct SystemProxyError:');end=shared.index('\npackage final class SystemProxySettings',start)
         transport=folder/'SystemProxyError.swift';transport.write_text('import Foundation\n'+shared[start:end])
         library=folder/('libProxyMirrorSystemProxy.dylib' if sys.platform=='darwin' else 'libProxyMirrorSystemProxy.so')
         subprocess.run([swiftc,'-swift-version','5','-package-name','ProxyMirror','-emit-module','-emit-library','-module-name','ProxyMirrorSystemProxy','-emit-module-path',str(folder/'ProxyMirrorSystemProxy.swiftmodule'),str(transport),str(ROOT/'Sources/ProxyMirrorSystemProxy/SystemProxyBypassList.swift'),'-o',str(library)],check=True,timeout=120)
-        source=['Localization/AppLanguage.swift','Localization/LocalizationContext.swift','Localization/LocalizationResources.swift','UI/PresentationLocalization.swift','System/LocalizedErrorPresentation.swift','System/GeneratedOperationIssues.swift','System/ReleaseUpdate.swift','System/NetworkAccessPolicy.swift','System/DeviceAutomation.swift','System/CertificatePlatformGuides.swift','Localization/Generated/Strings.swift','Localization/Generated/EnglishFallbacks.swift']
+        source=['Localization/AppLanguage.swift','Localization/LocalizationContext.swift','Localization/LocalizationResources.swift','UI/PresentationLocalization.swift','System/LocalizedErrorPresentation.swift','System/GeneratedOperationIssues.swift','System/GeneratedModelOperationIssues.swift','System/ReleaseUpdate.swift','System/NetworkAccessPolicy.swift','System/NetworkFailure.swift','System/DeviceAutomation.swift','System/CertificatePlatformGuides.swift','Localization/Generated/Strings.swift','Localization/Generated/EnglishFallbacks.swift']
         paths=[]
         for relative in source:
             original=ROOT/'Sources/ProxyMirrorCore'/relative
@@ -86,11 +141,11 @@ def main():
             shutil.copy2(original,copied)
             paths.append(str(copied))
         binary=folder/'checks'
-        subprocess.run([swiftc,'-swift-version','5','-package-name','ProxyMirror','-module-cache-path',str(folder/'modules'),'-I',str(folder),'-L',str(folder),'-lProxyMirrorSystemProxy','-Xlinker','-rpath','-Xlinker',str(folder),*paths,str(entry),'-o',str(binary)],check=True,timeout=180)
-        bundle=folder/'Resources.bundle';bundle.mkdir();(bundle/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'test.ProxyMirror.Errors','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':['en','zh-Hans']}))
-        for language in ['en','zh-Hans']:
-            target=bundle/f'{language}.lproj';target.mkdir()
-            for table in ['Errors','Guides']:shutil.copy2(ROOT/f'Sources/ProxyMirrorCore/Resources/{language}.lproj/{table}.strings',target/f'{table}.strings')
+        subprocess.run([swiftc,'-swift-version','5','-package-name','ProxyMirror','-module-cache-path',str(folder/'modules'),'-I',str(folder),'-L',str(folder),'-lProxyMirrorSystemProxy',*module_flags,'-Xlinker','-rpath','-Xlinker',str(folder),*paths,str(entry),'-o',str(binary)],check=True,timeout=180)
+        bundle=folder/'Resources.bundle'
+        shutil.copytree(ROOT/'Sources/ProxyMirrorCore/Resources',bundle)
+        languages=[path.stem for path in bundle.glob('*.lproj')]
+        (bundle/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'test.ProxyMirror.Errors','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':languages}))
         for language in ['en','zh-Hans']:
             env=dict(os.environ,PM_SETTINGS_LANGUAGE=language,PM_LOCALIZATION_RESOURCE_DIR=str(bundle))
             subprocess.run([str(binary)],env=env,check=True,timeout=20)

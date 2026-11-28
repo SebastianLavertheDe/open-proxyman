@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import ProxyMirrorFoundation
 
 @MainActor
 private final class FlowSummaryModel: ObservableObject {
@@ -29,6 +30,7 @@ private final class FlowSummaryModel: ObservableObject {
 @MainActor
 struct FlowSummaryView: View {
     @ObservedObject var store: TrafficStore
+    @ObservedObject private var presentationSettings = AppSettings.shared
     @StateObject private var model = FlowSummaryModel()
     @State private var onlySelection = false
     @State private var automatic = true
@@ -45,10 +47,10 @@ struct FlowSummaryView: View {
             }
             let stats = model.statistics
             HStack(spacing: 25) {
-                metric(Strings.Tools.request, String(stats.total))
-                metric(Strings.Tools.completed, String(stats.completed))
-                metric(Strings.Tools.transportFailed, String(stats.transportFailed))
-                metric("HTTP 4xx / 5xx", String(stats.httpErrors))
+                metric(Strings.Tools.request, PresentationNumbers.integer(stats.total))
+                metric(Strings.Tools.completed, PresentationNumbers.integer(stats.completed))
+                metric(Strings.Tools.transportFailed, PresentationNumbers.integer(stats.transportFailed))
+                metric("HTTP 4xx / 5xx", PresentationNumbers.integer(stats.httpErrors))
                 metric(Strings.Tools.averageDuration, duration(stats.averageMilliseconds))
             }
             HStack(spacing: 28) {
@@ -71,7 +73,7 @@ struct FlowSummaryView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Text(Strings.Tools.statusCodesOfCompletedRequests).font(.headline).padding(.top, 4)
                     List(stats.statusCounts) { entry in
-                        HStack { Text(String(entry.status)); Spacer(); Text(String(entry.count)).monospacedDigit() }
+                        HStack { Text(String(entry.status)); Spacer(); Text(PresentationNumbers.integer(entry.count)).monospacedDigit() }
                     }.frame(minHeight: 90)
                     if stats.statusCounts.isEmpty { Text(Strings.Tools.noCompletedHttpStatusCodes).font(.caption).foregroundStyle(.secondary) }
                 }.frame(minWidth: 290)
@@ -94,7 +96,7 @@ struct FlowSummaryView: View {
                 }.padding(.leading, 12).frame(minWidth: 340)
             }
             if let date = model.refreshedAt {
-                Text(Strings.Tools.snapshot1AutomaticRefreshRunsAtMostOncePer(String(describing: date.formatted(date: .omitted, time: .standard))))
+                Text(Strings.Tools.snapshot1AutomaticRefreshRunsAtMostOncePer(PresentationTime.string(from: date)))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -132,9 +134,9 @@ struct FlowSummaryView: View {
                         .frame(width: maximum == 0 ? 0 : geometry.size.width * CGFloat(count) / CGFloat(maximum))
                 }
             }.frame(height: 13)
-            Text(String(count)).font(.caption.monospacedDigit()).frame(minWidth: 36, alignment: .trailing)
+            Text(PresentationNumbers.integer(count)).font(.caption.monospacedDigit()).frame(minWidth: 36, alignment: .trailing)
         }.accessibilityElement(children: .ignore).accessibilityLabel(Strings.Tools.countAccessibility(String(describing: label), Int(count)))
     }
-    private func duration(_ ms: Double?) -> String { ms.map { String(format: "%.1f ms", $0) } ?? "—" }
-    private func size(_ count: Int64) -> String { ByteCountFormatter.string(fromByteCount: count, countStyle: .file) }
+    private func duration(_ ms: Double?) -> String { ms.map { PresentationNumbers.milliseconds($0) } ?? "—" }
+    private func size(_ count: Int64) -> String { PresentationNumbers.byteCount(count) }
 }

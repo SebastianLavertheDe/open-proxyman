@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "ProxyMirror";
+"NSSystemExtensionUsageDescription" = "O ProxyMirror usa esta extensão para capturar conexões TCP quando o proxy transparente está ativado.";
+"NSAppleEventsUsageDescription" = "O ProxyMirror abre janelas do Terminal ou iTerm com o proxy configurado.";
+"ProxyMirror Session" = "ProxyMirror Session";
+"ProxyMirror HAR" = "ProxyMirror HAR";

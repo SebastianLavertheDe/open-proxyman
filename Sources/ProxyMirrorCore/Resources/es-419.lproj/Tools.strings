@@ -1,0 +1,2 @@
+/* Initial translation; missing entries use the English fallback. */
+"certificate_subject" = "Asunto: %@";

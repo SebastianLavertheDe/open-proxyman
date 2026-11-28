@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ProxyMirrorFoundation
 
 /// Proxyman 顶部筛选 chips（实测: 全部|HTTP|HTTPS|WebSocket|JSON|表单|XML|JS|CSS|GraphQL|文档|媒体|其他）
 enum FilterChip: String, CaseIterable, Identifiable {
@@ -137,7 +138,7 @@ final class Transaction: ObservableObject, Identifiable {
                 if data.isEmpty { data = captured } else { data.append(captured) }
                 revision &+= 1
             }
-            bytes += byteCount
+            bytes = ImportedTrafficMetrics.saturatingTotal(bytes, byteCount)
             truncated = bytes > data.count
         }
     }
@@ -166,12 +167,26 @@ final class Transaction: ObservableObject, Identifiable {
     @Published var query: String = ""
     @Published var statusCode: Int = 0          // 0 = 未完成/失败
     @Published var statusReason: String = ""
-    @Published var errorText: String?
+    @Published private var storedErrorText: String?
+    @Published private(set) var failure: CapturedFailure?
+    /// Stable diagnostic retained for CLI, HAR and native session consumers.
+    var errorText: String? {
+        get { failure?.diagnostic ?? storedErrorText }
+        set { failure = nil; storedErrorText = newValue }
+    }
+    var localizedErrorText: String? { failure?.localizedPresentation ?? storedErrorText }
+
+    func setFailure(_ failure: CapturedFailure?) {
+        storedErrorText = nil
+        self.failure = failure
+    }
+
+    func recordFailure(_ error: Error) { setFailure(NetworkFailure.capture(error)) }
     @Published var isTLSIntercepted = false     // MITM 解密
     @Published var suspectedPinning = false     // 疑似证书锁定（客户端拒绝代理证书）
     @Published var sseEvents: [SSEEvent] = []   // text/event-stream 事件级解析结果
     @Published var sseEventsTruncated = false
-    @Published var sseParseIssue: String?
+    @Published var sseParseIssue: CapturedFailure?
     @Published var sseDecodingDeferred = false
     var isSSE: Bool { SSEStreamState.matches(contentType) }
     @Published var isTunnel = false             // 未解密的 CONNECT 隧道
@@ -221,7 +236,7 @@ final class Transaction: ObservableObject, Identifiable {
     var requestVersion = "HTTP/1.1"
     var responseVersion = "HTTP/1.1"
     var upstreamProtocol: String?
-    var connectionDetails: ProxyConnectionDetails?
+    @Published var connectionDetails: ProxyConnectionDetails?
     var originalURL: String?
     var resolvedAddress: String?
     var simulatedLatencyMs: Int?
@@ -336,7 +351,10 @@ final class Transaction: ObservableObject, Identifiable {
     }
 
     var totalSize: Int {
-        max(requestBytes, requestBody.count) + max(responseBytes, responseBody.count)
+        captureLock.withLock {
+            ImportedTrafficMetrics.saturatingTotal(max(requestCapture.bytes, requestCapture.data.count),
+                                                  max(responseCapture.bytes, responseCapture.data.count))
+        }
     }
 
     var statusText: String {
@@ -355,18 +373,13 @@ final class Transaction: ObservableObject, Identifiable {
     }
 
     var sizeText: String {
-        let n = totalSize
-        if n < 1024 { return "\(n) B" }
-        if n < 1024 * 1024 { return String(format: "%.1f KB", Double(n) / 1024) }
-        return String(format: "%.2f MB", Double(n) / (1024 * 1024))
+        PresentationNumbers.byteCount(Int64(totalSize))
     }
 
     var timeText: String { PresentationTime.string(from: startedAt) }
 
     var durationText: String {
-        if duration < 1 { return String(format: "%.0f ms", duration * 1000) }
-        if duration < 60 { return String(format: "%.2f s", duration) }
-        return String(format: "%.2f min", duration / 60)
+        PresentationNumbers.duration(seconds: duration)
     }
 
     /// 状态圆点颜色（实测色板，见 UI-SPEC.md §1：2xx 绿 / 3xx 黄 / 4xx 橙 / 5xx 红）

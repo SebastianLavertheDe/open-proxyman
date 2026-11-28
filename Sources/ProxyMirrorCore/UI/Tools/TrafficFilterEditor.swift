@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TrafficFilterEditor: View {
     @ObservedObject var store: TrafficStore
+    var embedded = false
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SavedTrafficFilter.defaultsKey) private var stored = Data()
     @State private var draft = TrafficConditionGroup()
@@ -33,33 +35,36 @@ struct TrafficFilterEditor: View {
                 actions
             }
             HSplitView {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(Strings.Tools.namedPresetsSelectWith).font(.caption).foregroundStyle(.secondary)
-                    List {
-                        ForEach(visibleProfiles) { profile in
-                            Button { load(profile) } label: {
-                                HStack {
-                                    Circle().fill(profile.highlightName.map(ProxymanTheme.highlightColor) ?? .clear)
-                                        .frame(width: 9, height: 9)
-                                    Text(profile.name).lineLimit(2)
-                                    Spacer()
-                                }.padding(.vertical, 4)
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain)
-                                .listRowBackground(selectedProfile == profile.id ? Color.accentColor.opacity(0.15) : .clear)
+                if !embedded {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(Strings.Tools.namedPresetsSelectWith).font(.caption).foregroundStyle(.secondary)
+                        List {
+                            ForEach(visibleProfiles) { profile in
+                                Button { load(profile) } label: {
+                                    HStack {
+                                        Circle().fill(profile.highlightName.map(ProxymanTheme.highlightColor) ?? .clear)
+                                            .frame(width: 9, height: 9)
+                                        Text(profile.name).lineLimit(2)
+                                        Spacer()
+                                    }.padding(.vertical, 4)
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain)
+                                    .listRowBackground(selectedProfile == profile.id ? Color.accentColor.opacity(0.15) : .clear)
+                            }
                         }
-                    }
-                    HStack {
-                        Button(Strings.Tools.newPreset) { selectedProfile = nil; name = ""; draft = TrafficConditionGroup(); highlight = ""; selectedCondition = nil }
-                        Button(Strings.Tools.delete) { if let selectedProfile { write(profiles.filter { $0.id != selectedProfile }); self.selectedProfile = nil } }
-                            .disabled(selectedProfile == nil)
-                    }
-                }.frame(minWidth: 180, idealWidth: 200, maxWidth: 240)
+                        HStack {
+                            Button(Strings.Tools.newPreset) { selectedProfile = nil; name = ""; draft = TrafficConditionGroup(); highlight = ""; selectedCondition = nil }
+                            Button(Strings.Tools.delete) { if let selectedProfile { write(profiles.filter { $0.id != selectedProfile }); self.selectedProfile = nil } }
+                                .disabled(selectedProfile == nil)
+                        }
+                    }.frame(minWidth: 180, idealWidth: 200, maxWidth: 240)
+                }
                 conditionPanel
             }
             footer
         }
-        .padding(18).frame(width: 1020, height: 570)
+        .padding(embedded ? 10 : 18)
+        .frame(width: embedded ? nil : 1020, height: embedded ? 360 : 570)
         .background(TrafficFilterKeyHandler(action: handle).frame(width: 0, height: 0))
         .onAppear { draft = store.filter.conditions }
         .onChange(of: conditionFocused) { value in
@@ -87,7 +92,7 @@ struct TrafficFilterEditor: View {
             }
             Text(Strings.Tools.bTogglesColoringForTheSelectedPresetPresetsApply)
                 .font(.caption).foregroundStyle(.secondary)
-        }.padding(.leading, 10).frame(minWidth: 680)
+        }.padding(.leading, embedded ? 0 : 10).frame(minWidth: embedded ? 0 : 680)
     }
 
     private var footer: some View {
@@ -98,8 +103,8 @@ struct TrafficFilterEditor: View {
                 TextField(Strings.Tools.filterName, text: $name)
                 Button(Strings.Tools.savePreset) { saveProfile() }.disabled(!valid || draft.isEmpty || profileName.isEmpty)
                 Spacer()
-                Button(Strings.Tools.cancelEsc) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(Strings.Tools.applyAction) { store.filter.conditions = draft; dismiss() }
+                Button(Strings.Tools.cancelEsc) { close() }.keyboardShortcut(.cancelAction)
+                Button(Strings.Tools.applyAction) { store.filter.conditions = draft; close() }
                     .keyboardShortcut(.defaultAction).disabled(!valid)
             }
         }
@@ -107,6 +112,11 @@ struct TrafficFilterEditor: View {
 
     private var actions: some View {
         Menu(Strings.Tools.panelActions) {
+            if embedded {
+                Menu(Strings.Tools.namedPresetsSelectWith) {
+                    ForEach(visibleProfiles) { profile in Button(profile.name) { load(profile) } }
+                }
+            }
             Button(Strings.Tools.addConditionN) { handle(.addCondition) }
             Button(Strings.Tools.addAndOrGroupN) { handle(.addGroup) }
             Divider()
@@ -115,13 +125,15 @@ struct TrafficFilterEditor: View {
             Button(Strings.Tools.toggleSelectedPresetColoringB) { handle(.toggleColor) }.disabled(selectedProfile == nil)
             Button(Strings.Tools.searchPanelF) { handle(.search) }
             Divider()
-            Button(Strings.Tools.cancelEsc2) { dismiss() }
+            Button(Strings.Tools.cancelEsc2) { close() }
         }.fixedSize()
     }
 
+    private func close() { if let onClose { onClose() } else { dismiss() } }
+
     private func handle(_ command: TrafficFilterShortcut) {
         switch command {
-        case .cancel: dismiss()
+        case .cancel: close()
         case .search: searchFocused = true
         case .addCondition:
             let condition = TrafficCondition()

@@ -15,3 +15,6 @@
 "unknown" = "Unknown";
 "language_restart_notice" = "重启后生效 / Applies after restarting";
 "resource_unavailable" = "Language resources are missing or damaged. Reinstall ProxyMirror.";
+"language_spanish_preview" = "Español latinoamericano (preview)";
+"language_japanese_preview" = "日本語 (preview)";
+"language_portuguese_preview" = "Português brasileiro (preview)";

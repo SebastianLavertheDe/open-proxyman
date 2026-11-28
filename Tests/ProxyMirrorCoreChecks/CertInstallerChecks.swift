@@ -89,6 +89,11 @@ func checkCertInstaller(_ test: CoreAssertions) throws {
     }
     test.equal(invalidPeriodEvaluations, 0, "CA 有效期门控先于平台信任验证")
     try checkCATrustProbe(test, authority: authority)
+    let selectedPEM = try authority.caPEM()
+    let installPlan = try CertInstaller.systemWideInstallPlan(authority: authority)
+    try authority.resetCA()
+    test.equal(installPlan.arguments, [selectedPEM], "CA 安装从所选 authority 绑定一次性证书内容，不传可替换临时路径")
+    test.expect(installPlan.certificatePEM != (try authority.caPEM()), "授权等待期间所选 CA 被替换也不会改变安装快照")
 
     let matchingCertificates: CertInstaller.CertificateFinder = { _ in ["AAAA"] }
     for (status, message) in [(Int32(1), "User canceled. (-128)"), (Int32(23), "keychain deletion failed")] {

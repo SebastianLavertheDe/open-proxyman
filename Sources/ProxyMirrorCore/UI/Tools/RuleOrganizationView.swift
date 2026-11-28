@@ -13,12 +13,37 @@ struct ToolsEnableMenu: View {
                         do { try RuleOrganizationStore.shared.setEnabled(value, tool: tool.rawValue); revision = UUID() }
                         catch { AppState.shared.systemProxyMessage = LocalizedErrorPresentation.message(for: error) }
                     }))
+                    .keyboardShortcut(toolShortcut(tool), modifiers: [.control, .option, .command])
                 }
             }
         }
         .id(revision)
         .onReceive(NotificationCenter.default.publisher(for: .ruleOrganizationChanged)) { _ in revision = UUID() }
     }
+    private func toolShortcut(_ tool: RuleBackup.Section) -> KeyEquivalent {
+        let key: Character
+        switch tool {
+        case .mapLocal: key = "l"
+        case .mapRemote: key = "r"
+        case .blockList: key = "b"
+        case .allowList: key = "a"
+        case .sslProxyingList: key = "p"
+        case .sslApplications: key = "i"
+        case .customCertificates: key = "c"
+        case .dns: key = "d"
+        case .breakpoints: key = "k"
+        case .rewrite: key = "s"
+        case .latency: key = "j"
+        case .noCaching: key = "n"
+        case .reverse: key = "v"
+        case .external: key = "e"
+        case .protobuf: key = "u"
+        case .h2c: key = "h"
+        case .settings, .organization: key = "x"
+        }
+        return KeyEquivalent(key)
+    }
+
 }
 
 /// The same folder tree is used by UI, CLI and MCP and is included in rule backups.

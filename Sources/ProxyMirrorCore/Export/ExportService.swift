@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import UniformTypeIdentifiers
+import ProxyMirrorFoundation
 
 /// 剪贴板助手
 enum CopyPaste {
@@ -43,7 +44,7 @@ enum ExportService {
         DispatchQueue.main.async { AppState.shared.systemProxyMessage = message }
     }
 
-    static func buildHAR(_ transactions: [Transaction]) -> [String: Any] {
+    static func buildHAR(_ transactions: [Transaction], redactSensitiveHeaders: Bool? = nil) -> [String: Any] {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let entries: [[String: Any]] = transactions.map { tx in
@@ -93,6 +94,16 @@ enum ExportService {
             resp["headersSize"] = -1
             resp["bodySize"] = max(tx.responseBytes, tx.responseBody.count)
             if let error = tx.errorText, !error.isEmpty { resp["_error"] = error }
+            if let failure = tx.failure {
+                resp["_proxyMirrorFailure"] = ["code": failure.code, "arguments": failure.arguments,
+                                               "diagnostic": failure.diagnostic] as [String: Any]
+            }
+            if tx.isSSE {
+                let encoded = try? JSONEncoder().encode(SSEInspectionSnapshot(transaction: tx))
+                if let encoded, let snapshot = try? JSONSerialization.jsonObject(with: encoded) {
+                    resp["_proxyMirrorSSE"] = snapshot
+                }
+            }
             resp["_truncated"] = tx.responseTruncated
             if let original = tx.originalURL { entry["_originalURL"] = original }
             if let protocolName = tx.upstreamProtocol { entry["_upstreamProtocol"] = protocolName }
@@ -120,66 +131,49 @@ enum ExportService {
                 "entries": entries,
             ]
         ]
-        return AppSettings.shared.redactSensitiveHeaders ? ExportRedaction.har(har) : har
+        return (redactSensitiveHeaders ?? AppSettings.shared.redactSensitiveHeaders) ? ExportRedaction.har(har) : har
     }
 
     private static func harHeaders(_ headers: HTTPHeaders) -> [[String: String]] {
         headers.pairs.map { ["name": $0.name, "value": $0.value] }
     }
 
-    /// CSV 导出（对齐 Proxyman Export ▸ as CSV）
+    /// Snapshot mutable metadata before the background writer starts.
+    @MainActor
     static func exportCSV(_ transactions: [Transaction]) {
         guard !transactions.isEmpty else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "proxymirror.csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try writeCSV(transactions, to: url) }
-        catch { reportExportFailure(error, format: "CSV") }
+        CSVExportJob.start(csvSnapshot(transactions), to: url, dateStyle: csvDateStyle())
     }
 
     static func writeCSV(_ transactions: [Transaction], to url: URL) throws {
-        var rows = ["Method,Status,URL,Content Type,Size,Duration(ms),Start Time"]
-        for tx in transactions {
-            let cells = [tx.method, String(tx.statusCode), tx.fullURL,
-                         tx.contentType, String(tx.totalSize),
-                         String(format: "%.0f", tx.duration * 1000), tx.timeText]
-            rows.append(cells.map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))" }.joined(separator: ","))
-        }
-        try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        try AtomicCSVWriter.write(csvSnapshot(transactions), to: url, dateStyle: csvDateStyle())
+    }
+
+    private static func csvSnapshot(_ transactions: [Transaction]) -> [CSVExportRecord] {
+        transactions.map { CSVExportRecord(method: $0.method, status: $0.statusCode, url: $0.fullURL,
+            contentType: $0.contentType, size: $0.totalSize, duration: $0.duration, startedAt: $0.startedAt) }
+    }
+
+    private static func csvDateStyle() -> AtomicCSVWriter.DateStyle {
+        .init(uses24HourClock: AppSettings.shared.use24HourClock, includesDate: AppSettings.shared.showFullDate)
     }
 
     /// 生成可复用的 cURL 命令
     static func curlCommand(_ tx: Transaction) -> String {
-        let proxyPort = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
-        if tx.isTunnel {
-            let authority = URLParser.authority(host: tx.host, port: tx.port, scheme: "https")
-            let proxy = AppSettings.shared.appendProxyToCommands ? " --proxy 'http://127.0.0.1:\(proxyPort)'" : ""
-            return "curl\(proxy) 'https://\(_escape(authority))'"
-        }
-        var parts = ["curl '\(_escape(tx.fullURL))'"]
-        if AppSettings.shared.appendProxyToCommands { parts.append("--proxy 'http://127.0.0.1:\(proxyPort)'") }
-        let body = tx.requestBody
-        if tx.method != "GET" || !body.isEmpty {
-            let method = tx.method.utf8.allSatisfy { (65...90).contains($0) } ? tx.method : "'\(_escape(tx.method))'"
-            parts.append("-X \(method)")
-        }
-        let headers = ExportRedaction.commandHeaders(
-            ExportRedaction.headers(tx.requestHeaders.pairs.map { ($0.name, $0.value) }, redact: AppSettings.shared.redactSensitiveHeaders),
-            preserveOriginal: AppSettings.shared.preserveOriginalHeaders, omitAcceptEncodingByDefault: true)
-        for (name, value) in headers {
-            let header = value.isEmpty ? name + ";" : name + ": " + value
-            parts.append("-H '\(_escape(header))'")
-        }
-        if !body.isEmpty {
-            if let text = String(data: body, encoding: .utf8), !text.utf8.contains(0) {
-                parts.append("--data-raw '\(_escape(text))'")
-            } else {
-                parts[0] = "printf '%s' '\(body.base64EncodedString())' | base64 -d | " + parts[0]
-                parts.append("--data-binary @-")
-            }
-        }
-        return parts.joined(separator: " \\\n  ")
+        curlCommand(tx, runtime: .shared)
+    }
+
+    static func curlCommand(_ tx: Transaction, runtime: ProxyRuntimeContext) -> String {
+        let request = HTTPRequest(method: tx.method, url: tx.fullURL,
+            headers: tx.requestHeaders.pairs.map { ($0.name, $0.value) }, body: tx.requestBody)
+        return CurlCommandGenerator.command(request, isTunnel: tx.isTunnel,
+            proxyURL: runtime.appendProxyToCommands ? "http://127.0.0.1:\(runtime.listenerPort)" : nil,
+            preserveOriginalHeaders: runtime.preserveOriginalHeaders,
+            redactSensitiveHeaders: runtime.redactSensitiveHeaders)
     }
 
     private static func _escape(_ s: String) -> String {
@@ -187,16 +181,19 @@ enum ExportService {
     }
 
     static func httpieCommand(_ tx: Transaction) -> String {
+        httpieCommand(tx, runtime: .shared)
+    }
+
+    static func httpieCommand(_ tx: Transaction, runtime: ProxyRuntimeContext) -> String {
         let request = ComposeService.request(from: tx)
         var args = ["http"]
-        if AppSettings.shared.appendProxyToCommands {
-            let port = ProxyEngine.shared.isRunning ? ProxyEngine.shared.port : AppSettings.shared.port
-            let proxy = "http://127.0.0.1:\(port)"
+        if runtime.appendProxyToCommands {
+            let proxy = "http://127.0.0.1:\(runtime.listenerPort)"
             args += ["--proxy=http:'\(_escape(proxy))'", "--proxy=https:'\(_escape(proxy))'"]
         }
         args += ["'\(_escape(request.method))'", "'\(_escape(request.url))'"]
-        args += ExportRedaction.commandHeaders(ExportRedaction.headers(request.headers, redact: AppSettings.shared.redactSensitiveHeaders),
-                                                preserveOriginal: AppSettings.shared.preserveOriginalHeaders)
+        args += ExportRedaction.commandHeaders(ExportRedaction.headers(request.headers, redact: runtime.redactSensitiveHeaders),
+                                                preserveOriginal: runtime.preserveOriginalHeaders)
             .map { "'\(_escape($0.0 + ": " + $0.1))'" }
         let command = args.joined(separator: " ")
         if let body = request.body, !body.isEmpty {
@@ -210,6 +207,7 @@ enum ExportService {
 enum RepeatService {
     private struct Request {
         let parsed: ComposeService.ParsedRequest
+        let runtime: ProxyRuntimeContext
         let proxyPort: UInt16?
         let onResult: (Transaction) -> Void
     }
@@ -219,13 +217,14 @@ enum RepeatService {
     private static var pending: [Request] = []
     private static var ready: [Request] = []
 
-    static func resend(_ tx: Transaction, proxyPort: UInt16? = nil, onResult: @escaping (Transaction) -> Void) {
+    static func resend(_ tx: Transaction, runtime: ProxyRuntimeContext, proxyPort: UInt16? = nil,
+                       onResult: @escaping (Transaction) -> Void) {
         guard var request = ComposeService.replayRequest(from: tx) else { return }
-        if AppSettings.shared.noCacheOnRepeat {
+        if runtime.noCacheOnRepeat {
             request.headers.removeAll { ["cache-control", "pragma", "if-none-match", "if-modified-since"].contains($0.0.lowercased()) }
             request.headers += [("Cache-Control", "no-cache, no-store"), ("Pragma", "no-cache")]
         }
-        pending.append(Request(parsed: request, proxyPort: proxyPort, onResult: onResult))
+        pending.append(Request(parsed: request, runtime: runtime, proxyPort: proxyPort, onResult: onResult))
         startPending()
     }
 
@@ -237,7 +236,7 @@ enum RepeatService {
             }
             guard let request = ready.popLast() else { return }
             active += 1
-            let task = ComposeService.execute(request.parsed, proxyPort: request.proxyPort) { result in
+            let task = ComposeService.execute(request.parsed, runtime: request.runtime, proxyPort: request.proxyPort) { result in
                 active -= 1
                 request.onResult(result)
                 startPending()

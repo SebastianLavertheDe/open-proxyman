@@ -26,7 +26,7 @@ Apple 在现代 Xcode 中推荐 String Catalog。当前项目首版选择原生�
 | --- | --- | --- |
 | 语言偏好 | 已允许 system、zh-Hans、en，默认 system | `Sources/ProxyMirrorCore/Model/AppSettings.swift:35,234–236` |
 | 翻译入口 | `L10n.string / format`，快照中有 277 对静态中英文映射 | `Sources/ProxyMirrorCore/UI/PresentationLocalization.swift:5–23` |
-| 局部界面接入 | 设置组件及部分菜单、帮助按钮开始使用 L10n；交付前复核时，App 已增加语言偏好的观察和 Scene locale 注入 | `UI/Settings/SettingsView.swift`、`PreferencesComponents.swift`、`Sources/ProxyMirror/App/ProxyMirrorApp.swift` |
+| 局部界面接入 | 设置组件及部分菜单、帮助按钮开始使用 L10n；交付前复核时，App 已增加语言偏好的观察和 Scene locale 注入 | `UI/Settings/SettingsView.swift`、`PreferencesComponents.swift`、`Sources/ProxyMirrorCore/DesktopApplication/ProxyMirrorApp.swift` |
 | 备份语言偏好 | 语言字段可选，校验允许值，导入旧备份时保留目标端原偏好 | `Export/RuleBackup.swift:93,113,144,189` |
 | 相关测试 | 已有语言备份、非法值、旧备份与外观重置的测试 | `Tests/ProxyMirrorCoreChecks/PresentationBackupChecks.swift:26–114` |
 

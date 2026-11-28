@@ -1,0 +1,4 @@
+module ProxyMirrorProcessSupport {
+    header "ProxyMirrorProcessSupport.h"
+    export *
+}

@@ -13,7 +13,7 @@ A native macOS HTTP/HTTPS traffic capture and debugging tool inspired by Proxyma
 - Map Local, Map Remote, Block/Allow, No Caching, breakpoints, scripts, DNS mapping, and per-host simulation of latency, bandwidth limits, jitter, disconnections, and pauses between body chunks.
 - Reverse proxy, HTTP CONNECT, HTTPS CONNECT, SOCKS5 and PAC routing, upstream CAs, mTLS client identities, and TLS key logging.
 - Traffic tables, custom columns, combined filters, tabs, and split views. Details include query parameters, cookies, raw content, timing, JSONPath, jq, and binary inspection.
-- Compose supports JSON, Form, Multipart, QUERY, WebSocket, timeouts, and redirects. Copy as Code offers 21 formats; standard replays use the local proxy.
+- Compose supports JSON, Form, Multipart, QUERY, WebSocket, timeouts, and redirects. Copy as Code offers 23 formats; standard replays use the local proxy.
 - A separate Diff comparison pool for requests, responses, headers, and bodies, with JSON sorting and external diff tools; advanced filtering across 19 fields, nested AND/OR groups, coloring presets, and detail history navigation.
 - Saved traffic, versioned sessions, HAR / CSV, redacted Gist publishing, Charles session and rule imports, and rule/settings backups including Protobuf descriptors.
 - Built-in HTTP / stdio MCP, a full CLI, nested rule folders, and tool switches. The Automation Dashboard launches terminals, browsers, and Electron with proxy settings.
@@ -22,12 +22,16 @@ A native macOS HTTP/HTTPS traffic capture and debugging tool inspired by Proxyma
 - LAN access through multi-IP / CIDR allowlists, with loopback-only listening by default. macOS system proxy bypass lists are preserved and restored.
 - External Proxy supports all hosts, exclusion lists, and Inclusive lists; upstream routing can match hosts or HTTP(S) URL wildcards.
 - Saved requests support nested folders, moving, and copying, with automatic migration of the old Saved tray. Traffic summaries include status buckets, duration histograms, and P50 / P95 / P99.
-- Settings use a categorized sidebar with search and back/forward navigation. Requests and responses can be stacked or placed side by side. Configure font size, monospaced fonts, tabs, character minimaps, scrolling beyond the last line, dates with time zones, themes, and four desktop icons.
+- Settings use a categorized sidebar with search and back/forward navigation. Requests and responses can be stacked or placed side by side. Configure font size, monospaced fonts, tabs, character minimaps, scrolling beyond the last line, dates with time zones, and themes. The app consistently uses the original astronaut icon on a blue background.
 - MCP can be started and stopped at runtime, with HTTP and stdio configuration for Claude Code, Codex, and manual setup. AI responses are redacted by default. Copying can preserve original content headers, and rule processing can add diagnostic headers.
-- Independent recording controls, quit confirmation, Chinese and English interfaces, update notifications, and cleanup of older completed requests by memory threshold and interval. The Help menu includes troubleshooting and simulated memory warnings.
+- Independent recording controls, quit confirmation, Chinese and English interfaces with initial Japanese, Spanish, and Portuguese translations, update notifications, and cleanup of older completed requests by memory threshold and interval. The Help menu includes troubleshooting and simulated memory warnings.
 - Scripts support `fetch`, `@proxymirror/http`, and an HTTP subset of Axios, including awaiting HTTP(S) calls, cancellation, and timeouts. The script window can copy a task for generating scripts through MCP.
 
 Common shortcuts: ⌘F filters current traffic, ⇧⌘F finds sources, ⌥⌘N composes a request, ⌘K edits a request, ⇧⌘R edits and replays, and ⇧⌘C copies cURL.
+
+With Settings → Tools → Proxyman-compatible Shortcuts enabled, ⇧⌘F filters the current view, ⌥⌘F filters sources, ⌘F searches the body, ⌥⌘C opens Compose, ⌥⌘N opens No Caching, ⌥⌘P opens the SSL list, and ⌥⌘↩ edits and replays. When the body has focus, ⌘+ / ⌘− / ⌘0 zoom or reset the font size; ⇧⌘0 clears highlighting.
+
+Rule windows support ⌘N to create, ⌘↩ to edit, ⌘⌫ to delete, ⌘D to duplicate, Space to enable or disable, and ⌘F to search. Rule list changes take effect immediately; individual edits can still be canceled. The traffic table supports native header sorting, resizing, and drag reordering.
 
 In the advanced filter panel, ⌘N adds a condition, ⇧⌘N adds a subgroup, ⌘↑ / ⌘↓ navigates, and ⌘B toggles preset coloring. In the list, ⌘C uses the selected default copy format.
 
@@ -40,6 +44,8 @@ On its first normal launch, this version performs a one-time reset of local data
 See the [localization implementation notes](Docs/localization-implementation.md) for development and validation details.
 
 ## Build and run
+
+The main app requires macOS 13 or later and Command Line Tools / Xcode providing Swift 5.10 or later. Check the active toolchain with `swift --version`; the project and its currently pinned core dependencies require Swift tools 5.10 at minimum. The standalone ProxyMirrorBridgeKit retains a minimum of Swift tools 5.9. Packaging and localization validation also require SwiftGen **6.6.3**, which can be selected with `SWIFTGEN_BIN=/absolute/path/to/swiftgen`. Packaging stops if it is missing or the version does not match.
 
 ```zsh
 swift build --skip-update -j 2
@@ -56,6 +62,8 @@ Start listening or recording from the toolbar. The default manual proxy address 
 The traffic list preserves the current selection and scroll position by default. To follow new requests, click Auto Select below the list.
 
 When listening starts, ProxyMirror automatically takes over the macOS system proxy by default. The first takeover requests permission to install a background service through the macOS authorization dialog. Subsequent launches of the same signed build reuse that authorization; a newly signed build requires approval again. Disable automatic takeover in Settings → General, or use the top status popover to change recording, the macOS proxy, and the network extension for the current session.
+
+Capture Local Requests is enabled by default under Advanced Proxy Settings → System Proxy Bypass. Chrome using the macOS manual system proxy applies the new configuration to pages already open. For example, triggering an action on an existing Pi page can capture a new `POST http://127.0.0.1:52112/api/rpc`. Explicit exceptions take priority; a system-wide exception matching `127.0.0.1` also bypasses Pi. To exclude a frequently used local service, enter `127.0.0.1:port` and apply. Link-local addresses and the proxy's own listening port remain direct. This rule applies to Chromium's manual proxy mode; PAC configurations do not support this loopback rule. [Chromium proxy rules](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md#implicit-bypass-rules)
 
 Each takeover saves the current HTTP / HTTPS proxy settings. They are restored when the app quits, listening stops, or Restore System Proxy is clicked. If the app exits unexpectedly, the background service also attempts restoration when the connection closes. Restoration preserves proxy entries changed by other apps during takeover. After restoring the system proxy, use Remove System Proxy Authorization in Settings → General to uninstall the background service.
 
@@ -192,23 +200,51 @@ See the [gap implementation and acceptance notes](Docs/gap-implementation.md) fo
 
 ```
 Sources/
-  ProxyMirrorCore/        # Core library
+  ProxyMirrorProcessSupport/ # Platform C wrapper for spawn, preserving child FD isolation
+  ProxyMirrorFoundation/  # Portable protocol, matching, persistence, inspection, export, and process policies
+  ProxyMirrorCore/        # macOS app integration
+    DesktopApplication/   # Menus, windows, CLI/MCP dispatch, and production package app entry
     Proxy/                # NIO proxy engine, HTTP parsing, MITM certificates, SNI sniffing
     Model/                # Transaction / TrafficStore / AppSettings
     UI/                   # Sidebar, list, details, and settings (SwiftUI)
     Export/               # HAR + cURL + Repeat
     System/               # SystemConfiguration proxy settings, certificates, and trust
-  ProxyMirror/            # @main app shell (menu commands and separate windows)
+  ProxyMirror/            # Thin @main entry calling the production package API
   ProxyMirrorSelfTest/    # CLT unit test entry point, loopback, concurrency, and benchmarks
-Tests/                    # Core assertions, XCTest, and performance tests
+Tests/
+  ProxyMirrorFoundationTests/ # Cross-platform XCTest importing the production module directly
+  ProxyMirrorCoreChecks/      # macOS / Combine / engine and UI adapter checks
 Scripts/                  # Test fixtures, packaging, and builds
 ```
 
+The production app connects to Core through the package entry point. Release packaging builds only the app and its bundled helpers, without relying on `@testable import` or `-enable-testing`. HTTP/1 and HTTP/2 share a request routing plan, while protocol handlers retain their own connection, flow-control, and buffering state. Metadata changes to published traffic are dispatched to the main thread; body storage continues to use separate synchronization with resource budgets.
+
+Automation, Repeat, Compose, and code export use the selected engine, CA, and configuration through a runtime context. JSON/GraphQL columns and filters use immutable snapshots, background derived caches, and pending states; live capture preserves completed sort batches. Diff documents and JSON highlighting limit output and coloring ranges during generation and respond to cancellation. Failed Saved writes retain pending snapshots and retry at quit; further failure displays a prompt and cancels quitting.
+
+Body inspection can recognize gzip payloads without a declared `Content-Encoding` from their signature. Tars/JCE bodies are converted to JSON using field tag numbers for shared use by the body view, preview, tree, and queries; business field names are not guessed without a protocol definition. Automatic detection of unlabeled Tars/JCE is limited to decompressed generic binary content and requires complete parsing of multiple ordered fields. Captured bytes, headers, and replay content remain unchanged; unsupported binary content still displays as Hex.
+
+See the [gzip and Tars/JCE body display fixes](Docs/body-inspection-gzip-tars-2026-11-24.md) for screenshot samples, detection boundaries, and regression entry points.
+
 ## Local build notes
 
-Only macOS Command Line Tools are required. The project runs regressions through the SelfTest executable. If the local environment terminates parallel compilation, use `swift build -j 1`. If an explicit UTF-8 decoding error occurs after fetching dependencies for the first time, inspect the files in the dependency checkout.
+macOS Command Line Tools providing Swift 5.10 or later can be used. The project runs regressions through the SelfTest executable. If the local environment terminates parallel compilation, use `swift build -j 1`. If an explicit UTF-8 decoding error occurs after fetching dependencies for the first time, inspect the files in the dependency checkout.
 
 ## Testing
+
+### Portable modules and continuous integration
+
+On Linux, the root package enables only `ProxyMirrorFoundation`, the process C wrapper, their tests, and transport fixtures. macOS adds the desktop app and native integration targets. Foundation tests import the production module directly, covering HTTP, body inspection, atomic CSV writes, process cancellation, retention, and stable error identities. `test_compose_transport.py` uses a production SwiftPM fixture to verify real cURL, redirects, and separation of trailers from bodies. To prevent the Linux target graph from rewriting the desktop dependency lockfile, test in a temporary source copy:
+
+```sh
+validation_root="$(mktemp -d)"
+tar --exclude=Package.resolved -cf - Package.swift Sources Tests | tar -xf - -C "$validation_root"
+(
+  cd "$validation_root"
+  swift test -j 2
+)
+```
+
+The [CI configuration](.github/workflows/validation.yml) includes Linux Foundation checks and three independent macOS jobs: debug checks of real modules and proxy regressions, five-language settings windows, and packaging; release packaging without test visibility flags; and native core, concurrency, HTTP/1, and HTTP/2 regressions under Thread Sanitizer. The new configuration must actually run remotely before these native checks can be considered verified.
 
 ### Preferences UI acceptance
 
@@ -236,6 +272,7 @@ swift build --skip-update -j 2
 python3 Scripts/test_loopback.py --full
 python3 Scripts/test_loopback.py --concurrency
 python3 Scripts/test_http2.py
+python3 Scripts/test_http_transport.py
 
 PM_APP_PATH="$PWD/.build/test-app/ProxyMirror.app" Scripts/make_app.sh debug
 python3 Scripts/test_app_bundle.py --app .build/test-app/ProxyMirror.app
@@ -243,6 +280,33 @@ python3 Scripts/test_cli.py --app .build/test-app/ProxyMirror.app
 ```
 
 For HTTP/2, set `PM_FIXTURE_GO` to choose Go, or pass an executable built from the same fixture source through `PM_HTTP2_FIXTURE_BIN`. With full Xcode installed, run `swift test --filter ProxyMirrorCoreTests --enable-code-coverage` for XCTest and coverage.
+
+`test_http_transport.py` uses an isolated temporary data directory to check real proxy self-connection rejection, HTTP message boundaries, and Host handling. It also verifies 40-second fixed-length / chunked uploads and SSE with 35 seconds of silence in parallel. The suite requires a macOS-built SelfTest, selectable with `--binary`, and does not take over the system proxy or access Keychain.
+
+The following boundary regressions use production Swift implementations and can run on Linux or macOS with Swift 5.10 or later. Policies migrated to Foundation are tested through the real module; platform adapter fixtures provide additional coverage. Scripts accept `--swiftc` to select the compiler; root CA checks use `--swift` to select SwiftPM:
+
+```sh
+python3 Scripts/test_http_safety.py
+python3 Scripts/test_mcp_privacy.py
+python3 Scripts/test_compose_transport.py
+python3 Scripts/test_pending_saves.py
+python3 Scripts/test_script_frame_decisions.py
+python3 Scripts/test_device_commands.py
+python3 Scripts/test_inspection_safety.py
+python3 Scripts/test_root_ca_validation.py
+python3 Scripts/test_saved_models.py
+python3 Scripts/test_processed_localization.py
+python3 Scripts/test_process_support.py
+python3 Scripts/test_sse_issues.py
+python3 Scripts/test_body_inspection.py
+python3 Scripts/test_core_check_runner.py
+```
+
+`test_http_safety.py --nio-package .build/checkouts/swift-nio` also runs real NIO connection interception regressions. Root CA checks use the X509 / Crypto versions in the lockfile; `--local-dependencies` selects a local dependency directory containing `swift-certificates`, `swift-crypto`, and `swift-asn1`. Portable checks do not replace macOS app bundle, UI, Keychain, or system extension acceptance testing.
+
+`test_processed_localization.py` verifies language directory resolution using real SwiftPM `.process` resources. `test_process_support.py` checks FD isolation in the production process runner. `test_sse_issues.py` verifies stable identities and bilingual display of SSE and network simulation errors, and requires zlib development headers and libraries. Each Core XCTest group runs in an isolated SelfTest subprocess, retaining per-case progress and timeout diagnostics.
+
+See the [project-wide code review](Docs/code-review-2026-11-24.md), [architecture, performance, and localization review](Docs/architecture-performance-localization-review-2026-11-24.md), and [R30–R45 deep review and fixes](Docs/deep-review-4610101-2026-11-24.md) for issues and individual fixes.
 
 ### Thread Sanitizer
 
@@ -274,13 +338,13 @@ mkdir -p .build/performance
 python3 Scripts/bench_proxy.py --output .build/performance/small-requests.json
 ```
 
-See the [test implementation plan](./outputs/ProxyMirror%20测试实施方案.md) for UI and macOS system acceptance environments.
+See the [delivery and acceptance notes](./Docs/proxyman-alignment-2026-11-25.md) for UI and macOS system acceptance steps.
 
 ## Alignment scope
 
-See the [implementation checklist](./outputs/ProxyMirror%20对齐%20Proxyman%20实施清单.md) for the comparison baseline, and [development delivery and acceptance](./outputs/ProxyMirror%20对齐开发交付与验收.md) for current implementation, validation results, and remaining work.
+See the [Proxyman alignment notes](./Docs/proxyman-alignment-2026-11-25.md) for this round's implementation, validation results, and external dependencies, and the [feature implementation notes](./Docs/gap-implementation.md) for the previous round's scope.
 
 ## Debugging tips
 
-- Set `PM_SNAPSHOT=/tmp/x.pdf PM_SNAPSHOT_DELAY=15 PM_SNAPSHOT_SELECT=1` to render the main window offscreen after a delay, without Screen Recording permission, for headless UI validation.
+- Run `python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --appearance both` for offscreen preferences window acceptance checks; it uses `PM_SETTINGS_SNAPSHOT` internally. The main window currently has no `PM_SNAPSHOT` interface.
 - Engine logs (proxy start/stop, upstream connections, and root certificate counts) are written to stdout.

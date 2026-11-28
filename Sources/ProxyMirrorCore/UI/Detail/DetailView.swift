@@ -1,4 +1,5 @@
 import SwiftUI
+import ProxyMirrorFoundation
 
 /// 详情面板（Proxyman 26.10 实测：顶栏 方法/状态/URL + 左右分栏 Request | Response，
 /// 每侧横向 tabs：头部|查看|原文|预览 (+ Connection Log)；Response 未解密时显示加密占位）
@@ -85,7 +86,7 @@ struct DetailContentView: View {
             if tx.suspectedPinning { pinningBanner }
 
             Group {
-                if presentationSettings.contentLayout == "horizontal" {
+                if presentationSettings.contentDividerIsVertical {
                     HSplitView {
                         ContentSideView(tx: tx, side: .request).frame(minWidth: 180)
                         ContentSideView(tx: tx, side: .response).frame(minWidth: 180)
@@ -115,7 +116,7 @@ struct DetailContentView: View {
             if tx.state == .failed {
                 Text(tx.statusCode > 0 ? Strings.Detail.transferFailed(String(describing: tx.statusText)) : Strings.Detail.transportFailed)
                     .foregroundStyle(.red)
-                    .help(tx.errorText ?? "")
+                    .help(tx.localizedErrorText ?? "")
             } else if tx.statusCode > 0 {
                 let color = Color(nsColor: tx.statusColor)
                 Text(tx.statusText)
@@ -162,7 +163,7 @@ enum ContentSide {
 
 private struct ContentSideView: View {
     enum Tab: String, CaseIterable {
-        case headers, body, raw, preview, query, cookies, auth, connection, chart, graphql, summary, sse, webSocket
+        case headers, body, raw, preview, query, cookies, auth, connection, chart, graphql, summary, sse, webSocket, multipart
 
         var localizedTitle: String {
             switch self {
@@ -179,6 +180,7 @@ private struct ContentSideView: View {
             case .summary: return Strings.Detail.summary
             case .sse: return "SSE"
             case .webSocket: return "WebSocket"
+            case .multipart: return Strings.Detail.bodyToolsForm
             }
         }
     }
@@ -190,34 +192,48 @@ private struct ContentSideView: View {
     @State private var selectedTab: Tab?
     @State private var tree = false
     @State private var search = ""
+    @FocusState private var bodySearchFocused: Bool
+    @State private var bodyWindow = BodyWindowReference()
     @State private var treeResult: (input: TreeInput, root: JSONTreeNode?)?
     @State private var showingQuery = false
     @State private var showCapturedBytes = false
     @State private var decodedBody: (input: TreeInput, result: Result<(Data, String), ContentCoding.DecodeError>)?
+    @State private var bodyInspection: (input: InspectionInput, value: HTTPBodyInspection)?
+    @State private var inspectionEpoch: UInt64 = 0
     @ObservedObject private var previewers = CustomPreviewerStore.shared
     @ObservedObject private var protobufRules = ProtobufRuleStore.shared
     @State private var customPreviewerID: UUID?
+    @State private var forceHex = false
+    @State private var exportCapturedBytes = false
+    @State private var formattedBody: (key: BodyInspectionKey, text: String, markup: Bool)?
+    @State private var formatIssue = false
+    @State private var exportingBody = false
 
-    private struct TreeInput: Equatable {
-        let transaction: ObjectIdentifier
-        let revision: UInt64
+    private typealias TreeInput = BodyInspectionKey
+    private typealias InspectionInput = BodyInspectionKey
+    private var currentBodyKey: BodyInspectionKey {
+        .init(transaction: ObjectIdentifier(tx), revision: bodyRevision, encodings: contentEncodings,
+              contentType: contentType, complete: complete, truncated: truncated, epoch: inspectionEpoch)
     }
 
     private var isRequest: Bool { side == .request }
     private var tab: Tab { selectedTab ?? (!isRequest && tx.isWebSocket ? .webSocket : .headers) }
     private var capturedData: Data { isRequest ? tx.requestBody : tx.responseBody }
-    private var contentEncodings: [String] {
+    private var declaredContentEncodings: [String] {
         headers.values(of: "Content-Encoding").flatMap { header in
             header.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        }.filter { $0 != "identity" }
+        }.filter { !$0.isEmpty && $0 != "identity" }
+    }
+    private var contentEncodings: [String] {
+        ContentCoding.inspectionEncodings(capturedData, declared: declaredContentEncodings)
     }
     private var isCompressed: Bool { !contentEncodings.isEmpty }
     private var unsupportedEncodings: Bool { !contentEncodings.allSatisfy({ ContentCoding.supported.contains($0) }) }
     private var decodeInput: TreeInput? {
-        guard tab == .body || tab == .preview || (tab == .raw && !showCapturedBytes),
+        guard tab == .body || tab == .preview || tab == .multipart || (tab == .raw && !showCapturedBytes),
               !tx.isWebSocket, !isEncryptedTunnel,
               isCompressed, !unsupportedEncodings, complete, !truncated, !capturedData.isEmpty else { return nil }
-        return TreeInput(transaction: ObjectIdentifier(tx), revision: bodyRevision)
+        return currentBodyKey
     }
     private var decodeResult: Result<(Data, String), ContentCoding.DecodeError>? {
         guard let input = decodeInput, decodedBody?.input == input else { return nil }
@@ -227,10 +243,23 @@ private struct ContentSideView: View {
         guard case .success(let decoded) = decodeResult else { return nil }
         return decoded.1
     }
-    private var inspectedBody: MessagePackBody.Inspection {
-        MessagePackBody.inspect(baseDecodedData, contentType: contentType)
+    private var inspectedBody: HTTPBodyInspection {
+        guard let input = inspectionInput else {
+            return .init(data: baseDecodedData, contentType: contentType)
+        }
+        guard bodyInspection?.input == input, let value = bodyInspection?.value else {
+            return .init(data: Data(), contentType: contentType)
+        }
+        return value
     }
-    private var messagePackApplied: Bool { inspectedBody.decoded }
+    private var inspectionInput: InspectionInput? {
+        guard tab == .body || tab == .preview || tab == .multipart || (tab == .raw && !showCapturedBytes),
+              !tx.isWebSocket, !isEncryptedTunnel, complete, !truncated else { return nil }
+        if isCompressed, decodedLabel == nil { return nil }
+        return currentBodyKey
+    }
+    private var inspectionPending: Bool { inspectionInput.map { bodyInspection?.input != $0 } ?? false }
+    private var payloadConverted: Bool { inspectedBody.format != nil }
     /// 仅 Content-Encoding 解码结果
     private var baseDecodedData: Data {
         if isCompressed {
@@ -249,7 +278,7 @@ private struct ContentSideView: View {
     private var treeInput: TreeInput? {
         guard tab == .body, tree, !tx.isWebSocket, grpcMediaType == nil, !isHTTPProtobuf, search.isEmpty, !showingQuery, complete, !truncated,
               !data.isEmpty, data.count <= JSONTreeService.maxInput else { return nil }
-        return TreeInput(transaction: ObjectIdentifier(tx), revision: bodyRevision)
+        return currentBodyKey
     }
     private var headers: HTTPHeaders { isRequest ? tx.requestHeaders : tx.responseHeaders }
     private var trailers: HTTPHeaders { isRequest ? tx.requestTrailers : tx.responseTrailers }
@@ -276,20 +305,32 @@ private struct ContentSideView: View {
         if data.count > JSONPath.maxInputBytes { return Strings.Detail.queriesSupportBodiesUpTo1Mib }
         return nil
     }
+    private var isForm: Bool {
+        contentType.localizedCaseInsensitiveContains("multipart/form-data") || contentType.localizedCaseInsensitiveContains("application/x-www-form-urlencoded")
+    }
+    private var isHTML: Bool { contentType.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased() == "text/html" }
+    private var isMarkup: Bool {
+        let type = contentType.lowercased()
+        return type.contains("xml") || type.contains("html") || type.contains("svg")
+    }
     private var isEncryptedTunnel: Bool { tx.isTunnel && !tx.isTLSIntercepted }
 
     private var tabs: [Tab] {
         if isRequest {
-            return [.headers, .query, .body, .raw, .summary, .connection]
+            var request: [Tab] = [.headers, .query, .body, .raw, .summary, .connection]
+            if isForm { request.insert(.multipart, at: 3) }
+            return request
         }
         var response: [Tab] = [.headers, .body, .raw, .summary, .chart]
+        if isForm { response.insert(.multipart, at: 2) }
+        if isHTML { response.insert(.preview, at: 2) }
         if tx.isWebSocket { response.insert(.webSocket, at: 1) }
         if tx.isSSE, let index = response.firstIndex(of: .body) { response.insert(.sse, at: index + 1) }
         return isEncryptedTunnel ? [] : response
     }
 
     private var additionalTabs: [Tab] {
-        isRequest ? [.preview, .cookies, .auth, .graphql] : [.preview, .cookies]
+        (isRequest ? [.preview, .cookies, .auth, .graphql] : [.preview, .cookies]).filter { !tabs.contains($0) }
     }
 
     var body: some View {
@@ -298,7 +339,7 @@ private struct ContentSideView: View {
             if !isRequest && isEncryptedTunnel {
                 encryptedResponse
             } else {
-                if let error = tx.errorText, !isRequest {
+                if let error = tx.localizedErrorText, !isRequest {
                     Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(6)
                 }
@@ -315,6 +356,7 @@ private struct ContentSideView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isRequest ? ProxymanTheme.inspectorChrome : ProxymanTheme.tableBackground)
+        .background(BodyWindowAnchor(reference: bodyWindow))
         .onChange(of: tx.isWebSocket) { _ in selectedTab = nil }
         .onChange(of: ObjectIdentifier(tx)) { _ in
             if let selectedTab, !tabs.contains(selectedTab), !additionalTabs.contains(selectedTab) {
@@ -324,6 +366,44 @@ private struct ContentSideView: View {
             showingQuery = false
             showCapturedBytes = false
             decodedBody = nil
+            bodyInspection = nil
+            formattedBody = nil
+            forceHex = false
+            formatIssue = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusBodySearch)) { _ in
+            // One handler for the pair routes a native find bar to whichever
+            // request/response text view currently owns the first responder.
+            guard !isRequest, let keyWindow = NSApp.keyWindow, bodyWindow.window === keyWindow,
+                  keyWindow.attachedSheet == nil else { return }
+            if let text = NSApp.keyWindow?.firstResponder as? InspectableCodeTextView {
+                let item = NSMenuItem()
+                item.tag = NSTextFinder.Action.showFindInterface.rawValue
+                text.performFindPanelAction(item)
+            } else if !isEncryptedTunnel {
+                selectedTab = .body
+                showingQuery = false
+                formattedBody = nil
+                forceHex = false
+                bodySearchFocused = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in
+            bodyInspection = nil; decodedBody = nil; treeResult = nil; formattedBody = nil; inspectionEpoch &+= 1
+        }
+        .task(id: inspectionInput) {
+            guard let input = inspectionInput, bodyInspection?.input != input else { return }
+            let bytes = baseDecodedData
+            let type = contentType
+            let compressed = isCompressed
+            let worker = Task.detached(priority: .userInitiated) {
+                HTTPBodyInspection.inspect(bytes, contentType: type, allowUnhintedTars: compressed)
+            }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled, inspectionInput == input else { return }
+            bodyInspection = (input, result)
         }
         .task(id: decodeInput) {
             guard let input = decodeInput, decodedBody?.input != input else { return }
@@ -338,7 +418,7 @@ private struct ContentSideView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { decodedBody = (input, result) }
+            if !Task.isCancelled, decodeInput == input { decodedBody = (input, result) }
         }
         .task(id: treeInput) {
             guard let input = treeInput else { treeResult = nil; return }
@@ -349,7 +429,7 @@ private struct ContentSideView: View {
             } onCancel: {
                 worker.cancel()
             }
-            if !Task.isCancelled { treeResult = (input, result) }
+            if !Task.isCancelled, treeInput == input { treeResult = (input, result) }
         }
     }
 
@@ -383,8 +463,9 @@ private struct ContentSideView: View {
             } else {
                 Spacer()
             }
+            if !isEncryptedTunnel { bodyToolsMenu }
             if receivedBytes > 0 {
-                Text(ByteCountFormatter.string(fromByteCount: Int64(receivedBytes), countStyle: .file))
+                Text(PresentationNumbers.byteCount(Int64(receivedBytes)))
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                     .fixedSize()
             }
@@ -472,13 +553,21 @@ private struct ContentSideView: View {
                 .id(ObjectIdentifier(tx))
         case .raw:
             rawInspector
+        case .multipart:
+            inspectBody {
+                FormBodyView(data: baseDecodedData, contentType: contentType, complete: complete && !truncated)
+            }
         case .preview:
             inspectBody {
+                if isHTML {
+                    IsolatedHTMLPreview(data: baseDecodedData)
+                } else {
                 BodyContentView(data: tx.isWebSocket ? capturedData : data,
                                 contentType: tx.isWebSocket ? contentType : inspectedBody.contentType, pretty: true,
                                 complete: complete || tx.state == .failed, truncated: truncated, revision: bodyRevision,
-                                generation: bodyGeneration)
+                                generation: bodyGeneration, inspectionKey: currentBodyKey)
                     .id(ObjectIdentifier(tx))
+                }
             }
         case .query:
             let items = URLComponents(string: "?\(tx.query)")?.queryItems ?? []
@@ -527,35 +616,32 @@ private struct ContentSideView: View {
                     (Strings.Detail.connectionReuse, tx.connectionDetails?.reused == true ? Strings.Detail.reused : Strings.Detail.newOrNotAvailable),
                     (Strings.Detail.clientStreamId, tx.connectionDetails?.downstreamStream.map(String.init) ?? "–"),
                     (Strings.Detail.upstreamStreamId, tx.connectionDetails?.upstreamStream.map(String.init) ?? "–"),
-                    (Strings.Detail.connectionEstablished, tx.tConnected.map { $0.formatted() } ?? Strings.Detail.notAvailable),
-                    (Strings.Detail.responseHeadersReceived, tx.tHeaderAt.map { $0.formatted() } ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.connectionEstablished, tx.tConnected.map { PresentationTime.string(from: $0) } ?? Strings.Detail.notAvailable),
+                    (Strings.Detail.responseHeadersReceived, tx.tHeaderAt.map { PresentationTime.string(from: $0) } ?? Strings.Detail.notAvailable),
                     (Strings.Detail.matchedRules, tx.ruleMatches.isEmpty ? Strings.Detail.none : tx.ruleMatches.joined(separator: " → ")),
                     (Strings.Detail.scriptExecution, tx.scriptingLogs.isEmpty ? Strings.Detail.none : tx.scriptingLogs.joined(separator: "\n")),
                 ]).padding(10)
             }
         case .summary:
-            ScrollView {
-                fields(Strings.Detail.summary, [
-                    (Strings.Detail.url, tx.originalURL ?? tx.fullURL),
-                    (Strings.Detail.method, tx.method),
-                    (Strings.Detail.status, tx.statusCode > 0 ? tx.statusText : "–"),
-                    (Strings.Detail.protocol, isRequest ? tx.requestVersion : tx.responseVersion),
-                    (Strings.Detail.duration, tx.durationText),
-                ]).padding(10)
-            }
+            TransactionSummaryView(tx: tx) { selectedTab = .connection }
         case .chart:
             TimingChartView(tx: tx)
         }
     }
 
     private func connectionDuration(_ milliseconds: Double?) -> String {
-        milliseconds.map { String(format: "%.1f ms", $0) } ?? "–"
+        milliseconds.map { PresentationNumbers.milliseconds($0) } ?? "–"
     }
 
     @ViewBuilder
     private func inspectBody<Content: View>(rawHead: RawMessageHead? = nil,
                                            @ViewBuilder _ content: () -> Content) -> some View {
-        if !isCompressed || capturedData.isEmpty || tx.isWebSocket {
+        if inspectionPending {
+            ProgressView(Strings.Detail.decoding).controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if inspectedBody.issue == .outputLimit {
+            compressedBody(Strings.Detail.binaryBodyOutputLimit, rawHead: rawHead)
+        } else if !isCompressed || capturedData.isEmpty || tx.isWebSocket {
             content()
         } else if truncated {
             compressedBody(Strings.Detail.theBodyWasTruncatedAndCannotBeDecompressed, rawHead: rawHead)
@@ -607,14 +693,93 @@ private struct ContentSideView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    private var bodyToolsMenu: some View {
+        Menu {
+            Button(Strings.Detail.bodyToolsPreviewer) { selectedTab = .body; customPreviewerID = nil; forceHex = false; tree = false; formattedBody = nil; formatIssue = false }
+            Button(Strings.Detail.bodyToolsTreeView) { selectedTab = .body; tree = true; forceHex = false; formattedBody = nil }
+                .disabled(!isJSON || treeUnavailableReason != nil)
+            Button(Strings.Detail.bodyToolsHex) { selectedTab = .body; tree = false; showingQuery = false; search = ""; forceHex = true; formattedBody = nil }
+            Divider()
+            Button(Strings.Detail.bodyToolsPrettifyJson) { formatBody(markup: false) }
+                .disabled(!isJSON || !complete || truncated)
+            Button(Strings.Detail.bodyToolsSortJson) { formatBody(markup: false) }
+                .disabled(!isJSON || !complete || truncated)
+            Menu(Strings.Detail.bodyToolsFormatWith) {
+                Button(Strings.Detail.bodyToolsPrettifyJson) { formatBody(markup: false) }.disabled(!isJSON)
+                if isMarkup { Button(Strings.Detail.bodyToolsPrettifyXml) { formatBody(markup: true) } }
+            }.disabled(!complete || truncated || data.isEmpty)
+            Divider()
+            Toggle(Strings.Detail.bodyToolsCapturedBytes, isOn: $exportCapturedBytes)
+            Menu(Strings.Detail.bodyToolsOpenWith) {
+                Button(Strings.Detail.bodyToolsChooseApplication) { exportBody(.open) }
+                Button(Strings.Detail.bodyToolsReveal) { exportBody(.reveal) }
+            }.disabled(exportingBody || capturedData.isEmpty)
+            Menu(Strings.Detail.bodyToolsExport) {
+                Button(isRequest ? Strings.Detail.bodyToolsRequestBody : Strings.Detail.bodyToolsResponseBody) { exportBody(.save) }
+            }.disabled(exportingBody || capturedData.isEmpty)
+            if truncated || !complete { Text(Strings.Detail.bodyToolsCaptureIncomplete) }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(Strings.Detail.bodyToolsMenu)
+        .accessibilityLabel(Strings.Detail.bodyToolsMenu)
+    }
+
+    private func formatBody(markup: Bool) {
+        let key = currentBodyKey, bytes = data, html = contentType.localizedCaseInsensitiveContains("html")
+        showingQuery = false
+        tree = false
+        search = ""
+        guard bytes.count <= 1_048_576, let source = String(data: bytes, encoding: .utf8) else { formatIssue = true; return }
+        Task {
+            let worker = Task.detached(priority: .userInitiated) { () -> String? in
+                if markup {
+                    let result = MarkupFormatter.format(source, html: html)
+                    return result.formatted ? result.text : nil
+                }
+                return SelectionTransform.prettifyJSON.apply(source)
+            }
+            let output = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+            guard !Task.isCancelled, key == currentBodyKey else { return }
+            formatIssue = output == nil
+            if let output { formattedBody = (key, output, markup); forceHex = false; showingQuery = false; selectedTab = .body }
+        }
+    }
+
+    private enum BodyExportAction { case save, open, reveal }
+    private func exportBody(_ action: BodyExportAction) {
+        let bytes = capturedData, type = contentType, encodings = contentEncodings
+        let original = exportCapturedBytes, canDecode = complete && !truncated
+        exportingBody = true
+        Task {
+            defer { exportingBody = false }
+            var output = bytes
+            if !original, !encodings.isEmpty {
+                guard canDecode else { BodyExportService.show(Strings.Detail.bodyToolsIncompleteDecode); return }
+                let worker = Task.detached(priority: .userInitiated) { ContentCoding.decodeIfCompressed(bytes, encodings: encodings) }
+                let result = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+                guard !Task.isCancelled else { return }
+                guard case .success(let decoded) = result else { BodyExportService.show(Strings.Detail.bodyToolsDecodeFailed); return }
+                output = decoded.0
+            }
+            switch action {
+            case .save: BodyExportService.save(output, contentType: original && !encodings.isEmpty ? "application/octet-stream" : type)
+            case .open: BodyExportService.open(output, contentType: type, reveal: false)
+            case .reveal: BodyExportService.open(output, contentType: type, reveal: true)
+            }
+        }
+    }
+
     private var bodyInspector: some View {
         VStack(spacing: 0) {
             if !data.isEmpty {
                 HStack {
                     if !showingQuery {
-                        TextField(Strings.Detail.searchBody, text: $search).textFieldStyle(.roundedBorder)
+                        TextField(Strings.Detail.searchBody, text: Binding(get: { search }, set: { search = $0; formattedBody = nil; forceHex = false }))
+                            .textFieldStyle(.roundedBorder).focused($bodySearchFocused)
                         if isJSON {
-                            Toggle(Strings.Detail.jsonTree, isOn: $tree).toggleStyle(.checkbox)
+                            Toggle(Strings.Detail.jsonTree, isOn: Binding(get: { tree }, set: { tree = $0; formattedBody = nil; forceHex = false })).toggleStyle(.checkbox)
                                 .disabled(treeUnavailableReason != nil)
                                 .help(treeUnavailableReason ?? Strings.Detail.expandTheJsonBodyAsATree)
                         }
@@ -623,22 +788,24 @@ private struct ContentSideView: View {
                         Spacer()
                     }
                     Spacer(minLength: 8)
-                    if messagePackApplied {
-                        Text(Strings.Detail.decodedMessagepack)
+                    if let format = inspectedBody.format {
+                        Text(format == .messagePack ? Strings.Detail.decodedMessagepack : Strings.Detail.decodedTars)
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color.primary.opacity(0.08), in: Capsule())
-                            .help(Strings.Detail.messagepackBodyConvertedToJson)
+                            .help(format == .messagePack ? Strings.Detail.messagepackBodyConvertedToJson : Strings.Detail.tarsBodyConvertedToJson)
                     }
                     if let label = decodedLabel {
                         Text(Strings.Detail.decoded(String(describing: label)))
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color.primary.opacity(0.08), in: Capsule())
-                            .help(Strings.Detail.automaticallyDecompressedUsingContentEncoding)
+                            .help(declaredContentEncodings.isEmpty ? Strings.Detail.gzipDetectedFromBody : Strings.Detail.automaticallyDecompressedUsingContentEncoding)
                     }
                     if isJSON {
                         Button(showingQuery ? Strings.Detail.backToBody : Strings.Detail.query) {
+                            formattedBody = nil
+                            forceHex = false
                             showingQuery.toggle()
                         }
                         .accessibilityLabel(showingQuery ? Strings.Detail.backToBody : Strings.Detail.queryTheJsonBody)
@@ -650,7 +817,15 @@ private struct ContentSideView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 5)
                 }
             }
-            if showingQuery {
+            if formatIssue {
+                Text(Strings.Detail.bodyToolsCannotFormat).font(.caption).foregroundStyle(.orange).padding(5)
+            }
+            if forceHex {
+                HexView(data: data, generation: bodyGeneration)
+            } else if let formattedBody, formattedBody.key == currentBodyKey {
+                CodeDocument(text: formattedBody.text,
+                             highlights: formattedBody.markup ? MarkupHighlightPlan.make(formattedBody.text) : JSONHighlightPlan.make(formattedBody.text))
+            } else if showingQuery {
                 BodyQueryView(data: data, unavailableReason: queryUnavailable).id(ObjectIdentifier(tx))
             } else if !search.isEmpty {
                 BodySearchResults(data: data, revision: bodyRevision, query: search)
@@ -665,7 +840,7 @@ private struct ContentSideView: View {
             } else {
                 BodyContentView(data: data, contentType: inspectedBody.contentType, pretty: true,
                                 complete: complete || tx.state == .failed, truncated: truncated, revision: bodyRevision,
-                                generation: bodyGeneration)
+                                generation: bodyGeneration, inspectionKey: currentBodyKey)
                     .id(ObjectIdentifier(tx))
             }
         }
@@ -688,7 +863,7 @@ private struct ContentSideView: View {
                 Text(tx.isWebSocket ? Strings.Detail.handshakeHeadersAndOriginalWebsocketFrameBytes :
                      isHTTP2 ? Strings.Detail.http2PseudoHeadersAndBody : Strings.Detail.reconstructedFromTheCapturedFirstLineHeadersAndBody)
                 Spacer()
-                if !tx.isWebSocket, isCompressed || isHTTPProtobuf || messagePackApplied {
+                if !tx.isWebSocket, isCompressed || isHTTPProtobuf || payloadConverted {
                     Toggle(Strings.Detail.capturedBytes, isOn: $showCapturedBytes)
                         .toggleStyle(.checkbox)
                         .help(Strings.Detail.viewTheCapturedBodyWithoutDecompressionOrConversion)

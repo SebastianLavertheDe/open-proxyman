@@ -18,10 +18,11 @@ INSTALL_EXTENSION = "com.apple.developer.system-extension.install"
 APP_GROUPS = "com.apple.security.application-groups"
 
 
-def developer_id_identity(requested):
-    identities = subprocess.check_output(
-        ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"], text=True
-    )
+def developer_id_identity(requested, keychain=None):
+    command = ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"]
+    if keychain is not None:
+        command.append(str(keychain))
+    identities = subprocess.check_output(command, text=True)
     matches = []
     for fingerprint, name, team in re.findall(
         r'^\s*\d+\) ([0-9A-F]{40}) "(Developer ID Application: .+ \(([A-Z0-9]{10})\))"$',

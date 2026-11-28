@@ -62,6 +62,12 @@ func checkPresentationSettings(_ test: CoreAssertions) throws {
                "Formatter cache keys include time zone changes")
     test.equal(PresentationTime.string(from: date, uses24HourClock: true, includesDate: false, timeZone: utc, locale: english), "13:04:05.123",
                "Reusing an earlier format retrieves the correctly keyed formatter")
+    test.equal(PresentationNumbers.milliseconds(1234.5, locale: Locale(identifier: "de_DE")), "1.234,5 ms",
+               "Connection and summary durations use the region's decimal and grouping separators")
+    test.equal(PresentationNumbers.duration(seconds: 1.25, locale: Locale(identifier: "en_US")), "1.25 s",
+               "Duration display uses the shared presentation formatter")
+    test.equal(PresentationNumbers.integer(12345, locale: Locale(identifier: "en_US")), "12,345",
+               "Summary counts use the region's grouping separator")
 
     _ = NSApplication.shared
     settings.codeTabWidth = 4
@@ -114,6 +120,7 @@ func checkPresentationSettings(_ test: CoreAssertions) throws {
                 "Unrelated copy key combinations remain with the responder chain")
     checkTrafficLocalization(test)
     try checkDefaultCopyKeyboard(test, settings: settings)
+    checkNativeTrafficColumns(test)
 }
 
 
@@ -130,7 +137,7 @@ private func checkDefaultCopyKeyboard(_ test: CoreAssertions, settings: AppSetti
     defer { pasteboard.releaseGlobally(); withExtendedLifetime(coordinator) {} }
     var preferredCalls = 0
     var curlCalls = 0
-    let input = TrafficTable(rows: [first, second], revision: 1, workspaceID: UUID(), columns: [],
+    let input = TrafficTable(rows: [first, second], revision: 1, workspaceID: UUID(), columns: [(.url, 400)],
         selectedIDs: [], selectedID: nil, followLatest: false, select: { _ in }, open: { _ in },
         copyAsCurl: { targets in
             curlCalls += 1
@@ -172,7 +179,7 @@ private func checkDefaultCopyKeyboard(_ test: CoreAssertions, settings: AppSetti
 
 @MainActor
 private func checkTrafficLocalization(_ test: CoreAssertions) {
-    let expectedIDs = ["sequence", "url", "client", "method", "status", "time", "duration", "request", "response", "ssl", "edited", "comment", "tools", "graphql"]
+    let expectedIDs = ["sequence", "url", "client", "method", "status", "time", "duration", "request", "response", "ssl", "edited", "comment", "tools", "graphql", "scheme", "contentType"]
     test.equal(TrafficColumn.allCases.map(\.id), expectedIDs, "Built-in traffic columns use stable language-independent IDs")
     test.equal(TrafficColumn.request.localizedTitle(language: "en"), "Request", "Column headers resolve explicit English resources")
     test.equal(TrafficColumn.request.localizedTitle(language: "zh-Hans"), "请求", "Column headers resolve explicit Simplified Chinese resources")
@@ -181,14 +188,80 @@ private func checkTrafficLocalization(_ test: CoreAssertions) {
     test.equal(custom.localizedTitle(language: "en"), "用户列", "A custom column title remains user content in English")
     test.equal(custom.localizedTitle(language: "zh-Hans"), "用户列", "A custom column title remains user content in Chinese")
 
+    let resources = LocalizationResources.resolve().bundle
+    let englishContext = LocalizationContext(language: .english, resources: resources, regionLocale: Locale(identifier: "en_US"))
+    let chineseContext = LocalizationContext(language: .simplifiedChinese, resources: resources, regionLocale: Locale(identifier: "en_US"))
     for count in [0, 1, 2, 101, 1000] {
-        let english = L10n.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches", language: "en")
-        test.equal(english, count == 1 ? "1 Match" : "\(count) Matches", "English query match counts use the appropriate plural for \(count)")
-        let chinese = L10n.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches", language: "zh-Hans")
-        test.equal(chinese, "匹配 \(count) 项", "Chinese query match counts use the Chinese quantity template")
-        let requestLabel = L10n.render(table: "Traffic", key: "requests", arguments: ["api.example.test", count],
-            englishFallback: "%1$@ · %2$ld requests", language: "en")
-        test.equal(requestLabel, "api.example.test · \(count) " + (count == 1 ? "request" : "requests"),
+        let formatted = count == 1000 ? "1,000" : String(count)
+        let english = englishContext.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches")
+        test.equal(english, count == 1 ? "1 Match" : "\(formatted) Matches", "English query match counts use the appropriate plural and explicit region for \(count)")
+        let chinese = chineseContext.render(table: "Detail", key: "matches", arguments: [count], englishFallback: "%ld Matches")
+        test.equal(chinese, "匹配 \(formatted) 项", "Chinese query match counts use the Chinese quantity template and explicit region")
+        let requestLabel = englishContext.render(table: "Traffic", key: "requests", arguments: ["api.example.test", count],
+            englishFallback: "%1$@ · %2$ld requests")
+        test.equal(requestLabel, "api.example.test · \(formatted) " + (count == 1 ? "request" : "requests"),
                    "A user-owned domain and positional plural count render together without changing the domain")
     }
+}
+
+
+@MainActor
+private func checkNativeTrafficColumns(_ test: CoreAssertions) {
+    let defaults = UserDefaults.standard
+    let originalOrder = defaults.object(forKey: "ui.trafficColumnOrder")
+    let originalWidths = defaults.object(forKey: "ui.trafficColumnWidths")
+    defer {
+        if let originalOrder { defaults.set(originalOrder, forKey: "ui.trafficColumnOrder") }
+        else { defaults.removeObject(forKey: "ui.trafficColumnOrder") }
+        if let originalWidths { defaults.set(originalWidths, forKey: "ui.trafficColumnWidths") }
+        else { defaults.removeObject(forKey: "ui.trafficColumnWidths") }
+    }
+    defaults.set(["url", "scheme", "contentType"], forKey: "ui.trafficColumnOrder")
+    let table = TrafficTable.Table()
+    let coordinator = TrafficTable.Coordinator()
+    coordinator.attach(to: table)
+    var sorted: TrafficColumn?
+    var ascending = true
+    let transaction = Transaction()
+    transaction.host = "native.example.test"
+    transaction.scheme = "https"
+    transaction.strikethrough = true
+    transaction.responseHeaders = HTTPHeaders([("Content-Type", "application/json")])
+    let input = TrafficTable(rows: [transaction], revision: 0, workspaceID: UUID(),
+        columns: [(.url, 300), (.scheme, 64), (.contentType, 160)], selectedIDs: [], selectedID: nil,
+        followLatest: false, select: { _ in }, open: { _ in }, copyAsCurl: { _ in }, contextMenu: { _, _ in NSMenu() },
+        sort: { sorted = $0; ascending = $1 })
+    coordinator.update(input, table: table)
+    test.equal(table.tableColumns.map { $0.identifier.rawValue }, ["url", "scheme", "contentType"],
+               "Each visible field has an independent native table column")
+    test.equal(table.tableColumns[1].sortDescriptorPrototype?.key, "scheme", "Native headers expose sorting for Scheme")
+    let cell = table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView
+    test.expect(cell?.textField != nil, "Native columns render a text field without a SwiftUI hosting hierarchy")
+    test.equal(cell?.textField?.stringValue, transaction.fullURL, "Native URL cells display the captured address")
+    let strike = cell?.textField?.attributedStringValue.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) as? Int
+    test.equal(strike, NSUnderlineStyle.single.rawValue, "Native URL rendering preserves strikethrough")
+    test.equal(TrafficColumnPresentation.text(.scheme, transaction: transaction), "HTTPS", "Native Scheme cells display a readable protocol")
+    test.equal(TrafficColumnPresentation.text(.contentType, transaction: transaction), "application/json", "Native Content-Type cells read captured response headers")
+    let settings = AppSettings.shared
+    let previousFontSize = settings.fontSize
+    defer { settings.fontSize = previousFontSize }
+    settings.fontSize = previousFontSize == 18 ? 19 : 18
+    coordinator.update(input, table: table)
+    test.equal(cell?.textField?.font?.pointSize, CGFloat(settings.fontSize), "Changing typography refreshes stable native rows without a capture change")
+    table.sortDescriptors = [NSSortDescriptor(key: "contentType", ascending: false)]
+    coordinator.tableView(table, sortDescriptorsDidChange: [])
+    test.equal(sorted, .contentType, "A native header sort reaches the traffic model")
+    test.expect(!ascending, "Descending native header sorting preserves its direction")
+    table.moveColumn(2, toColumn: 0)
+    coordinator.tableViewColumnDidMove(Notification(name: NSTableView.columnDidMoveNotification, object: table))
+    test.equal(defaults.stringArray(forKey: "ui.trafficColumnOrder"), ["contentType", "url", "scheme"],
+               "Native drag ordering persists stable column identifiers")
+    coordinator.update(input, table: table)
+    test.equal(table.tableColumns.first?.identifier.rawValue, "contentType", "A capture refresh preserves the user column order")
+    let hidden = TrafficTable(rows: [], revision: 0, workspaceID: UUID(),
+        columns: [(.url, 300), (.scheme, 64)], selectedIDs: [], selectedID: nil,
+        followLatest: false, select: { _ in }, open: { _ in }, copyAsCurl: { _ in }, contextMenu: { _, _ in NSMenu() })
+    coordinator.update(hidden, table: table)
+    coordinator.update(input, table: table)
+    test.equal(table.tableColumns.first?.identifier.rawValue, "contentType", "Showing a hidden field restores its saved drag position")
 }

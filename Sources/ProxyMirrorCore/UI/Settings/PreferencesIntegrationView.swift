@@ -149,11 +149,7 @@ struct PreferencesNetworkExtensionView: View {
     var body: some View {
         PreferencesSetting(target: .networkExtension) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 8) {
-                    Text(Strings.Settings.networkExtension).fontWeight(.semibold)
-                    Text(Strings.Settings.beta).font(.system(size: 9, weight: .bold)).foregroundStyle(.black)
-                        .padding(.horizontal, 7).padding(.vertical, 3).background(.yellow, in: Capsule())
-                }
+                Text(Strings.Settings.networkExtension).fontWeight(.semibold)
                 PreferencesSection {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) {

@@ -12,6 +12,10 @@
 "automatically_decompressed_using_content_encoding" = "已按 Content-Encoding 自动解压";
 "back_to_body" = "返回正文";
 "binary_body" = "二进制正文";
+"binary_body_output_limit" = "解码后的二进制正文超过 1 MiB 预览上限，请查看捕获字节。";
+"decoded_tars" = "已解码 Tars/JCE";
+"gzip_detected_from_body" = "根据正文特征识别 gzip；捕获的头部保持原样。";
+"tars_body_converted_to_json" = "按标签编号显示 Tars/JCE 字段；字段名称需要协议定义。";
 "bodies_are_limited_to_256_kib_1_200_lines_compressed_bodies" = "正文最多 256 KiB / 1200 行；压缩正文使用解码后的内容，二进制使用十六进制。";
 "body" = "正文";
 "body_decoded_as_headers_retain_captured_values" = "正文已解码 %@ · 头部保留捕获值";
@@ -338,3 +342,43 @@
 "json_type_number" = "数字";
 "json_type_boolean" = "布尔值";
 "json_type_null" = "空值";
+
+"message_pack_output_limit" = "MessagePack 转换结果超过 1 MiB，显示捕获字节。";
+
+/* Body inspection tools */
+"body_tools_menu" = "正文工具";
+"body_tools_unavailable" = "无法完成正文操作";
+"body_tools_save_part" = "另存此部分…";
+"body_tools_select_part" = "选择一个表单部分以查看内容";
+"body_tools_waiting_for_parts" = "等待后续表单数据，仅显示已完整接收的部分。";
+"body_tools_invalid_multipart" = "无法解析 multipart 边界";
+"body_tools_preview_disabled" = "设置快照期间不启用 HTML 预览。";
+"body_tools_preview_too_large" = "HTML 预览支持不超过 2 MiB 的捕获正文。";
+"body_tools_prettify_json" = "美化 JSON";
+"body_tools_prettify_xml" = "美化 XML";
+"body_tools_decode_base64" = "解码 Base64";
+"body_tools_decode_jwt" = "解码 JWT";
+"body_tools_convert_timestamp" = "转换时间戳";
+"body_tools_key_value" = "以键值对查看";
+"body_tools_invalid_selection" = "所选内容无法转换，或超过 1 MiB。";
+"body_tools_form" = "表单";
+"body_tools_previewer" = "预览";
+"body_tools_tree_view" = "树形视图";
+"body_tools_hex" = "十六进制";
+"body_tools_sort_json" = "排序 JSON 键";
+"body_tools_format_with" = "格式化";
+"body_tools_captured_bytes" = "导出原始捕获字节";
+"body_tools_open_with" = "打开方式";
+"body_tools_choose_application" = "选择应用…";
+"body_tools_reveal" = "在 Finder 中显示";
+"body_tools_export" = "导出";
+"body_tools_request_body" = "请求正文…";
+"body_tools_response_body" = "响应正文…";
+"body_tools_capture_incomplete" = "捕获尚不完整，只能导出已捕获字节。";
+"body_tools_cannot_format" = "无法格式化此内容，原始捕获保持完整。";
+"body_tools_incomplete_decode" = "部分捕获的压缩正文无法解码，请选择导出原始捕获字节。";
+"body_tools_decode_failed" = "无法解码此内容编码，或解码正文超过 32 MiB。可选择导出原始捕获字节。";
+"body_tools_part" = "部分";
+"body_tools_content_type" = "内容类型";
+"body_tools_file_name" = "文件名";
+"body_tools_value" = "值";

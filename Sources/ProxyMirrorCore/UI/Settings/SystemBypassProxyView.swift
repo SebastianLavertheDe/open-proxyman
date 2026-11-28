@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SystemBypassProxyView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var captureLocalRequests = AppSettings.shared.captureLocalRequests
     @State private var useCustom = SystemProxyBypass.savedHosts != nil
     @State private var hosts = SystemProxyBypass.savedHosts ?? []
     @State private var newHost = ""
@@ -14,6 +15,9 @@ struct SystemBypassProxyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(Strings.Settings.systemProxyBypass).font(.headline)
+            Toggle(Strings.Settings.captureLocalRequests, isOn: $captureLocalRequests)
+            Text(Strings.Settings.captureLocalRequestsHelp)
+                .font(.caption).foregroundStyle(.secondary)
             Toggle(Strings.Settings.useACustomBypassListWhileTheSystem, isOn: $useCustom)
             if useCustom {
                 ScrollView {
@@ -34,7 +38,11 @@ struct SystemBypassProxyView: View {
                     Button(Strings.Settings.add, action: add).disabled(newHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Button(Strings.Settings.copyCurrentServiceList) {
                         hosts = SystemProxyBypassList.normalized(services.flatMap(\.hosts)); feedback = nil
-                    }.disabled(services.isEmpty)
+                    }.disabled(services.isEmpty || appState.systemProxyCapturesLocalRequests || appState.systemProxyBusy)
+                }
+                if appState.systemProxyCapturesLocalRequests {
+                    Text(Strings.Settings.copyBypassAfterLocalCapture)
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Text(Strings.Settings.matchingHostsConnectDirectlyAndAreNotCaptured)
                     .font(.caption).foregroundStyle(.secondary)
@@ -56,6 +64,8 @@ struct SystemBypassProxyView: View {
             }
         }
         .onAppear { services = SystemProxyBypass.services() }
+        .onChange(of: appState.systemProxyActive) { _ in services = SystemProxyBypass.services() }
+        .onChange(of: appState.systemProxyCapturesLocalRequests) { _ in services = SystemProxyBypass.services() }
         .disabled(applying)
     }
 
@@ -72,7 +82,7 @@ struct SystemBypassProxyView: View {
         if let desired, let issue = SystemProxyBypass.localizedValidationError(desired) { feedback = issue; failed = true; return }
         if appState.systemProxyActive {
             applying = true
-            SystemProxyController.shared.updateBypass(desired) { success, message in
+            appState.updateSystemProxyBypass(desired, captureLocalRequests: captureLocalRequests) { success, message in
                 applying = false
                 guard success else { feedback = message; failed = true; return }
                 complete(desired, active: true)
@@ -83,6 +93,7 @@ struct SystemBypassProxyView: View {
     private func complete(_ desired: [String]?, active: Bool) {
         do {
             try SystemProxyBypass.save(desired)
+            appState.settings.captureLocalRequests = captureLocalRequests
             feedback = active ? Strings.Settings.bypassListAppliedThePreviousConfigurationWillBe : Strings.Settings.savedChangesWillApplyTheNextTimeThe
             failed = false; services = SystemProxyBypass.services()
         } catch { feedback = LocalizedErrorPresentation.message(for: error); failed = true }

@@ -33,12 +33,13 @@
 "apply_settings" = "Apply Settings";
 "apply_to_active_system_proxy" = "Apply to Active System Proxy";
 "apply_to_all_tabs_in_the_request_response" = "Apply to all tabs in the request, response and traffic panels.";
-"arrange_the_request_and_response_panels_vertically_or" = "Arrange the request and response panels vertically or horizontally.";
+"arrange_the_request_and_response_panels_vertically_or" = "Vertical: side by side. Horizontal: stacked.";
 "automatically_check_for_updates" = "Automatically check for updates";
 "automatically_redact_sensitive_information_before_sending_it_to" = "Automatically redact sensitive information before sending it to AI tools.";
 "automatically_remove_old_requests" = "Automatically remove old requests";
 "back" = "Back";
 "beta" = "BETA";
+"beta_feature_badge" = "BETA";
 "body_capture_limit" = "Body Capture Limit";
 "body_capture_limit_mb" = "Body capture limit: %ld MB";
 "body_tab" = "Body tab:";
@@ -47,6 +48,8 @@
 "capture" = "Capture:";
 "capture_appearance" = "Capture & Appearance";
 "capture_http_and_https_traffic_on_this_mac" = "Capture HTTP and HTTPS traffic on this Mac, including apps that ignore proxy settings.";
+"capture_local_requests" = "Capture local requests";
+"capture_local_requests_help" = "Chrome and other Chromium browsers using the system proxy send requests for loopback addresses such as localhost to ProxyMirror. Matching bypass rules still take precedence.";
 "captured_traffic_is_stored_on_this_mac_review" = "Captured traffic is stored on this Mac. Review URLs, bodies and comments before sharing through MCP, exports or GitHub Gist.";
 "captures_tcp_ports_80_and_443_udp_quic" = "Captures TCP ports 80 and 443. UDP, QUIC, HTTP/3, other ports and loopback connections remain direct.";
 "certificate_import_wizard" = "Certificate Import Wizard…";
@@ -76,6 +79,7 @@
 "content_layout" = "Content layout:";
 "content_layout_2" = "Content layout";
 "copy" = "Copy";
+"copy_bypass_after_local_capture" = "Restore the system proxy before copying its list. The current list includes temporary capture rules.";
 "copy_current_service_list" = "Copy Current Service List";
 "copy_repeat" = "Copy & Repeat";
 "copy_sha_256_fingerprint" = "Copy SHA-256 Fingerprint";
@@ -136,6 +140,7 @@
 "install_trust" = "Install & Trust";
 "install_trust_ca_certificate" = "Install & Trust CA Certificate";
 "integrations" = "Integrations";
+"installed_and_trusted" = "Installed & trusted";
 "lan_proxy_devices" = "LAN Proxy & Devices";
 "language" = "Language:";
 "language_english_autonym" = "English";
@@ -168,6 +173,7 @@
 "mtls_target_host" = "mTLS target host";
 "network_extension" = "Network Extension";
 "network_extension_and_system_proxy_cannot_run_at" = "Network Extension and System Proxy cannot run at the same time. Enabling Network Extension turns off System Proxy.";
+"new_feature_badge" = "NEW";
 "new_view" = "New View";
 "no_github_token_is_saved" = "No GitHub token is saved.";
 "no_matching_settings" = "No matching settings.";
@@ -314,3 +320,6 @@
 "workspace_backup" = "Workspace & Backup";
 "workspaces_and_sessions_stay_on_this_mac_export" = "Workspaces and sessions stay on this Mac. Export rules and settings to import them on another Mac.";
 "your_http_https_proxies_are_currently_managed_by" = "Your HTTP/HTTPS proxies are currently managed by ProxyMirror.";
+
+"proxyman_compatible_shortcuts" = "Proxyman compatible shortcuts";
+"proxyman_compatible_shortcuts_help" = "Use Proxyman shortcuts for filtering, Compose, SSL Proxying, No Caching, Edit & Repeat, and Clear Session.";

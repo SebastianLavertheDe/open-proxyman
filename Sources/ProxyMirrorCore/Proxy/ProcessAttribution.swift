@@ -270,10 +270,7 @@ final class ProcessAttribution: @unchecked Sendable {
     }
 
     static func isSimulatorExecutablePath(_ path: String) -> Bool {
-        let path = path.lowercased()
-        return path.contains("/coresimulator/devices/")
-            || (path.contains("/ios") && path.contains(".simruntime/contents/resources/runtimeroot/"))
-            || path.contains("/coresimulator/volumes/ios_")
+        SimulatorTrafficPolicy.isExecutablePath(path)
     }
 
     // MARK: 定时快照

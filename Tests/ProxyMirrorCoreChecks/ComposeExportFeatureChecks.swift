@@ -18,6 +18,28 @@ func checkComposeExportFeatures(_ test: CoreAssertions) throws {
     let old = try JSONDecoder().decode(ComposeService.ParsedRequest.self, from: legacy)
     test.equal(old.timeoutSeconds, 60, "Legacy Compose history retains a bounded default")
     test.equal(old.followRedirects, false, "Legacy Compose history does not follow redirects")
+    let redirectSource = ComposeService.ParsedRequest(method: "POST", url: "https://example.test/submit", headers: [
+        ("Content-Type", "application/json"), ("Authorization", "Bearer retain-on-same-origin"), ("Cookie", "session=fixture"),
+        ("X-Visible", "retain")], body: Data("{}".utf8), followRedirects: true)
+    let seeOther = try ComposeService.redirectedRequest(redirectSource, status: 303, location: "/result")
+    test.equal(seeOther?.method, "GET", "303 switches POST to retrieval semantics")
+    test.expect(seeOther?.body == nil && seeOther?.headers.contains(where: { $0.0 == "Content-Type" }) == false,
+                "303 removes the entity and its content type")
+    let preserve = try ComposeService.redirectedRequest(redirectSource, status: 307, location: "/result")
+    test.equal(preserve?.body, redirectSource.body, "307 preserves complete request bytes")
+    test.equal(preserve?.method, "POST", "307 preserves the original method")
+    let crossOrigin = try ComposeService.redirectedRequest(redirectSource, status: 308, location: "https://other.test/result")
+    test.expect(crossOrigin?.headers.contains(where: { ["Authorization", "Cookie"].contains($0.0) }) == false,
+                "Cross-origin redirects remove captured credentials")
+    test.expect(crossOrigin?.headers.contains(where: { $0.0 == "X-Visible" }) == true,
+                "Cross-origin redirects retain unrelated headers")
+    let head = Transaction(); head.method = "HEAD"; head.host = "example.test"
+    head.requestBody = Data("captured-body".utf8); head.requestBodyComplete = true
+    head.requestHeaders = HTTPHeaders([("Content-Length", "13")])
+    let headCode = ExportService.curlCommand(head)
+    test.expect(RequestCode.supported(.curl, for: head), "Complete HEAD captures keep a valid cURL target")
+    test.expect(headCode.contains("--head") && !headCode.contains("--data") && !headCode.contains("-X HEAD")
+                && headCode.contains("captured request body is omitted"), "HEAD cURL uses header-only response mode and explains entity omission")
 
     let multipart = ComposeService.Template.multipart.request(url: "https://example.test/upload")
     let contentType = multipart.headers.first { $0.0 == "Content-Type" }?.1 ?? ""

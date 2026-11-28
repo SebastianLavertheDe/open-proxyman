@@ -12,7 +12,7 @@ enum L10n {
 
     private static var requestedSelection: String {
         if let override = ProcessInfo.processInfo.environment["PM_SETTINGS_LANGUAGE"],
-           ["system", "en", "zh-Hans"].contains(override) { return override }
+           (["system"] + AppLanguage.allCases.map(\.rawValue)).contains(override) { return override }
         return UserDefaults.standard.string(forKey: "ui.applicationLanguage") ?? "system"
     }
 

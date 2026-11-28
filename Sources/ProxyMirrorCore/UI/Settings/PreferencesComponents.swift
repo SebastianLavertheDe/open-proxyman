@@ -25,7 +25,7 @@ enum PreferencesPalette {
 extension PreferencesPage {
     var symbol: String {
         switch self {
-        case .general: return "gearshape"
+        case .general: return "gearshape.circle"
         case .appearance: return "wand.and.stars"
         case .privacy: return "person.fill"
         case .mcp: return "shippingbox"

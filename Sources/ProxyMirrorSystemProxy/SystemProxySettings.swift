@@ -1,4 +1,5 @@
 import Foundation
+import ProxyMirrorFoundation
 import SystemConfiguration
 
 package struct SystemProxyError: LocalizedError {
@@ -86,16 +87,32 @@ package final class SystemProxySettings {
     private static let https = ["HTTPSEnable", "HTTPSProxy", "HTTPSPort"]
     private static let exceptions = "ExceptionsList"
 
+    private struct Generation: Codable {
+        let customHosts: [String]?
+        var services: [String: SystemProxyBypassLease]
+    }
+
     private var originals: [String: [String: Any]] = [:]
+    private var generations: [String: Generation] = [:]
+    private var takeoverID = UUID()
+    private var legacyOwnedLists: [[String]] = []
     private var needsApply = false
     private let port: UInt16
     private let journal: URL?
-    private var bypassHosts: [String]?
-    /// Retain old and new owned values so recovery is safe even if a commit fails midway.
-    private var ownedBypassLists: [[String]] = []
+    private let bypassHosts: [String]?
+    private let captureLocalRequests: Bool
 
-    package init(port: UInt16, journal: URL? = nil, bypassHosts: [String]? = nil) {
-        self.port = port; self.journal = journal; self.bypassHosts = bypassHosts
+    // This private key is outside the proxy dictionaries seen by browsers. Its value
+    // identifies the journal generation committed atomically with the service edits.
+    private var generationKey: CFString {
+        "com.sebastianLavertheDe.proxymirror.system-proxy.\(takeoverID.uuidString)" as CFString
+    }
+
+    package init(port: UInt16, journal: URL? = nil, bypassHosts: [String]? = nil, captureLocalRequests: Bool = true) {
+        self.port = port
+        self.journal = journal
+        self.bypassHosts = bypassHosts
+        self.captureLocalRequests = captureLocalRequests
     }
 
     package static func pendingRestore(at journal: URL) throws -> SystemProxySettings? {
@@ -107,61 +124,134 @@ package final class SystemProxySettings {
               let originals = snapshot["originals"] as? [String: [String: Any]], !originals.isEmpty else {
             throw SystemProxyError(.restoreRecordInvalid)
         }
-        let settings = SystemProxySettings(port: port, journal: journal, bypassHosts: snapshot["bypassHosts"] as? [String])
+        let settings = SystemProxySettings(port: port, journal: journal)
         settings.originals = originals
-        settings.ownedBypassLists = snapshot["ownedBypassLists"] as? [[String]] ?? []
-        if let hosts = settings.bypassHosts, !settings.ownedBypassLists.contains(hosts) { settings.ownedBypassLists.append(hosts) }
-        guard settings.ownedBypassLists.count <= 128,
-              settings.ownedBypassLists.allSatisfy({ SystemProxyBypassList.validationError($0) == nil }) else {
-            throw SystemProxyError(.bypassRecordInvalid)
+        if snapshot["takeoverID"] != nil || snapshot["generations"] != nil {
+            guard let id = snapshot["takeoverID"] as? String, let takeoverID = UUID(uuidString: id),
+                  let bytes = snapshot["generations"] as? Data,
+                  let generations = try? PropertyListDecoder().decode([String: Generation].self, from: bytes),
+                  (1...2).contains(generations.count),
+                  generations.values.allSatisfy({ Set($0.services.keys).isSubset(of: Set(originals.keys)) }) else {
+                throw SystemProxyError(.bypassRecordInvalid)
+            }
+            settings.takeoverID = takeoverID
+            settings.generations = generations
+        } else {
+            // Earlier helpers journaled whole custom lists without service IDs or a generation key.
+            var owned = snapshot["ownedBypassLists"] as? [[String]] ?? []
+            if let hosts = snapshot["bypassHosts"] as? [String], !owned.contains(hosts) { owned.append(hosts) }
+            guard owned.count <= 128, owned.allSatisfy({ SystemProxyBypassList.validationError($0) == nil }) else {
+                throw SystemProxyError(.bypassRecordInvalid)
+            }
+            settings.legacyOwnedLists = owned
         }
         settings.needsApply = true
         return settings
     }
 
     package func enable() throws {
-        if let hosts = bypassHosts, let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
-        try change(recordOriginals: true, newBypass: bypassHosts, updateOwnership: true) { _, old in
-            var new = old
-            for keys in [Self.http, Self.https] {
-                new[keys[0]] = 1; new[keys[1]] = "127.0.0.1"; new[keys[2]] = Int(self.port)
+        try configure(enabling: true, hosts: bypassHosts, captureLocalRequests: captureLocalRequests)
+    }
+
+    package func updateBypass(_ hosts: [String]?, captureLocalRequests: Bool) throws {
+        guard !originals.isEmpty else { throw SystemProxyError(.takeoverRequired) }
+        try configure(enabling: false, hosts: hosts, captureLocalRequests: captureLocalRequests)
+    }
+
+    private func configure(enabling: Bool, hosts: [String]?, captureLocalRequests: Bool) throws {
+        if let hosts, let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
+        try change { preferences, services in
+            let currentID = try self.committedGeneration(in: preferences)
+            let previous = currentID.flatMap { self.generations[$0] }
+            guard enabling || previous != nil else { throw SystemProxyError(.noOwnedServices) }
+            var next = Generation(customHosts: hosts, services: previous?.services ?? [:])
+            let saved = try Self.editServices(services) { id, current in
+                guard enabling || (self.originals[id] != nil && Self.ownsProxy(current, port: self.port)) else { return nil }
+                var new = current
+                if enabling {
+                    for keys in [Self.http, Self.https] {
+                        new[keys[0]] = 1; new[keys[1]] = "127.0.0.1"; new[keys[2]] = Int(self.port)
+                    }
+                }
+                let observed = current[Self.exceptions] as? [String]
+                // Preserve an unrecognized value installed by another client.
+                guard current[Self.exceptions] == nil || observed != nil else { return new }
+                let lease = previous?.services[id]
+                let restored = lease.map { $0.restoredHosts(from: observed) } ?? observed
+                let plain: [String]?
+                if hosts == nil {
+                    plain = restored
+                } else if let lease, hosts == previous?.customHosts {
+                    plain = lease.removingCaptureRules(from: observed)
+                } else {
+                    plain = hosts
+                }
+                let replacement = SystemProxyBypassLease(restoreHosts: restored, plainHosts: plain,
+                                                         captureLocalRequests: captureLocalRequests, port: self.port)
+                next.services[id] = replacement
+                new[Self.exceptions] = replacement.installedHosts
+                return new
             }
-            if let hosts = self.bypassHosts { new[Self.exceptions] = hosts }
-            return new
+            guard !saved.isEmpty else { throw SystemProxyError(.noOwnedServices) }
+            let nextID = UUID().uuidString
+            guard SCPreferencesSetValue(preferences, self.generationKey, nextID as CFString) else { throw Self.currentError() }
+            let originals = enabling ? saved : self.originals
+            var pending = [nextID: next]
+            if let currentID, let previous { pending[currentID] = previous }
+            try self.writeJournal(originals: originals, generations: pending)
+            self.originals = originals
+            self.generations = pending
+            return true
         }
     }
 
-    package func updateBypass(_ hosts: [String]?) throws {
-        if let hosts, let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
-        guard !originals.isEmpty else { throw SystemProxyError(.takeoverRequired) }
-        guard hosts == nil || ownedBypassLists.contains(hosts!) || ownedBypassLists.count < 128 else {
-            throw SystemProxyError(.bypassUpdateLimit)
-        }
-        try change(recordOriginals: false, newBypass: hosts, updateOwnership: true) { id, current in
-            guard let original = self.originals[id], Self.ownsProxy(current, port: self.port) else { return nil }
-            var new = current
-            if let hosts { new[Self.exceptions] = hosts }
-            else if let currentHosts = current[Self.exceptions] as? [String], self.ownedBypassLists.contains(currentHosts) {
-                new[Self.exceptions] = original[Self.exceptions]
-            }
-            return new
-        }
+    private func committedGeneration(in preferences: SCPreferences) throws -> String? {
+        guard let value = SCPreferencesGetValue(preferences, generationKey) else { return nil }
+        guard let id = value as? String, generations[id] != nil else { throw SystemProxyError(.bypassRecordInvalid) }
+        return id
+    }
+
+    private func writeJournal(originals: [String: [String: Any]], generations: [String: Generation]) throws {
+        guard let journal else { return }
+        let keys = Set(Self.http + Self.https + [Self.exceptions])
+        let snapshot = originals.mapValues { $0.filter { keys.contains($0.key) } }
+        let value: [String: Any] = ["port": Int(port), "originals": snapshot, "takeoverID": takeoverID.uuidString,
+                                    "generations": try PropertyListEncoder().encode(generations)]
+        let data = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
+        try data.write(to: journal, options: .atomic)
     }
 
     package func restore(previousConfiguration: Bool = true) throws {
         guard !originals.isEmpty else { return }
-        try change(recordOriginals: false, newBypass: nil, updateOwnership: false) { id, current in
-            guard let original = self.originals[id] else { return nil }
-            let restored = Self.restoredConfiguration(current, original: original, ownedPort: self.port,
-                                                       ownedBypassLists: self.ownedBypassLists,
-                                                       restorePrevious: previousConfiguration)
-            return NSDictionary(dictionary: restored).isEqual(to: current) ? nil : restored
+        try change { preferences, services in
+            let id = try self.committedGeneration(in: preferences)
+            // Absent on a failed initial commit or after a completed restore. Retrying
+            // apply is safe even if another app has since installed identical rules.
+            if id == nil && !self.generations.isEmpty { return false }
+            let leases = id.flatMap { self.generations[$0]?.services } ?? [:]
+            let changed = try Self.editServices(services) { id, current in
+                guard let original = self.originals[id] else { return nil }
+                var restored = Self.restoredConfiguration(current, original: original, ownedPort: self.port,
+                                                           ownedBypassLists: self.legacyOwnedLists,
+                                                           restorePrevious: previousConfiguration)
+                let observed = current[Self.exceptions] as? [String]
+                if let lease = leases[id], current[Self.exceptions] == nil || observed != nil {
+                    restored[Self.exceptions] = lease.restoredHosts(from: observed)
+                }
+                return NSDictionary(dictionary: restored).isEqual(to: current) ? nil : restored
+            }
+            if id != nil {
+                guard SCPreferencesRemoveValue(preferences, self.generationKey) else { throw Self.currentError() }
+                return true
+            }
+            return !changed.isEmpty
         }
         if let journal {
             do { try FileManager.default.removeItem(at: journal) }
             catch CocoaError.fileNoSuchFile {}
         }
-        originals.removeAll(); ownedBypassLists.removeAll()
+        originals.removeAll()
+        generations.removeAll()
     }
 
     private static func ownsProxy(_ current: [String: Any], port: UInt16) -> Bool {
@@ -174,29 +264,27 @@ package final class SystemProxySettings {
     package static func restoredConfiguration(_ current: [String: Any], original: [String: Any],
                                               ownedPort: UInt16, ownedBypassLists: [[String]] = [],
                                               restorePrevious: Bool = true) -> [String: Any] {
-        var result = current
-        for keys in [http, https] where (current[keys[0]] as? NSNumber)?.intValue == 1 &&
-            current[keys[1]] as? String == "127.0.0.1" && (current[keys[2]] as? NSNumber)?.intValue == Int(ownedPort) {
-            if restorePrevious {
-                for key in keys { result[key] = original[key] }
-            } else {
-                result[keys[0]] = 0
-                result.removeValue(forKey: keys[1])
-                result.removeValue(forKey: keys[2])
-            }
-        }
-        if let hosts = current[exceptions] as? [String], ownedBypassLists.contains(hosts) {
-            result[exceptions] = original[exceptions]
-        }
-        return result
+        SystemProxyRestorePolicy.restore(current, original: original, ownedPort: ownedPort,
+                                         ownedBypassLists: ownedBypassLists, restorePrevious: restorePrevious)
     }
 
-    private func change(recordOriginals: Bool, newBypass: [String]?, updateOwnership: Bool,
-                        edit: (String, [String: Any]) -> [String: Any]?) throws {
+    private func change(_ operation: (SCPreferences, [SCNetworkService]) throws -> Bool) throws {
         guard let preferences = SCPreferencesCreate(nil, "ProxyMirror" as CFString, nil),
               SCPreferencesLock(preferences, false) else { throw Self.currentError() }
         defer { SCPreferencesUnlock(preferences) }
         guard let services = SCNetworkServiceCopyAll(preferences) as? [SCNetworkService] else { throw Self.currentError() }
+        if try operation(preferences, services) {
+            guard SCPreferencesCommitChanges(preferences) else { throw Self.currentError() }
+            needsApply = true
+        }
+        if needsApply {
+            guard SCPreferencesApplyChanges(preferences) else { throw Self.currentError() }
+            needsApply = false
+        }
+    }
+
+    private static func editServices(_ services: [SCNetworkService], edit: (String, [String: Any]) -> [String: Any]?) throws
+        -> [String: [String: Any]] {
         var saved: [String: [String: Any]] = [:]
         for service in services {
             guard let id = SCNetworkServiceGetServiceID(service) as String?,
@@ -206,30 +294,7 @@ package final class SystemProxySettings {
             guard SCNetworkProtocolSetConfiguration(proto, new as CFDictionary) else { throw Self.currentError() }
             saved[id] = old
         }
-        if recordOriginals || updateOwnership {
-            guard !saved.isEmpty else { throw SystemProxyError(.noOwnedServices) }
-            let retained = recordOriginals ? saved : originals
-            var owned = ownedBypassLists
-            if let hosts = newBypass, !owned.contains(hosts) { owned.append(hosts) }
-            if let journal {
-                let keys = Set(Self.http + Self.https + [Self.exceptions])
-                let snapshot = retained.mapValues { $0.filter { keys.contains($0.key) } }
-                var value: [String: Any] = ["port": Int(port), "originals": snapshot, "ownedBypassLists": owned]
-                if let hosts = newBypass { value["bypassHosts"] = hosts }
-                let data = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
-                try data.write(to: journal, options: .atomic)
-            }
-            originals = retained; ownedBypassLists = owned
-            if updateOwnership { bypassHosts = newBypass }
-        }
-        if !saved.isEmpty {
-            guard SCPreferencesCommitChanges(preferences) else { throw Self.currentError() }
-            needsApply = true
-        }
-        if needsApply {
-            guard SCPreferencesApplyChanges(preferences) else { throw Self.currentError() }
-            needsApply = false
-        }
+        return saved
     }
 
     private static func currentError() -> SystemProxyError { SystemProxyError(String(cString: SCErrorString(SCError()))) }

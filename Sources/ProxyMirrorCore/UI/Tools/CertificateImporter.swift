@@ -5,12 +5,20 @@ import UniformTypeIdentifiers
 @MainActor
 enum CertificateToolWindows {
     private static var importer: NSWindowController?
+    private static var importSelection: CertificateImportSelection?
     private static var exporter: NSWindowController?
     private static var simulatorInstaller: NSWindowController?
 
     static func showImporter(purpose: CertificateFormats.Purpose = .client) {
-        if importer?.window?.isVisible == true { importer?.showWindow(nil); return }
-        importer = window(title: Strings.Tools.certificateImportAssistant, view: CertificateImporterView(initialPurpose: purpose))
+        if importer?.window?.isVisible == true, let importSelection {
+            importSelection.select(purpose)
+            importer?.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let selection = CertificateImportSelection(purpose: purpose)
+        importSelection = selection
+        importer = window(title: Strings.Tools.certificateImportAssistant, view: CertificateImporterView(selection: selection))
         importer?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -39,6 +47,28 @@ enum CertificateToolWindows {
         window.isReleasedWhenClosed = false
         window.center()
         return NSWindowController(window: window)
+    }
+}
+
+@MainActor
+private final class CertificateImportSelection: ObservableObject {
+    @Published var purpose: CertificateFormats.Purpose
+    @Published var working = false {
+        didSet {
+            if !working, let pendingPurpose {
+                self.pendingPurpose = nil
+                purpose = pendingPurpose
+            }
+        }
+    }
+    private var pendingPurpose: CertificateFormats.Purpose?
+
+    init(purpose: CertificateFormats.Purpose) { self.purpose = purpose }
+
+    func select(_ purpose: CertificateFormats.Purpose) {
+        // Finish the captured operation before changing the visible purpose.
+        if working { pendingPurpose = purpose }
+        else { self.purpose = purpose }
     }
 }
 
@@ -98,38 +128,52 @@ private struct CertificateExportView: View {
 
 @MainActor
 private struct CertificateImporterView: View {
-    let initialPurpose: CertificateFormats.Purpose
-    @State private var purpose = CertificateFormats.Purpose.client
+    @ObservedObject var selection: CertificateImportSelection
     @State private var certificate: URL?
     @State private var privateKey: URL?
     @State private var password = ""
     @State private var host = ""
     @State private var material: CertificateFormats.Material?
-    @State private var working = false
     @State private var feedback: String?
     @State private var failed = false
     @State private var confirmRootReplacement = false
+
+    private var purpose: CertificateFormats.Purpose { selection.purpose }
+    private var working: Bool {
+        get { selection.working }
+        nonmutating set { selection.working = newValue }
+    }
 
     private var pkcs12: Bool { certificate.map { ["p12", "pfx"].contains($0.pathExtension.lowercased()) } ?? false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(Strings.Tools.step1ChoosePurposeFile).font(.headline)
-            Picker(Strings.Tools.importPurpose, selection: $purpose) {
+            Picker(Strings.Tools.importPurpose, selection: $selection.purpose) {
                 ForEach(CertificateFormats.Purpose.allCases) { Text($0.localizedTitle).tag($0) }
             }
-            HStack {
-                Button(certificate?.lastPathComponent ?? Strings.Tools.choosePemDerCerP12) {
-                    certificate = choose(Strings.Tools.chooseACertificateCertificateChainOrPkcs12Identity) ?? certificate
-                    material = nil
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text(verbatim: "PEM / DER / P12:").frame(width: 130, alignment: .trailing)
+                    TextField(Strings.Tools.choosePemDerCerP12, text: .constant(certificate?.path ?? ""))
+                        .textFieldStyle(.roundedBorder).disabled(true)
+                    Button(Strings.Guides.setupSelectFile) {
+                        certificate = choose(Strings.Tools.chooseACertificateCertificateChainOrPkcs12Identity) ?? certificate
+                        material = nil
+                    }.frame(width: 105)
                 }
                 if purpose.needsKey && !pkcs12 {
-                    Button(privateKey?.lastPathComponent ?? Strings.Tools.choosePrivateKeyOrUseTheSameIdentityFile) {
-                        privateKey = choose(Strings.Tools.chooseAPemDerPrivateKey) ?? privateKey
-                        material = nil
+                    HStack {
+                        Text(Strings.Tools.privateKey).frame(width: 130, alignment: .trailing)
+                        TextField(Strings.Tools.choosePrivateKeyOrUseTheSameIdentityFile, text: .constant(privateKey?.path ?? ""))
+                            .textFieldStyle(.roundedBorder).disabled(true)
+                        Button(Strings.Guides.setupSelectFile) {
+                            privateKey = choose(Strings.Tools.chooseAPemDerPrivateKey) ?? privateKey
+                            material = nil
+                        }.frame(width: 105)
                     }
                 }
-            }
+            }.padding(14).background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
             if purpose.needsKey || pkcs12 {
                 SecureField(Strings.Tools.p12EncryptedPrivateKeyPasswordLeaveEmptyIfNone, text: $password)
             }
@@ -161,8 +205,7 @@ private struct CertificateImporterView: View {
                 Button(purpose == .rootCA ? Strings.Tools.step3ReplaceTheCaptureRootCa : Strings.Tools.step3ImportForSelectedPurpose) { install() }
                     .disabled(working || material == nil || (purpose == .rootCA && !confirmRootReplacement))
             }
-        }.padding(20).frame(width: 650).disabled(working)
-        .onAppear { purpose = initialPurpose }
+        }.padding(20).frame(width: 900).disabled(working)
         .onChange(of: purpose) { _ in material = nil; confirmRootReplacement = false; feedback = nil }
         .onChange(of: host) { _ in material = nil }
         .onChange(of: password) { _ in material = nil }
@@ -203,9 +246,11 @@ private struct CertificateImporterView: View {
         Task {
             defer { working = false }
             do {
-                try CertificateFormats.validate(material, purpose: target, host: targetHost)
+                try await Task.detached(priority: .userInitiated) {
+                    try CertificateFormats.validate(material, purpose: target, host: targetHost)
+                }.value
                 if target == .server {
-                    try installServer(material, host: targetHost)
+                    try await installServer(material, host: targetHost)
                 } else {
                     try await Task.detached(priority: .userInitiated) {
                         switch target {
@@ -233,25 +278,46 @@ private struct CertificateImporterView: View {
         }
     }
 
-    private func installServer(_ material: CertificateFormats.Material, host input: String) throws {
-        guard let key = material.privateKeyPEM, let host = ClientTLSIdentities.hostPattern(input) else {
+    private func installServer(_ material: CertificateFormats.Material, host input: String) async throws {
+        guard let host = ClientTLSIdentities.hostPattern(input) else {
+            throw CertificateFormats.FormatError(Strings.Tools.aValidServerIdentityAndDomainAreRequired)
+        }
+        let staged = try await Task.detached(priority: .userInitiated) { try ServerCertificateStaging.write(material) }.value
+        do {
+            let rules = RulesStore.shared
+            var backup = rules.backup()
+            var entries = backup.customCertificates ?? []
+            // Append a separately identifiable rule. Existing user files and rules are preserved.
+            entries.insert(CustomCertificateRule(hostPattern: host, certificatePath: staged.certificate.path, privateKeyPath: staged.privateKey.path), at: 0)
+            backup.customCertificates = entries
+            try rules.install(backup)
+        } catch {
+            _ = await Task.detached { try? FileManager.default.removeItem(at: staged.directory) }.value
+            throw error
+        }
+    }
+}
+
+private enum ServerCertificateStaging {
+    struct Files: Sendable {
+        let directory: URL
+        let certificate: URL
+        let privateKey: URL
+    }
+
+    static func write(_ material: CertificateFormats.Material) throws -> Files {
+        guard let key = material.privateKeyPEM else {
             throw CertificateFormats.FormatError(Strings.Tools.aValidServerIdentityAndDomainAreRequired)
         }
         let directory = CertificateAuthority.applicationSupport.appendingPathComponent("ServerIdentities", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let certificate = directory.appendingPathComponent("chain.pem")
-        let privateKey = directory.appendingPathComponent("key.pem")
+        let files = Files(directory: directory, certificate: directory.appendingPathComponent("chain.pem"),
+                          privateKey: directory.appendingPathComponent("key.pem"))
         do {
-            try PrivateAppFile.write(Data(material.certificatePEM.utf8), to: certificate)
-            try PrivateAppFile.write(Data(key.utf8), to: privateKey)
-            let rules = RulesStore.shared
-            var backup = rules.backup()
-            var entries = backup.customCertificates ?? []
-            // Append a separately identifiable rule. Existing user files and rules are preserved.
-            entries.insert(CustomCertificateRule(hostPattern: host, certificatePath: certificate.path, privateKeyPath: privateKey.path), at: 0)
-            backup.customCertificates = entries
-            try rules.install(backup)
+            try PrivateAppFile.write(Data(material.certificatePEM.utf8), to: files.certificate)
+            try PrivateAppFile.write(Data(key.utf8), to: files.privateKey)
+            return files
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error

@@ -107,3 +107,21 @@
 "traffic_summary" = "Traffic Summary";
 "traffic_summary_2" = "Traffic Summary…";
 "user_guide" = "User Guide…";
+
+"rules" = "Rules";
+"setup" = "Setup";
+"custom_certificates" = "Custom Certificates";
+"next_view" = "Next View";
+"previous_view" = "Previous View";
+"show_toolbar" = "Show Toolbar";
+"export_openapi" = "as OpenAPI 3.0…";
+"export_postman" = "as Postman Collection…";
+"proxy_settings" = "Proxy Settings";
+"override_proxy" = "Override System Proxy";
+"external_proxy" = "External Proxy…";
+"advanced" = "Advanced";
+"tls_key_logging" = "TLS Key Logging";
+"proxy_overridden" = "Proxy Overridden";
+"network_extension" = "Network Extension";
+
+"find_in_body" = "Find in Body…";

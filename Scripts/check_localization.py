@@ -2,14 +2,17 @@
 """Check native resources and the committed SwiftGen-generated interface."""
 from __future__ import annotations
 import argparse
+import difflib
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCES = ROOT / "Sources/ProxyMirrorCore/Resources"
@@ -17,8 +20,7 @@ GENERATED = ROOT / "Sources/ProxyMirrorCore/Localization/Generated"
 TEMPLATE = ROOT / "Scripts/Templates/localization-swift5.stencil"
 VERSION = "6.6.3"
 TOKEN = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|[=;]', re.S)
-FORMAT = re.compile(r'%(?:(\d+)\$)?[-+ #0]*(?:\d+)?(?:\.\d+)?(hh|ll|h|l|L|z|t|j)?([@diuoxXfFeEgGaAcsp])')
-PLURAL = re.compile(r'%(?:(\d+)\$)?#@([A-Za-z_][A-Za-z_0-9]*)@')
+SPECIFIER = re.compile(r'%(?:(\d+)\$)?(?:#@([A-Za-z_][A-Za-z_0-9]*)@|[-+ #0]*(?:\d+)?(?:\.\d+)?(hh|ll|h|l|L|z|t|j)?([@diuoxXfFeEgGaAcsp]))')
 KEY = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*\Z")
 
 def load_strings(path):
@@ -50,37 +52,51 @@ def parameter_type(length, conversion):
     if conversion == "c": return "Int"
     raise ValueError(f"Unsupported interface format %{length}{conversion}; use %@ for text")
 
-def signature(value, plural_variables=None, allow_sparse=False):
-    """Compare parameters by their positions, allowing grammatical reordering."""
+def format_parameters(value, plural_variables=None, allow_sparse=False, implicit_start=1):
+    """Keep parameter positions and plural bindings until all references are checked."""
     plural_variables = plural_variables or {}
-    parameters, next_position, explicit, implicit = {}, 1, False, False
-    def replacement(match):
-        name = match.group(2)
-        if name not in plural_variables: raise ValueError(f"Unknown plural variable {name}")
-        spec = plural_variables[name]["NSStringFormatValueTypeKey"]
-        return "%" + ((match.group(1) + "$") if match.group(1) else "") + spec
-    value = PLURAL.sub(replacement, value)
+    parameters, bindings, next_position, explicit, implicit = {}, {}, implicit_start, False, False
     work = value.replace("%%", "")
-    matches = list(FORMAT.finditer(work))
+    matches = list(SPECIFIER.finditer(work))
     covered = {index for match in matches for index in range(match.start(), match.end())}
     if any(character == "%" and index not in covered for index, character in enumerate(work)):
         raise ValueError(f"Unescaped literal percentage or invalid placeholder in {value!r}; use %% for a literal percentage")
     for match in matches:
         position = int(match.group(1)) if match.group(1) else next_position
+        if position < 1: raise ValueError(f"Invalid placeholder position {position} in {value!r}")
         if match.group(1): explicit = True
         else:
             implicit = True
             next_position += 1
-        kind = parameter_type(match.group(2) or "", match.group(3))
+        name = match.group(2)
+        if name is not None:
+            if name not in plural_variables: raise ValueError(f"Unknown plural variable {name}")
+            spec = plural_variables[name]["NSStringFormatValueTypeKey"]
+            kind = parameter_type(spec[:-1], spec[-1])
+            bindings.setdefault(name, set()).add(position)
+        else:
+            kind = parameter_type(match.group(3) or "", match.group(4))
         if position in parameters and parameters[position] != kind:
             raise ValueError(f"Conflicting placeholder {position} in {value!r}")
         parameters[position] = kind
     if explicit and implicit: raise ValueError(f"Mixed placeholder positions in {value!r}")
-    if parameters and not allow_sparse and sorted(parameters) != list(range(1, max(parameters) + 1)):
+    if parameters and not allow_sparse and sorted(parameters) != list(range(1, len(parameters) + 1)):
         raise ValueError(f"Non-contiguous positions in {value!r}")
+    return parameters, bindings
+
+def signature(value, plural_variables=None, allow_sparse=False):
+    """Compare complete call signatures while permitting grammatical reordering."""
+    parameters, _ = format_parameters(value, plural_variables, allow_sparse)
     return tuple(parameters[position] for position in sorted(parameters))
 
-def load_plurals(path, language):
+def validate_parameter_references(parameters, available, context):
+    for position, kind in parameters.items():
+        if position not in available:
+            raise ValueError(f"{context}: placeholder position {position} is outside the message arguments")
+        if available[position] != kind:
+            raise ValueError(f"{context}: placeholder {position} expects {available[position]}, got {kind}")
+
+def load_plurals(path, language, fallbacks=None):
     if not path.exists(): return {}
     values = plistlib.loads(path.read_bytes())
     if not isinstance(values, dict): raise ValueError(f"{path}: expected dictionary")
@@ -90,18 +106,32 @@ def load_plurals(path, language):
         variables = {name: rule for name, rule in entry.items() if name != "NSStringLocalizedFormatKey"}
         if not variables: raise ValueError(f"{path}:{key}: no plural variable")
         for name, rule in variables.items():
-            if rule.get("NSStringFormatSpecTypeKey") != "NSStringPluralRuleType":
+            if not isinstance(rule, dict) or rule.get("NSStringFormatSpecTypeKey") != "NSStringPluralRuleType":
                 raise ValueError(f"{path}:{key}:{name}: invalid rule")
             spec = rule.get("NSStringFormatValueTypeKey")
             if spec not in ("ld", "lld", "d"): raise ValueError(f"{path}:{key}:{name}: expected integer")
             required = {"one", "other"} if language == "en" else {"other"}
             if not required <= rule.keys(): raise ValueError(f"{path}:{key}:{name}: missing {required - rule.keys()}")
+        outer, bindings = format_parameters(entry["NSStringLocalizedFormatKey"], variables,
+                                            allow_sparse=fallbacks is not None)
+        if fallbacks is not None:
+            if key not in fallbacks: raise ValueError(f"{path}:{key}: missing fallback string")
+            available, _ = format_parameters(fallbacks[key])
+        else:
+            available = outer
+        validate_parameter_references(outer, available, f"{path}:{key}")
+        for name, rule in variables.items():
+            if name not in bindings: raise ValueError(f"{path}:{key}:{name}: unused plural variable")
             for category, text in rule.items():
                 if category.startswith("NSString"): continue
                 if not isinstance(text, str) or not text.strip(): raise ValueError(f"{path}:{key}: empty variant")
-                kinds = signature(text, allow_sparse=True)
-                if kinds and kinds != signature("%" + spec): raise ValueError(f"{path}:{key}: invalid variant placeholder")
-        signature(entry["NSStringLocalizedFormatKey"], variables)
+                if category not in {"zero", "one", "two", "few", "many", "other"}:
+                    raise ValueError(f"{path}:{key}:{name}: unknown plural category {category}")
+                # An implicit %ld consumes this plural variable's argument, which
+                # need not be argument 1. Explicit positions refer to the full call.
+                for position in bindings[name]:
+                    parameters, _ = format_parameters(text, allow_sparse=True, implicit_start=position)
+                    validate_parameter_references(parameters, available, f"{path}:{key}:{name}:{category}")
     return values
 
 def camel(key):
@@ -115,8 +145,8 @@ def catalogue():
         files = sorted(directory.glob("*.strings"))
         if not files: raise ValueError(f"Missing language resources: {directory}")
         catalogues[language] = {path.stem: load_strings(path) for path in files}
-        plurals[language] = {table: load_plurals(directory / (table + ".stringsdict"), language)
-                            for table in catalogues[language]}
+        plurals[language] = {table: load_plurals(directory / (table + ".stringsdict"), language, values)
+                            for table, values in catalogues[language].items()}
         orphan = {path.stem for path in directory.glob("*.stringsdict")} - catalogues[language].keys()
         if orphan: raise ValueError(f"{language}: plural tables without fallback strings: {sorted(orphan)}")
     if catalogues["en"].keys() != catalogues["zh-Hans"].keys(): raise ValueError("Language table sets differ")
@@ -128,14 +158,23 @@ def catalogue():
         if plurals["en"][table].keys() != plurals["zh-Hans"][table].keys(): raise ValueError(f"{table}: plural keys differ")
         for key, value in english.items():
             if signature(value) != signature(chinese[key]): raise ValueError(f"{table}.{key}: placeholder signatures differ")
-            for language in ("en", "zh-Hans"):
-                if key not in plurals[language][table]: continue
-                entry = plurals[language][table][key]
-                variables = {name: rule for name, rule in entry.items() if name != "NSStringLocalizedFormatKey"}
-                if signature(value) != signature(entry["NSStringLocalizedFormatKey"], variables):
-                    raise ValueError(f"{language}:{table}.{key}: plural and fallback signatures differ")
         extra = plurals["en"][table].keys() - english.keys()
         if extra: raise ValueError(f"{table}: plurals need English fallback strings: {sorted(extra)}")
+    # Additional locales ship incrementally. Validate translated entries against
+    # the English contract; missing entries deliberately use the runtime fallback.
+    for language in ("es-419", "ja", "pt-BR"):
+        directory = RESOURCES / f"{language}.lproj"
+        files = sorted(directory.glob("*.strings"))
+        if not files: raise ValueError(f"Missing language resources: {directory}")
+        catalogues[language] = {path.stem: load_strings(path) for path in files}
+        plurals[language] = {}
+        for table, translations in catalogues[language].items():
+            if table not in catalogues["en"]: raise ValueError(f"{language}: unknown table {table}")
+            for key, value in translations.items():
+                if key not in catalogues["en"][table]: raise ValueError(f"{language}: unknown key {table}.{key}")
+                if signature(value) != signature(catalogues["en"][table][key]):
+                    raise ValueError(f"{language}.{table}.{key}: placeholder signatures differ")
+            plurals[language][table] = load_plurals(directory / (table + ".stringsdict"), language, translations)
     return catalogues, plurals
 
 def fingerprint():
@@ -163,6 +202,53 @@ def english_support(english):
                   '        tables[table]?[key] ?? "The requested message is unavailable."',
                   "    }", "}", ""])
     return "\n".join(lines)
+
+def stage_input(catalogues, directory):
+    """Both platforms give SwiftGen the same normalized native resource input."""
+    directory.mkdir(parents=True, exist_ok=True)
+    for table, values in catalogues["en"].items():
+        (directory / (table + ".strings")).write_bytes(plistlib.dumps(values, sort_keys=True))
+        plural = RESOURCES / "en.lproj" / (table + ".stringsdict")
+        if plural.exists(): shutil.copy2(plural, directory / plural.name)
+
+def swiftgen_executable(generator=None):
+    requested = generator or os.environ.get("SWIFTGEN_BIN") or "swiftgen"
+    executable = shutil.which(requested)
+    if not executable:
+        raise ValueError(f"SwiftGen {VERSION} is required to verify generated accessors; install it or set SWIFTGEN_BIN.")
+    result = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=30)
+    version = result.stdout + result.stderr
+    if result.returncode or not re.search(r"^SwiftGen v?" + re.escape(VERSION) + r"(?=\s|\(|$)", version, re.M):
+        raise ValueError(f"Expected SwiftGen {VERSION}; found {version.strip()!r}")
+    return executable
+
+def render_accessors(catalogues, generator=None):
+    """Generate disposable output with the actual pinned SwiftGen executable."""
+    executable = swiftgen_executable(generator)
+    with tempfile.TemporaryDirectory(prefix="pm-swiftgen-check-") as folder:
+        directory = Path(folder)
+        inputs, output = directory / "en.lproj", directory / "Strings.swift"
+        stage_input(catalogues, inputs)
+        result = subprocess.run([executable, "run", "strings", "--templatePath", str(TEMPLATE),
+                                 "--param", "resourceFingerprint=" + fingerprint(),
+                                 "--output", str(output), str(inputs)],
+                                cwd=ROOT, capture_output=True, text=True, timeout=60)
+        if result.returncode or not output.exists():
+            raise ValueError("SwiftGen accessor verification failed: " + (result.stderr or result.stdout).strip())
+        return output.read_bytes()
+
+def verify_generated(catalogues, generated_directory=None, generator=None):
+    generated_directory = generated_directory or GENERATED
+    accessors = generated_directory / "Strings.swift"
+    expected = render_accessors(catalogues, generator)
+    if not accessors.exists(): raise ValueError("Generated accessors are missing; regenerate")
+    actual = accessors.read_bytes()
+    if actual != expected:
+        difference = difflib.unified_diff(actual.decode("utf-8").splitlines(),
+                                         expected.decode("utf-8").splitlines(),
+                                         fromfile="committed Strings.swift", tofile="SwiftGen " + VERSION)
+        raise ValueError("Generated accessors differ from real SwiftGen output; run Scripts/generate_localization.sh.\n"
+                         + "\n".join(list(difference)[:40]))
 
 def validate_calls(catalogues):
     members = {(table, camel(key)) for table, values in catalogues["en"].items() for key in values}
@@ -230,22 +316,21 @@ def main():
     if args.stage_input:
         # 规范化成等价 plist 输入；SwiftGen 官方解析器在 Linux 不接受 OpenStep。
         # 两平台都走相同输入，避免改变翻译维护源或模板结果。
-        args.stage_input.mkdir(parents=True, exist_ok=True)
-        for table, values in catalogues["en"].items():
-            (args.stage_input / (table + ".strings")).write_bytes(plistlib.dumps(values, sort_keys=True))
-            plural = RESOURCES / "en.lproj" / (table + ".stringsdict")
-            if plural.exists(): shutil.copy2(plural, args.stage_input / plural.name)
+        stage_input(catalogues, args.stage_input)
     expected = english_support(catalogues["en"])
     support = GENERATED / "EnglishFallbacks.swift"
     if args.write_support:
         support.parent.mkdir(parents=True, exist_ok=True)
         support.write_text(expected)
     errors = []
+    generated_verified = False
     if not args.resources_only:
         if not support.exists() or support.read_text() != expected: errors.append("English fallback support is stale; regenerate")
-        accessors = GENERATED / "Strings.swift"
-        marker = "// Resource fingerprint: " + fingerprint()
-        if not accessors.exists() or marker not in accessors.read_text(): errors.append("Generated accessors are stale; regenerate")
+        try:
+            verify_generated(catalogues)
+            generated_verified = True
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            errors.append(str(error))
         errors.extend(validate_calls(catalogues))
         for filename in ("generate_error_issues.py", "generate_model_issues.py", "audit_ui_localization.py"):
             generator = ROOT / "Scripts" / filename
@@ -255,9 +340,10 @@ def main():
             arguments = [] if filename == "audit_ui_localization.py" else ["--check"]
             checked = subprocess.run([sys.executable, str(generator), *arguments], capture_output=True, text=True)
             if checked.returncode: errors.append(checked.stderr.strip() or checked.stdout.strip() or f"{filename}: failed")
-    report = {"languages": ["en", "zh-Hans"], "tables": len(catalogues["en"]),
+    report = {"languages": list(catalogues), "tables": len(catalogues["en"]),
               "keys": sum(len(values) for values in catalogues["en"].values()),
-              "plural_keys": sum(len(values) for values in plurals["en"].values()), "errors": errors}
+              "plural_keys": sum(len(values) for values in plurals["en"].values()),
+              "generated_accessors_checked": generated_verified, "errors": errors}
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
@@ -265,7 +351,8 @@ def main():
     if args.inventory:
         args.inventory.parent.mkdir(parents=True, exist_ok=True)
         args.inventory.write_text(json.dumps(review_inventory(catalogues, plurals), ensure_ascii=False, indent=2) + "\n")
-    print(f"PASS: {report['keys']} keys in {report['tables']} tables; en / zh-Hans resources are consistent")
+    suffix = "; real SwiftGen output matches" if not args.resources_only else "; resources only"
+    print(f"PASS: {report['keys']} keys in {report['tables']} tables; en / zh-Hans parity and 3 preview catalogues validated{suffix}")
 
 if __name__ == "__main__":
     try: main()

@@ -1,8 +1,9 @@
 import Foundation
+import ProxyMirrorFoundation
 
 /// Bounded comparison input. Captured wire bytes remain unchanged.
 enum TrafficDiffDocument {
-    enum Component: String, CaseIterable, Identifiable {
+    enum Component: String, CaseIterable, Identifiable, Sendable {
         case url, request, response
         case requestHeaders, responseHeaders
         case requestBody, responseBody
@@ -39,64 +40,91 @@ enum TrafficDiffDocument {
         var removed: Int
     }
 
-    static let bodyLimit = 262_144
-    static let lineLimit = 1200
+    static let bodyLimit = BoundedDiffDocument.bodyLimit
+    static let lineLimit = BoundedDiffDocument.lineLimit
 
-    static func lines(_ transaction: Transaction, component: Component, sortJSON: Bool, sortHeaders: Bool) -> [String] {
-        if component == .url { return [transaction.originalURL ?? transaction.fullURL] }
+    struct Identity: Hashable, Sendable {
+        let owner: ObjectIdentifier
+        let startLine: String?
+        let headers: [BoundedDiffDocument.Header]
+        let encodings: [String]
+        let includesBody: Bool
+        let revision: UInt64
+        let complete: Bool
+        let truncated: Bool
+        let capturedBytes: Int
+    }
+
+    struct Snapshot: Sendable {
+        let identity: Identity
+        let wireBody: Data
+    }
+
+    /// Only immutable metadata and COW bytes leave the main actor. Computing a
+    /// task key never decodes, formats or compares a captured message.
+    @MainActor
+    static func identity(_ transaction: Transaction, component: Component) -> Identity {
+        if component == .url {
+            return Identity(owner: ObjectIdentifier(transaction), startLine: transaction.originalURL ?? transaction.fullURL,
+                            headers: [], encodings: [], includesBody: false, revision: 0, complete: true,
+                            truncated: false, capturedBytes: 0)
+        }
         let request = [.request, .requestHeaders, .requestBody].contains(component)
         let headersOnly = component == .requestHeaders || component == .responseHeaders
         let bodyOnly = component == .requestBody || component == .responseBody
-        var result: [String] = []
-        if !bodyOnly {
-            if !headersOnly {
-                result.append(request
-                    ? "\(transaction.method) \(transaction.originalURL ?? transaction.fullURL) \(transaction.requestVersion)"
-                    : "\(transaction.responseVersion) \(transaction.statusText)")
-            }
-            let headers = request ? transaction.requestHeaders : transaction.responseHeaders
-            var entries = headers.pairs.map { ($0.name, $0.value) }
-            if sortHeaders {
-                entries = entries.sorted { lhs, rhs in
-                    let order = lhs.0.localizedCaseInsensitiveCompare(rhs.0)
-                    return order == .orderedSame ? lhs.1 < rhs.1 : order == .orderedAscending
-                }
-            }
-            result += entries.map { "\($0.0): \($0.1)" }
-        }
-        guard !headersOnly else { return bounded(result) }
-        if !bodyOnly { result.append("") }
-        guard let data = InspectionBody.data(for: transaction, request: request, limit: bodyLimit, prefix: true) else {
-            return result + [Strings.Models.diffBodyUndecodable]
-        }
-        let text: String
-        if sortJSON, let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
-           let formatted = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted, .fragmentsAllowed]),
-           let formattedText = String(data: formatted, encoding: .utf8) {
-            text = formattedText
-        } else if let decoded = String(data: data, encoding: .utf8) {
-            text = decoded.replacingOccurrences(of: "\r\n", with: "\n")
-        } else {
-            text = stride(from: 0, to: data.count, by: 16).map { offset in
-                String(format: "%08x  ", offset) + data[offset..<min(data.count, offset + 16)]
-                    .map { String(format: "%02x", $0) }.joined(separator: " ")
-            }.joined(separator: "\n")
-        }
-        result += text.components(separatedBy: "\n")
-        let truncated = request ? transaction.requestTruncated : transaction.responseTruncated
-        let capturedCount = request ? transaction.requestBody.count : transaction.responseBody.count
-        if truncated || capturedCount > bodyLimit || data.count >= bodyLimit {
-            result.append(Strings.Models.diffBodyLimit)
-        }
-        return bounded(result)
+        let headers = request ? transaction.requestHeaders : transaction.responseHeaders
+        let start = bodyOnly || headersOnly ? nil : (request
+            ? "\(transaction.method) \(transaction.originalURL ?? transaction.fullURL) \(transaction.requestVersion)"
+            : "\(transaction.responseVersion) \(transaction.statusText)")
+        return Identity(owner: ObjectIdentifier(transaction), startLine: start,
+            headers: bodyOnly ? [] : headers.pairs.map { .init($0.name, $0.value) },
+            encodings: headers.values(of: "Content-Encoding").flatMap { $0.split(separator: ",") }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty && $0 != "identity" },
+            includesBody: !headersOnly,
+            revision: headersOnly ? 0 : (request ? transaction.requestBodyRevision : transaction.responseBodyRevision),
+            complete: headersOnly || (request ? transaction.requestBodyComplete : transaction.responseBodyComplete),
+            truncated: !headersOnly && (request ? transaction.requestTruncated : transaction.responseTruncated),
+            capturedBytes: headersOnly ? 0 : (request ? transaction.requestBody.count : transaction.responseBody.count))
     }
 
-    private static func bounded(_ lines: [String]) -> [String] {
-        guard lines.count > lineLimit else { return lines }
-        return Array(lines.prefix(lineLimit)) + [Strings.Models.diffLineLimit(lineLimit)]
+    @MainActor
+    static func snapshot(_ transaction: Transaction, component: Component) -> Snapshot {
+        let before = identity(transaction, component: component)
+        let request = [.request, .requestHeaders, .requestBody].contains(component)
+        let body = before.includesBody ? (request ? transaction.requestBody : transaction.responseBody) : Data()
+        let after = identity(transaction, component: component)
+        return Snapshot(identity: after, wireBody: before == after ? body : Data())
+    }
+
+    static func lines(_ snapshot: Snapshot, sortJSON: Bool, sortHeaders: Bool) throws -> [String] {
+        try Task.checkCancellation()
+        let key = snapshot.identity
+        let body: Data?
+        if !key.includesBody { body = nil }
+        else if key.encodings.isEmpty { body = Data(snapshot.wireBody.prefix(bodyLimit)) }
+        else if key.complete && !key.truncated {
+            if snapshot.wireBody.isEmpty { body = Data() }
+            else if case .success(let decoded) = ContentCoding.decodeIfCompressed(snapshot.wireBody, encodings: key.encodings,
+                maxOutputBytes: bodyLimit, allowTruncatedOutput: true) { body = decoded.0 }
+            else { body = nil }
+        } else { body = nil }
+        try Task.checkCancellation()
+        return try BoundedDiffDocument.lines(.init(startLine: key.startLine, headers: key.headers,
+            includesBody: key.includesBody, body: body,
+            bodyWasLimited: key.truncated || key.capturedBytes >= bodyLimit || (body?.count ?? 0) >= bodyLimit),
+            sortJSON: sortJSON, sortHeaders: sortHeaders,
+            messages: .init(unavailable: Strings.Models.diffBodyUndecodable, bodyLimited: Strings.Models.diffBodyLimit,
+                            linesLimited: Strings.Models.diffLineLimit(lineLimit), outputLimited: Strings.Models.diffOutputLimit))
+    }
+
+    /// Explicit synchronous adapter retained for model checks and non-UI callers.
+    @MainActor
+    static func lines(_ transaction: Transaction, component: Component, sortJSON: Bool, sortHeaders: Bool) -> [String] {
+        (try? lines(snapshot(transaction, component: component), sortJSON: sortJSON, sortHeaders: sortHeaders)) ?? []
     }
 
     static func compare(_ before: [String], _ after: [String]) -> Result {
+        guard !Task.isCancelled else { return Result(unified: [], pairs: [], inserted: 0, removed: 0) }
         let differences = after.difference(from: before)
         var removed = Set<Int>(), inserted = Set<Int>()
         for change in differences {
@@ -108,6 +136,7 @@ enum TrafficDiffDocument {
         var result = Result(unified: [], pairs: [], inserted: inserted.count, removed: removed.count)
         var left = 0, right = 0
         while left < before.count || right < after.count {
+            guard !Task.isCancelled else { return Result(unified: [], pairs: [], inserted: 0, removed: 0) }
             var removals: [(Int, String)] = [], additions: [(Int, String)] = []
             while left < before.count, removed.contains(left) {
                 result.unified.append(Line(text: before[left], change: .removed))

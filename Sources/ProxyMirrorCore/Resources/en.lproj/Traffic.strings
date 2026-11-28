@@ -167,3 +167,17 @@
 "url" = "URL";
 "view" = "View %ld";
 "waiting_for_traffic" = "Waiting for traffic · %@";
+
+"sorting_body_values" = "Calculating sort fields…";
+
+"filtering_captured_values" = "Filtering requests…";
+
+"filter_shift_command_f" = "Filter (⇧⌘F)";
+"filter_option_command_f" = "Domain or App (⌥⌘F)";
+"enabled" = "Enabled";
+"disabled" = "Disabled";
+"scheme" = "Scheme";
+"content_type" = "Content-Type";
+"columns" = "Columns";
+
+"compose_option_command_c" = "Compose Request (⌥⌘C)";

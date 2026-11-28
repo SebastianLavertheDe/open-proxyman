@@ -1,3 +1,4 @@
+import ProxyMirrorFoundation
 import Foundation
 
 // MARK: - WebSocket 帧级解析（RFC 6455）
@@ -332,9 +333,11 @@ enum GraphQLService {
 
 extension Transaction {
     var graphqlOperationName: String? {
-        guard let name = GraphQLService.detect(tx: self, inspectResponse: false)?.operationName,
-              !name.isEmpty else { return nil }
-        return name
+        guard !requestTruncated else { return nil }
+        let body = InspectionBody.data(for: self, request: true, limit: GraphQLColumnValue.maximumInputBytes) ?? Data()
+        let name = GraphQLColumnValue.operationNameForMatching(path: path, query: query,
+            contentType: requestHeaders.value(of: "Content-Type") ?? "", body: body)
+        return name.isEmpty ? nil : name
     }
 }
 

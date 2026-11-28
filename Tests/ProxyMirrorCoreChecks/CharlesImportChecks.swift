@@ -83,7 +83,7 @@ func checkCharlesImport(_ test: CoreAssertions) throws {
         headers: HTTPHeaders([("X-Remove", "drop"), ("X-Existing", "before"), ("X-Existing", "duplicate")])))
     let reply = NSBox<ScriptingResult>()
     ScriptingService.run(plan, head: head, body: nil) { reply.store($0) }
-    let response = reply.wait()
+    let response = try reply.wait()
     test.equal(response.head.headers.value(of: "X-Migrated"), "migrated", "Engine adds imported response header")
     test.equal(response.head.headers.value(of: "X-Remove"), nil, "Engine removes imported response header")
     test.equal(response.head.headers.values(of: "X-Existing"), ["replaced", "replaced"],

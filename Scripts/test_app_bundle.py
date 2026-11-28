@@ -1,6 +1,7 @@
 """Check a packaged ProxyMirror app without launching its UI or changing macOS settings."""
 
 import argparse
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -13,7 +14,7 @@ import sys
 from prepare_transparent_signing import (
     APP_GROUPS, APP_ID, APP_PROXY, INSTALL_EXTENSION, NETWORK_EXTENSION, TEAM_ID,
 )
-from test_localization_bundle import verify_resources
+from test_localization_bundle import ROOT, verify_resources
 
 
 def verify_transparent_extension(app, info):
@@ -76,7 +77,41 @@ def verify_transparent_extension(app, info):
     return contents / "MacOS" / executable_name
 
 
+def verify_runtime_signature(binary):
+    """Match SystemProxyService.codeHash: default Security flags and no requirement."""
+    security = ctypes.CDLL("/System/Library/Frameworks/Security.framework/Security")
+    foundation = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+    pointer = ctypes.c_void_p
+    foundation.CFURLCreateFromFileSystemRepresentation.argtypes = [
+        pointer, ctypes.c_char_p, ctypes.c_long, ctypes.c_ubyte,
+    ]
+    foundation.CFURLCreateFromFileSystemRepresentation.restype = pointer
+    foundation.CFRelease.argtypes = [pointer]
+    foundation.CFRelease.restype = None
+    security.SecStaticCodeCreateWithPath.argtypes = [pointer, ctypes.c_uint32, ctypes.POINTER(pointer)]
+    security.SecStaticCodeCreateWithPath.restype = ctypes.c_int32
+    security.SecStaticCodeCheckValidity.argtypes = [pointer, ctypes.c_uint32, pointer]
+    security.SecStaticCodeCheckValidity.restype = ctypes.c_int32
+    path = os.fsencode(binary.resolve(strict=True))
+    url = foundation.CFURLCreateFromFileSystemRepresentation(None, path, len(path), binary.is_dir())
+    if not url:
+        raise ValueError(f"Unable to create a code-signing URL for {binary}")
+    code = pointer()
+    try:
+        status = security.SecStaticCodeCreateWithPath(url, 0, ctypes.byref(code))
+        if status != 0 or not code.value:
+            raise ValueError(f"SecStaticCodeCreateWithPath failed for {binary}: OSStatus {status}")
+        status = security.SecStaticCodeCheckValidity(code, 0, None)
+        if status != 0:
+            raise ValueError(f"Runtime signature validation failed for {binary}: OSStatus {status}")
+    finally:
+        if code.value:
+            foundation.CFRelease(code)
+        foundation.CFRelease(url)
+
+
 def verify_system_proxy_identity(binary, expected_identifier):
+    verify_runtime_signature(binary)
     signing = subprocess.check_output(["/usr/bin/codesign", "-dvvv", binary], stderr=subprocess.STDOUT, text=True)
     match = re.search(r"^CDHash=([0-9a-f]{40})$", signing, re.MULTILINE)
     if not match or not re.search(r"^CodeDirectory .*\bruntime\b", signing, re.MULTILINE):
@@ -94,12 +129,15 @@ def verify_bundle(app, expect_transparent=False):
         "CFBundleIdentifier": "com.sebastianLavertheDe.proxymirror",
         "CFBundlePackageType": "APPL",
         "CFBundleExecutable": "ProxyMirror",
+        "CFBundleIconFile": "AppIcon",
         "LSMinimumSystemVersion": "13.0",
     }
     for key, value in expected.items():
         if info.get(key) != value:
             raise ValueError(f"{key}: expected {value!r}, got {info.get(key)!r}")
 
+    if (contents / "Resources/AppIcon.icns").read_bytes() != (ROOT / "Resources/AppIcon.icns").read_bytes():
+        raise ValueError("The packaged application icon differs from the canonical AppIcon.icns")
     verify_resources(app, expect_transparent)
 
     executable = contents / "MacOS" / info["CFBundleExecutable"]

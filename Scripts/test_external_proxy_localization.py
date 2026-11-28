@@ -92,7 +92,7 @@ import Foundation
         resource = directory / "Resources.bundle"
         resource.mkdir()
         (resource / "Info.plist").write_bytes(plistlib.dumps({"CFBundleDevelopmentRegion": "en"}))
-        for language in ("en", "zh-Hans"):
+        for language in ("en", "zh-Hans", "es-419", "ja", "pt-BR"):
             target = resource / f"{language}.lproj"
             target.mkdir()
             for path in (CORE / "Resources" / f"{language}.lproj").glob("*.strings"):

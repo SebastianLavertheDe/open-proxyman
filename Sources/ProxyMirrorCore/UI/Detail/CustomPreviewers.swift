@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import ProxyMirrorFoundation
 
 extension Notification.Name {
     static let pmOpenProtobuf = Notification.Name("ProxyMirror.openProtobuf")
@@ -52,35 +53,15 @@ struct PreviewerError: LocalizedError {
 
 /// Preview scripts use the same disposable worker as interception scripts.
 enum PreviewerWorker {
-    private static let slots = DispatchSemaphore(value: 2)
-    static func render(source: String, input: [String: Any]) throws -> String {
-        guard slots.wait(timeout: .now()) == .success else { throw PreviewerError(Strings.Detail.thePreviewerIsBusyTryAgain) }
-        defer { slots.signal() }
+    static func render(source: String, input: [String: Any], cancellation: WorkCancellation) throws -> String {
         guard let executable = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("ProxyMirrorScriptWorker"),
               FileManager.default.isExecutableFile(atPath: executable.path) else { throw PreviewerError(Strings.Detail.theScriptWorkerWasNotFoundUseACompleteApplicationBuild) }
         let request = try JSONSerialization.data(withJSONObject: ["operation": "preview", "source": source, "input": input])
         guard request.count <= 2 * 1024 * 1024 else { throw PreviewerError(Strings.Detail.thePreviewInputExceeds2Mib) }
-        let process = Process(); process.executableURL = executable
-        let stdin = Pipe(); let stdout = Pipe()
-        process.standardInput = stdin; process.standardOutput = stdout; process.standardError = FileHandle.nullDevice
-        let finished = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in finished.signal() }
-        try process.run()
-        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .seconds(2), execute: timeout)
-        defer { timeout.cancel(); if process.isRunning { process.terminate() } }
-        DispatchQueue.global(qos: .userInitiated).async {
-            try? stdin.fileHandleForWriting.write(contentsOf: request)
-            try? stdin.fileHandleForWriting.close()
-        }
-        var output = Data()
-        while let chunk = try stdout.fileHandleForReading.read(upToCount: 65536), !chunk.isEmpty {
-            guard output.count + chunk.count <= 2 * 1024 * 1024 else { throw PreviewerError(Strings.Detail.thePreviewResultExceedsTheLimit) }
-            output.append(chunk)
-        }
-        guard finished.wait(timeout: .now() + .seconds(1)) == .success, process.terminationStatus == 0 else {
-            throw PreviewerError(Strings.Detail.thePreviewerFailedOrTimedOut)
-        }
+        let output: Data
+        do { output = try PreviewProcessRunner.run(executable: executable, input: request, cancellation: cancellation) }
+        catch PreviewProcessRunner.Failure.outputLimit { throw PreviewerError(Strings.Detail.thePreviewResultExceedsTheLimit) }
+        catch is PreviewProcessRunner.Failure { throw PreviewerError(Strings.Detail.thePreviewerFailedOrTimedOut) }
         guard let result = try JSONSerialization.jsonObject(with: output) as? [String: Any] else { throw PreviewerError(Strings.Detail.thePreviewerReturnedAnInvalidResult) }
         if let error = result["error"] as? String { throw PreviewerError(error) }
         guard let value = result["preview"] as? String else { throw PreviewerError(Strings.Detail.previewInputMustReturnTextOrJson) }
@@ -147,12 +128,21 @@ struct CustomPreviewerResultView: View {
                 "headers": headers.pairs.map { ["name": $0.name, "value": $0.value] },
                 "body": String(data: body, encoding: .utf8) ?? "", "bodyBase64": body.base64EncodedString()]
             let source = previewer.source
-            let worker = Task.detached(priority: .userInitiated) { () -> String in
-                do { return try PreviewerWorker.render(source: source, input: input) }
-                catch { return LocalizedErrorPresentation.message(for: error) }
+            let cancellation = WorkCancellation()
+            output = ""
+            do {
+                let rendered = try await withTaskCancellationHandler(operation: {
+                    try await Task.detached(priority: .userInitiated) {
+                        try PreviewerWorker.render(source: source, input: input, cancellation: cancellation)
+                    }.value
+                }, onCancel: { cancellation.cancel() })
+                if !Task.isCancelled { output = rendered }
+            } catch is CancellationError {
+                // The replacement task owns the result. Its cancelled predecessor
+                // cannot overwrite it or retain a worker slot.
+            } catch {
+                if !Task.isCancelled { output = LocalizedErrorPresentation.message(for: error) }
             }
-            let rendered = await worker.value
-            if !Task.isCancelled { output = rendered }
         }
     }
 }

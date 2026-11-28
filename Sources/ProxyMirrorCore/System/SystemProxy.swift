@@ -50,7 +50,8 @@ final class SystemProxyController {
         }
     }
 
-    func enable(port: UInt16, onDisconnect: @escaping () -> Void, completion: @escaping (Bool, String) -> Void) {
+    func enable(port: UInt16, captureLocalRequests: Bool, onDisconnect: @escaping () -> Void,
+                completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
             guard self.session == nil else { throw SystemProxyOperationError(OperationIssue.systemProxyTheSystemProxyIsEnabledRestoreTheOriginal) }
             let helper = try Self.bundledHelper()
@@ -81,10 +82,9 @@ final class SystemProxyController {
             }
             connection.resume()
             do {
-                if let hosts = SystemProxyBypass.savedHosts {
-                    try Self.request(on: connection) { $0.enableWithBypass(Int(port), hosts: hosts, reply: $1) }
-                } else {
-                    try Self.request(on: connection) { $0.enable(Int(port), reply: $1) }
+                try Self.request(on: connection) { service, reply in
+                    service.enable(Int(port), hosts: SystemProxyBypass.savedHosts,
+                                   captureLocalRequests: captureLocalRequests, reply: reply)
                 }
                 self.session = (id, connection)
             } catch {
@@ -106,11 +106,11 @@ final class SystemProxyController {
         }
     }
 
-    func updateBypass(_ hosts: [String]?, completion: @escaping (Bool, String) -> Void) {
+    func updateBypass(_ hosts: [String]?, captureLocalRequests: Bool, completion: @escaping (Bool, String) -> Void) {
         run(completion: completion) {
             guard let connection = self.session?.connection else { throw SystemProxyOperationError(OperationIssue.systemProxyEnableTheSystemProxyFirst) }
             if let hosts, let issue = SystemProxyBypassList.validationFailure(hosts) { throw issue }
-            try Self.request(on: connection) { $0.updateBypass(hosts, reply: $1) }
+            try Self.request(on: connection) { $0.updateBypass(hosts, captureLocalRequests: captureLocalRequests, reply: $1) }
         }
     }
 
@@ -346,29 +346,24 @@ enum CertInstaller {
     }
 
     /// 系统级信任安装（-d 写入系统信任存储；一次管理员授权；Chrome/所有应用直接生效）
-    static func installSystemWide(completion: @escaping (Bool, String) -> Void) {
+    static func systemWideInstallPlan(authority: CertificateAuthority = .shared) throws -> CertificateTrustInstallPlan {
+        CertificateTrustInstallPlan(certificatePEM: try authority.caPEM())
+    }
+
+    static func installSystemWide(authority: CertificateAuthority = .shared, completion: @escaping (Bool, String) -> Void) {
         do {
-            let pem = try CertificateAuthority.shared.caPEM()
-            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirrorCA.pem")
-            try pem.write(to: tmp, atomically: true, encoding: .utf8)
-            let script = "security add-trusted-cert -d -r trustRoot -p ssl -k /Library/Keychains/System.keychain \"\(tmp.path)\""
+            // Capture once before authorization. A concurrent root replacement
+            // or reveal/export cannot change the certificate being approved.
+            let plan = try systemWideInstallPlan(authority: authority)
             DispatchQueue.global().async {
-                let escaped = script.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                let p = Process()
-                p.launchPath = "/usr/bin/osascript"
-                p.arguments = ["-e", "do shell script \"\(escaped)\" with administrator privileges"]
-                let errPipe = Pipe()
-                p.standardError = errPipe
-                p.launch()
-                p.waitUntilExit()
-                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-                let errText = String(data: errData, encoding: .utf8) ?? ""
-                DispatchQueue.main.async {
-                    completion(p.terminationStatus == 0, errText)
-                }
+                let result = Result { try SystemProxyAuthorization.installCertificate(certificatePEM: plan.certificatePEM) }
+                DispatchQueue.main.async { switch result {
+                case .success: completion(true, "")
+                case .failure(let error): completion(false, LocalizedErrorPresentation.message(for: error))
+                } }
             }
         } catch {
-            completion(false, "\(error)")
+            completion(false, LocalizedErrorPresentation.message(for: error))
         }
     }
 
@@ -376,18 +371,15 @@ enum CertInstaller {
     static func installCAToLoginKeychain() -> Bool {
         do {
             let pem = try CertificateAuthority.shared.caPEM()
-            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirrorCA.pem")
-            try pem.write(to: tmp, atomically: true, encoding: .utf8)
-
-            let p = Process()
-            p.launchPath = "/usr/bin/security"
-            p.arguments = ["add-trusted-cert", "-r", "trustRoot", "-p", "ssl", "-k",
-                           FileManager.default.homeDirectoryForCurrentUser
-                               .appendingPathComponent("Library/Keychains/login.keychain-db").path,
-                           tmp.path]
-            p.launch()
-            p.waitUntilExit()
-            return p.terminationStatus == 0
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pm-user-ca-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                                                    attributes: [.posixPermissions: 0o700])
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let certificate = directory.appendingPathComponent("selected-ca.pem")
+            try PrivateAppFile.write(Data(pem.utf8), to: certificate)
+            try runCommand("/usr/bin/security", ["add-trusted-cert", "-r", "trustRoot", "-p", "ssl", "-k",
+                                                loginKeychainPath, certificate.path]).requireSuccess()
+            return true
         } catch {
             NSLog("[ProxyMirror] 安装证书失败: \(error)")
             return false
@@ -519,11 +511,11 @@ enum CertInstaller {
         }.joined(separator: "\n")
     }
 
-    static func revealCAFile() {
+    static func revealCAFile(authority: CertificateAuthority = .shared) {
         do {
-            let pem = try CertificateAuthority.shared.caPEM()
-            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirrorCA.pem")
-            try pem.write(to: tmp, atomically: true, encoding: .utf8)
+            let pem = try authority.caPEM()
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirrorCA-\(UUID().uuidString).pem")
+            try PrivateAppFile.write(Data(pem.utf8), to: tmp)
             NSWorkspace.shared.selectFile(tmp.path, inFileViewerRootedAtPath: tmp.deletingLastPathComponent().path)
         } catch {
             NSLog("[ProxyMirror] 导出证书失败: \(error)")

@@ -17,9 +17,11 @@ VISIBLE = re.compile(
 
 
 def candidates():
-    paths = list((ROOT / "Sources/ProxyMirrorCore/UI").rglob("*.swift"))
-    paths += [ROOT / "Sources/ProxyMirror/App/ProxyMirrorApp.swift",
-              ROOT / "Sources/ProxyMirror/App/LocalControl.swift"]
+    paths = []
+    for relative in ("Sources/ProxyMirrorCore/UI", "Sources/ProxyMirrorCore/DesktopApplication", "Sources/ProxyMirror"):
+        directory = ROOT / relative
+        if not directory.is_dir(): raise ValueError(f"Missing UI audit source directory: {relative}")
+        paths.extend(directory.rglob("*.swift"))
     result = {}
     for path in sorted(paths):
         for number, line in enumerate(path.read_text().splitlines(), 1):

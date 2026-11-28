@@ -51,4 +51,14 @@ func checkRules(_ test: CoreAssertions) throws {
     test.expect(mapped?.headers.value(of: "Content-Length") == nil, "Map Local delegates framing to response writer")
     test.expect(localRules.mapLocalResponse(for: "https://api.example.test/missing.bin") == nil,
                 "Map Local missing file does not synthesize a response")
+
+    let persistedRules = directory.appendingPathComponent("pending-rules.json")
+    let editedStore = RulesStore(storageURL: persistedRules)
+    editedStore.noCaching = true
+    try editedStore.flushPendingSave()
+    let reopenedStore = RulesStore(storageURL: persistedRules)
+    test.expect(reopenedStore.noCaching, "Immediate rule flush survives reopening before the debounce timer")
+    editedStore.noCaching = false
+    try editedStore.flushPendingSave()
+    test.expect(!RulesStore(storageURL: persistedRules).noCaching, "A final shutdown flush persists later edits")
 }

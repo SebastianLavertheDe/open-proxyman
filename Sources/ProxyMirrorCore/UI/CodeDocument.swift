@@ -1,3 +1,4 @@
+import ProxyMirrorFoundation
 import AppKit
 import SwiftUI
 
@@ -8,6 +9,7 @@ import SwiftUI
 struct CodeDocument: NSViewRepresentable {
     let text: String
     var attributed: AttributedString?
+    var highlights: JSONHighlightPlan?
     var fontSize: CGFloat = 12
     var wordWrap: Bool?
     var showInvisibles: Bool?
@@ -19,7 +21,7 @@ struct CodeDocument: NSViewRepresentable {
         view.configure(text: text, attributed: attributed, fontSize: fontSize,
                        wordWrap: wordWrap ?? settings.wordWrap,
                        showInvisibles: showInvisibles ?? settings.showInvisibles,
-                       settings: settings)
+                       settings: settings, highlights: highlights)
     }
 }
 
@@ -39,12 +41,13 @@ enum CodeViewportGeometry {
 @MainActor
 final class CodeDocumentContainer: NSView {
     let scrollView = NSScrollView()
-    let textView = NSTextView()
+    let textView = InspectableCodeTextView()
     let minimap = CodeMinimapView(frame: .zero)
     private var wordWrap = true
     private var scrollBeyondLastLine = false
     private var styled: Style?
     private var lastAttributed: AttributedString?
+    private var lastHighlights: JSONHighlightPlan?
     private var lastLayoutWidth: CGFloat = -1
     private var lastLayoutHeight: CGFloat = -1
 
@@ -69,6 +72,9 @@ final class CodeDocumentContainer: NSView {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+        scrollView.findBarPosition = .aboveContent
         textView.drawsBackground = false
         textView.isVerticallyResizable = true
         textView.minSize = .zero
@@ -89,13 +95,13 @@ final class CodeDocumentContainer: NSView {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     func configure(text: String, attributed: AttributedString?, fontSize: CGFloat,
-                   wordWrap: Bool, showInvisibles: Bool, settings: AppSettings) {
+                   wordWrap: Bool, showInvisibles: Bool, settings: AppSettings, highlights: JSONHighlightPlan? = nil) {
         textView.setAccessibilityLabel(Strings.Editor.bodyText)
         minimap.updateAccessibilityLabels()
         let style = Style(size: PresentationFonts.resolvedSize(fontSize, settings: settings),
                           family: settings.monospacedFontFamily, monospaced: settings.useMonospacedFont,
                           tabs: settings.codeTabWidth, wrap: wordWrap, invisibles: showInvisibles)
-        let changedText = textView.string != text || lastAttributed != attributed
+        let changedText = textView.string != text || lastAttributed != attributed || lastHighlights != highlights
         if changedText {
             let selection = textView.selectedRanges
             let output = NSMutableAttributedString(string: text, attributes: [.foregroundColor: NSColor.textColor])
@@ -109,6 +115,11 @@ final class CodeDocumentContainer: NSView {
                     offset += length
                 }
             }
+            for span in highlights?.spans ?? [] where span.offset >= 0 && span.length > 0
+                && span.offset <= output.length && span.length <= output.length - span.offset {
+                output.addAttribute(.foregroundColor, value: JSONHighlighter.color(for: span.kind),
+                                    range: NSRange(location: span.offset, length: span.length))
+            }
             textView.textStorage?.setAttributedString(output)
             textView.selectedRanges = selection.map {
                 let range = $0.rangeValue
@@ -116,6 +127,7 @@ final class CodeDocumentContainer: NSView {
                 return NSValue(range: NSRange(location: start, length: min(range.length, output.length - start)))
             }
             lastAttributed = attributed
+            lastHighlights = highlights
         }
         if styled != style || changedText {
             CodeTextStyle.apply(to: textView, settings: settings, fontSize: fontSize, wordWrap: wordWrap)
@@ -269,5 +281,73 @@ final class CodeMinimapView: NSView {
         guard let document else { return false }
         scroll(to: document.scrollView.contentView.bounds.minY - document.scrollView.contentSize.height * 0.8)
         return true
+    }
+}
+
+
+/// Keyboard handling stays with the first responder, so text zoom cannot trigger
+/// the main traffic table's highlight command. Transform results never edit capture.
+@MainActor
+final class InspectableCodeTextView: NSTextView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.command), !flags.contains(.option), !flags.contains(.control),
+           let key = event.charactersIgnoringModifiers, ["+", "=", "-", "0"].contains(key) {
+            let settings = AppSettings.shared
+            settings.fontSize = key == "0" ? 12 : min(32, max(8, settings.fontSize + (key == "-" ? -1 : 1)))
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        guard selectedRange().length > 0 else { return menu }
+        menu.addItem(.separator())
+        for operation in SelectionTransform.allCases {
+            let item = NSMenuItem(title: Self.title(operation), action: #selector(transformSelection(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = operation.rawValue
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    private static func title(_ operation: SelectionTransform) -> String {
+        switch operation {
+        case .prettifyJSON: return Strings.Detail.bodyToolsPrettifyJson
+        case .prettifyXML: return Strings.Detail.bodyToolsPrettifyXml
+        case .decodeBase64: return Strings.Detail.bodyToolsDecodeBase64
+        case .decodeJWT: return Strings.Detail.bodyToolsDecodeJwt
+        case .convertTimestamp: return Strings.Detail.bodyToolsConvertTimestamp
+        case .keyValue: return Strings.Detail.bodyToolsKeyValue
+        }
+    }
+
+    @objc private func transformSelection(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let operation = SelectionTransform(rawValue: raw) else { return }
+        let range = selectedRange()
+        guard range.length > 0, NSMaxRange(range) <= (string as NSString).length else { return }
+        let input = (string as NSString).substring(with: range)
+        guard let output = operation.apply(input) else { BodyExportService.show(Strings.Detail.bodyToolsInvalidSelection); return }
+        let alert = NSAlert()
+        alert.messageText = Self.title(operation)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 300))
+        scroll.hasVerticalScroller = true
+        let text = NSTextView(frame: scroll.bounds)
+        text.isEditable = false
+        text.isSelectable = true
+        text.string = output
+        text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        text.isVerticallyResizable = true
+        text.textContainer?.widthTracksTextView = true
+        scroll.documentView = text
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: Strings.Common.copy)
+        alert.addButton(withTitle: Strings.Common.close)
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(output, forType: .string)
+        }
     }
 }

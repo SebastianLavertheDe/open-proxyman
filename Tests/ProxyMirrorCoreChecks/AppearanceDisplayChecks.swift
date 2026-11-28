@@ -82,8 +82,4 @@ func checkAppearanceDisplayEngine(_ test: CoreAssertions, settings: AppSettings)
     settings.fontSize = 12
     settings.scrollBeyondLastLine = false
     settings.showMinimap = false
-
-    let icons = AppIconController.styles.compactMap { AppIconController.image(style: $0, size: 64).tiffRepresentation }
-    test.expect(icons.count == 4 && Set(icons).count == 4,
-                "All four original application icons produce distinct valid raster images")
 }

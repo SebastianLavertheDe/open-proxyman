@@ -57,7 +57,9 @@ func checkComposeAndPersistence(_ test: CoreAssertions) throws {
     test.equal(record?.responseTruncated, true, "Session preserves truncation")
     test.equal(record?.responseTrailers.value(of: "x-end"), "done", "Session preserves trailers")
     test.equal(record?.comment, "round trip", "Session preserves annotations")
-    let unsupported = Data(#"{"version":2,"records":[],"pinnedDomains":[],"selected":[]}"#.utf8)
+    let unsupported = try JSONSerialization.data(withJSONObject: [
+        "version": SessionFile.currentVersion + 1, "records": [], "pinnedDomains": [], "selected": []
+    ])
     test.rejects(try SessionFile.decode(unsupported), with: SessionFile.SessionError.self, "Unknown session version fails")
     let duplicated = SessionFile(transactions: [tx, tx], pinnedDomains: [], selected: [])
     test.rejects(try SessionFile.decode(JSONEncoder().encode(duplicated)), with: SessionFile.SessionError.self,

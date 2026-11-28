@@ -42,11 +42,17 @@ defer {
 }
 let source = AppSettings(defaults: sourceDefaults)
 let target = AppSettings(defaults: targetDefaults)
+expect(!source.proxymanCompatibleShortcuts, "shortcut migration is opt in")
+source.proxymanCompatibleShortcuts = true
+expect(AppSettings(defaults: sourceDefaults).proxymanCompatibleShortcuts, "shortcut profile survives settings reload")
+source.proxymanCompatibleShortcuts = false
 expect(source.fontSize == 12 && source.useMonospacedFont && !source.scrollBeyondLastLine, "appearance defaults")
 expect(source.contentLayout == "vertical" && source.appIconStyle == "earth", "layout and icon defaults")
+expect(source.contentDividerIsVertical, "default Vertical layout separates Request and Response with a vertical divider")
 expect(source.autoStartRecording && !source.warnBeforeQuit && source.showUpdateNotifications, "launch defaults")
 expect(source.applicationLanguage == "system" && source.mcpEnabled && source.mcpRedactSensitiveData, "language and private MCP defaults")
 expect(!source.preserveOriginalHeaders && source.restorePreviousSystemProxy, "tool and proxy defaults")
+expect(source.captureLocalRequests, "system proxy captures loopback requests by default")
 expect(source.automaticTrafficCleanup && source.cleanupMemoryLimitMB == 3072 && source.cleanupIntervalMinutes == 5, "cleanup defaults")
 let changes = NotificationCounter()
 let observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
@@ -59,12 +65,15 @@ source.contentLayout = "horizontal"; source.appIconStyle = "mars"; source.appear
 source.autoStartRecording = false; source.warnBeforeQuit = true; source.showUpdateNotifications = false
 source.applicationLanguage = "en"; source.mcpEnabled = false; source.mcpRedactSensitiveData = false
 source.preserveOriginalHeaders = true; source.restorePreviousSystemProxy = false
+source.captureLocalRequests = false
 source.automaticTrafficCleanup = false; source.cleanupMemoryLimitMB = 4096; source.cleanupIntervalMinutes = 10
+source.proxymanCompatibleShortcuts = true
 let saved = RuleBackup.Preferences(source)
 expect(saved.valid, "new preference payload validates")
 let data = try JSONEncoder().encode(saved)
 let payload = try JSONDecoder().decode(RuleBackup.Preferences.self, from: data)
 payload.apply(to: target)
+expect(target.proxymanCompatibleShortcuts, "shortcut profile backup roundtrip")
 expect(target.fontSize == 18 && !target.useMonospacedFont && target.scrollBeyondLastLine, "appearance backup roundtrip")
 expect(target.contentLayout == "horizontal" && target.appIconStyle == "mars" && target.appearance == "dark", "layout, icon and theme backup roundtrip")
 expect(!target.autoStartRecording && target.warnBeforeQuit && !target.showUpdateNotifications, "behavior backup roundtrip")
@@ -72,11 +81,13 @@ expect(target.applicationLanguage == "en" && !target.mcpEnabled && !target.mcpRe
 expect(target.preserveOriginalHeaders && !target.restorePreviousSystemProxy, "tools and restore backup roundtrip")
 expect(!target.automaticTrafficCleanup && target.cleanupMemoryLimitMB == 4096 && target.cleanupIntervalMinutes == 10, "cleanup backup roundtrip")
 let reloaded = AppSettings(defaults: targetDefaults)
+expect(!reloaded.captureLocalRequests, "local capture opt-out survives backup, import and reload")
 expect(reloaded.fontSize == 18 && reloaded.contentLayout == "horizontal" && !reloaded.mcpEnabled, "real UserDefaults reload")
+expect(!reloaded.contentDividerIsVertical, "persisted Horizontal layout uses a horizontal divider for stacked panes")
 source.fontSize = .nan; expect(source.fontSize == 12, "nonfinite font size normalizes")
 source.fontSize = 100; expect(source.fontSize == 32, "large font size bounds")
 source.fontSize = -1; expect(source.fontSize == 8, "small font size bounds")
-source.contentLayout = "invalid"; expect(source.contentLayout == "vertical", "invalid layout fallback")
+source.contentLayout = "invalid"; expect(source.contentLayout == "vertical" && source.contentDividerIsVertical, "invalid layout falls back to side-by-side panes")
 source.appIconStyle = "invalid"; expect(source.appIconStyle == "earth", "invalid icon fallback")
 source.applicationLanguage = "invalid"; expect(source.applicationLanguage == "system", "invalid language fallback")
 source.cleanupMemoryLimitMB = 0; source.cleanupIntervalMinutes = 100
@@ -92,6 +103,12 @@ for (key, invalid) in [("fontSize", 7 as Any), ("fontSize", 33 as Any), ("conten
         from: JSONSerialization.data(withJSONObject: object))
     expect(!invalidPayload.valid, "reject invalid imported " + key)
 }
+var olderExtras = extras
+olderExtras.removeValue(forKey: "captureLocalRequests")
+object["extras"] = olderExtras
+let older = try JSONDecoder().decode(RuleBackup.Preferences.self, from: JSONSerialization.data(withJSONObject: object))
+older.apply(to: target)
+expect(!target.captureLocalRequests, "old backup preserves local capture opt-out")
 object.removeValue(forKey: "extras")
 let partial = try JSONDecoder().decode(RuleBackup.Preferences.self, from: JSONSerialization.data(withJSONObject: object))
 target.fontSize = 14; target.mcpRedactSensitiveData = true; target.applicationLanguage = "zh-Hans"
@@ -100,7 +117,9 @@ expect(target.fontSize == 14 && target.mcpRedactSensitiveData && target.applicat
 target.port = 9091; target.warnBeforeQuit = true; target.showMenuBarIcon = true
 target.defaultCopyFormat = .python; target.contentLayout = "horizontal"; target.fontSize = 20
 target.showInvisibles = true; target.showMinimap = true
+target.proxymanCompatibleShortcuts = true
 target.resetAppearanceDefaults()
+expect(!target.proxymanCompatibleShortcuts, "appearance reset restores the opt-in shortcut profile")
 expect(target.fontSize == 12 && target.useMonospacedFont && !target.scrollBeyondLastLine
     && !target.showInvisibles && !target.showMinimap && target.appIconStyle == "earth" && target.appearance == "system", "appearance-only reset")
 expect(target.port == 9091 && target.warnBeforeQuit && target.showMenuBarIcon && target.defaultCopyFormat == .python
@@ -134,7 +153,8 @@ def main():
         (directory / "main.swift").write_text(MAIN)
         executable = directory / "preference-checks"
         subprocess.run([compiler, "-swift-version", "5", "-module-cache-path", str(directory / "modules"),
-                        str(directory / "Stubs.swift"), str(directory / "AppSettings.swift"), str(directory / "Preferences.swift"),
+                        str(directory / "Stubs.swift"), str(ROOT / "Sources/ProxyMirrorCore/Localization/AppLanguage.swift"),
+                        str(directory / "AppSettings.swift"), str(directory / "Preferences.swift"),
                         str(directory / "main.swift"),
                         "-o", str(executable)], check=True, timeout=120)
         subprocess.run([str(executable)], check=True, timeout=30)

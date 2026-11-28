@@ -26,7 +26,7 @@ struct SseEventsView: View {
                 Text(Strings.Detail.events(tx.sseEvents.count))
                 if tx.sseEventsTruncated { Text(Strings.Detail.truncated) }
                 if let first = tx.sseEvents.first?.at, let last = tx.sseEvents.last?.at {
-                    Text(Strings.Detail.span1fs(max(last.timeIntervalSince(first), 0)))
+                    Text(Strings.Detail.span1fs(Float(max(last.timeIntervalSince(first), 0))))
                 }
                 Spacer()
             }
@@ -39,7 +39,7 @@ struct SseEventsView: View {
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
             }
             if let issue = tx.sseParseIssue {
-                Text(issue).font(.caption).foregroundStyle(tx.sseDecodingDeferred ? Color.secondary : Color.orange)
+                Text(issue.localizedPresentation).font(.caption).foregroundStyle(tx.sseDecodingDeferred ? Color.secondary : Color.orange)
                     .textSelection(.enabled).padding(.horizontal, 10)
             }
             if tx.sseEvents.isEmpty {

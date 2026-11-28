@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import NIOCore
+import ProxyMirrorFoundation
 
 // MARK: - 过滤器（对齐 Proxyman 语义：某类条件为空 = 不限制）
 
@@ -87,6 +88,18 @@ final class TrafficStore: ObservableObject {
     private let data: TrafficData
     private var mutations: AnyCancellable?
     private var preferenceChanges: AnyCancellable?
+    private var jsonCacheChanges: AnyCancellable?
+    private var derivedChanges: AnyCancellable?
+    private var refilterScheduled = false
+    private final class PendingFilter { weak var transaction: Transaction?; init(_ tx: Transaction) { transaction = tx } }
+    private var pendingFilters: [ObjectIdentifier: PendingFilter] = [:]
+    var filteringCapturedValues: Bool {
+        pendingFilters = pendingFilters.filter { _, pending in
+            guard let tx = pending.transaction else { return false }
+            return transactionInSource(tx.id) === tx
+        }
+        return !pendingFilters.isEmpty
+    }
     private var hideAppleTraffic = UserDefaults.standard.bool(forKey: "ui.hideAppleTraffic")
     // Cache Combine's synthesized publisher so manual notifications don't repeat
     // field discovery. This also keeps @Published properties on the same publisher.
@@ -94,11 +107,19 @@ final class TrafficStore: ObservableObject {
     private var workspaceVisible = true
     private var receivedWhileHidden = false
     private var visibleRows: [Transaction]? {
-        didSet { sortedRows = nil }
+        didSet { sortedRows = nil; sortRevision &+= 1 }
     }
     private var visiblePins: [String]?
     private var sortedRows: (column: TrafficColumn, ascending: Bool, rows: [Transaction])?
     private var sortRevision: UInt64 = 0
+    private var jsonSorting: Task<Void, Never>?
+    private var jsonSortRequest: (column: TrafficColumn, ascending: Bool)?
+    private var jsonSortGeneration = UUID()
+    private var publishedJSONKeys: [JSONFieldCache.Key] = []
+    private var pendingJSONRows = 0
+    var sortingBodyValues: Bool { jsonSorting != nil || pendingJSONRows > 0 }
+    private var jsonSortRetryAfter: TimeInterval = 0
+    private var jsonSortPressureGeneration = UUID()
     var sortsByCapturedBody = false
     private var pendingBodies: Set<UUID> = []
     var transactions: [Transaction] { data.transactions }
@@ -159,10 +180,10 @@ final class TrafficStore: ObservableObject {
     @Published var archiveName: String?
     var savedError: String? { data.savedError }
     private var savedPins: [String] = []
-    private var matchesConditions: (Transaction) -> Bool = { _ in true }
+    private var matchesConditions: (Transaction) -> PresentationPredicateResult = { _ in .matched }
     @Published var filter = TrafficFilter() {
         didSet {
-            if oldValue.conditions != filter.conditions { matchesConditions = filter.conditions.compile() }
+            if oldValue.conditions != filter.conditions { matchesConditions = filter.conditions.compileForPresentation() }
             visibilityChanged()
         }
     }
@@ -243,6 +264,9 @@ final class TrafficStore: ObservableObject {
          savedFile: URL = CertificateAuthority.applicationSupport.appendingPathComponent("Saved.proxymirror")) {
         data = original?.data ?? TrafficData(sourceFolderFile: sourceFolderFile, savedFile: savedFile)
         mutations = data.changed.sink { [weak self] change in self?.refreshSharedData(change) }
+        jsonCacheChanges = NotificationCenter.default.publisher(for: .pmJSONColumnCacheWillClear)
+            .sink { [weak self] _ in self?.clearJSONSortingForPressure() }
+        derivedChanges = CustomColumnValues.shared.objectWillChange.sink { [weak self] _ in self?.scheduleDerivedRefilter() }
         preferenceChanges = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: UserDefaults.standard)
             .receive(on: RunLoop.main).sink { [weak self] _ in
                 guard let self else { return }
@@ -257,6 +281,7 @@ final class TrafficStore: ObservableObject {
     func setWorkspaceVisible(_ visible: Bool) {
         guard workspaceVisible != visible else { return }
         workspaceVisible = visible
+        if !visible { cancelJSONSorting(); pendingFilters.removeAll() }
         visibleRows = nil
         if visible {
             refreshSharedData()
@@ -389,6 +414,7 @@ final class TrafficStore: ObservableObject {
     }
 
     private func visibilityChanged() {
+        pendingFilters.removeAll()
         visibleRows = nil
         reconcileSelection()
     }
@@ -427,18 +453,113 @@ final class TrafficStore: ObservableObject {
         return rows
     }
 
+    private func backgroundKey(_ transaction: Transaction, column: TrafficColumn) -> JSONFieldCache.Key {
+        if case .custom(let field) = column {
+            return CustomColumnValues.shared.key(for: transaction, request: field.source == .requestJSON)
+        }
+        return CustomColumnValues.shared.graphqlKey(for: transaction)
+    }
+
     func displayedRows(sortedBy column: TrafficColumn, ascending: Bool) -> (rows: [Transaction], revision: UInt64) {
         let rows = visible
         if let sortedRows, sortedRows.column == column, sortedRows.ascending == ascending {
             return (sortedRows.rows, sortRevision)
         }
+        let backgroundColumn: Bool
+        if case .custom(let field) = column { backgroundColumn = field.readsJSON }
+        else { backgroundColumn = column == .graphql }
+        if backgroundColumn {
+            if jsonSortRequest?.column != column || jsonSortRequest?.ascending != ascending {
+                cancelJSONSorting()
+                jsonSortRequest = (column, ascending)
+            }
+            let keys = rows.map { backgroundKey($0, column: column) }
+            let publication = ColumnOrderPublication.reconcile(ordered: publishedJSONKeys, current: keys)
+            publishedJSONKeys = publication.orderedKeys
+            pendingJSONRows = publication.pendingCount
+            let ordered = publication.indices.map { rows[$0] }
+            // Live metadata batches do not cancel the worker. A completed round
+            // publishes its unchanged keys, keeping newly captured rows visible.
+            if pendingJSONRows > 0, jsonSorting == nil, workspaceVisible,
+               ProcessInfo.processInfo.systemUptime >= jsonSortRetryAfter {
+                startJSONSorting(rows, keys: keys, column: column, ascending: ascending)
+            }
+            sortedRows = (column, ascending, ordered)
+            return (ordered, sortRevision)
+        }
+        cancelJSONSorting()
         let ordered = column.sorted(rows, ascending: ascending)
         sortedRows = (column, ascending, ordered)
         sortRevision &+= 1
         return (ordered, sortRevision)
     }
 
+    private func startJSONSorting(_ rows: [Transaction], keys: [JSONFieldCache.Key], column: TrafficColumn, ascending: Bool) {
+        let generation = jsonSortGeneration
+        let snapshots = rows.map { transaction -> BackgroundColumnSnapshot in
+            if case .custom(let field) = column { return .json(field.snapshot(for: transaction), path: field.key) }
+            return .graphql(CustomColumnValues.shared.graphqlSnapshot(for: transaction))
+        }
+        let inputs = zip(snapshots, rows.map(\.seq)).map { snapshot, sequence in
+            JSONColumnSort.ValueInput(sequence: sequence) { await snapshot.value() }
+        }
+        let worker = Task.detached(priority: .userInitiated) {
+            await JSONColumnSort.indices(values: inputs, ascending: ascending)
+        }
+        jsonSorting = Task { [weak self] in
+            let indices = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+            guard !Task.isCancelled, let self, self.jsonSortGeneration == generation else { return }
+            self.jsonSorting = nil
+            guard let indices else { self.sortedRows = nil; self.changePublisher.send(); return }
+            let current = self.visible
+            let currentKeys = current.map { self.backgroundKey($0, column: column) }
+            let publication = ColumnOrderPublication.reconcile(ordered: indices.map { keys[$0] }, current: currentKeys)
+            self.publishedJSONKeys = publication.orderedKeys
+            self.pendingJSONRows = publication.pendingCount
+            self.sortedRows = (column, ascending, publication.indices.map { current[$0] })
+            self.sortRevision &+= 1
+            // A pending tail needs a next round. Clear the memo so the next view
+            // read schedules it; existing sorted keys remain a stable prefix.
+            if publication.pendingCount > 0 { self.sortedRows = nil }
+            self.changePublisher.send()
+        }
+        sortRevision &+= 1
+    }
+
+    private func cancelJSONSorting() {
+        jsonSorting?.cancel(); jsonSorting = nil; jsonSortRequest = nil
+        publishedJSONKeys.removeAll(); pendingJSONRows = 0
+        jsonSortGeneration = UUID()
+    }
+
+    private func scheduleDerivedRefilter() {
+        guard workspaceVisible, !pendingFilters.isEmpty, !refilterScheduled else { return }
+        refilterScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            guard let self else { return }
+            self.refilterScheduled = false
+            guard self.workspaceVisible, !self.pendingFilters.isEmpty else { return }
+            self.pendingFilters.removeAll()
+            self.visibleRows = nil
+            self.reconcileSelection()
+            self.changePublisher.send()
+        }
+    }
+
+    private func clearJSONSortingForPressure() {
+        cancelJSONSorting()
+        jsonSortRetryAfter = ProcessInfo.processInfo.systemUptime + 2
+        let generation = UUID()
+        jsonSortPressureGeneration = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) { [weak self] in
+            guard let self, self.jsonSortPressureGeneration == generation else { return }
+            self.jsonSortRetryAfter = 0
+            self.changePublisher.send()
+        }
+    }
+
     private func isVisible(_ tx: Transaction) -> Bool {
+        pendingFilters[ObjectIdentifier(tx)] = nil
         if hideAppleTraffic, Self.isSimulatorAppleBackgroundTraffic(tx) { return false }
         guard !tx.hideFromList,
               extraChips.isEmpty ? tx.matches(chip: activeChip) : extraChips.contains(where: { tx.matches(chip: $0) })
@@ -456,17 +577,18 @@ final class TrafficStore: ObservableObject {
         case .folder(let id):
             guard data.foldersByID[id]?.matches(tx) == true else { return false }
         }
-        return (filter.isEmptyActive || filter.matches(tx)) && matchesConditions(tx)
+        guard filter.isEmptyActive || filter.matches(tx) else { return false }
+        switch matchesConditions(tx) {
+        case .matched: return true
+        case .notMatched: return false
+        case .pending:
+            pendingFilters[ObjectIdentifier(tx)] = PendingFilter(tx)
+            return true
+        }
     }
 
     static func isSimulatorAppleBackgroundTraffic(_ tx: Transaction) -> Bool {
-        guard tx.isIOSSimulator else { return false }
-        let host = tx.host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        // Only known service endpoints; an app deliberately visiting apple.com remains visible.
-        let domains = ["mesu.apple.com", "gdmf.apple.com", "configuration.apple.com", "xp.apple.com",
-                       "push.apple.com", "gateway.icloud.com", "pancake.apple.com", "captive.apple.com",
-                       "time.apple.com", "time-ios.apple.com", "apple-dns.net"]
-        return domains.contains { host == $0 || host.hasSuffix("." + $0) }
+        SimulatorTrafficPolicy.isBackgroundTraffic(host: tx.host, isSimulator: tx.isIOSSimulator)
     }
 
     func isChipSelected(_ chip: FilterChip) -> Bool {
@@ -672,6 +794,7 @@ final class TrafficStore: ObservableObject {
     }
 
     func clear() {
+        cancelJSONSorting(); pendingFilters.removeAll()
         switch filterMode {
         case .saved:
             data.editSaved { $0.removeAll() }
@@ -707,6 +830,7 @@ final class TrafficStore: ObservableObject {
     }
 
     func loadArchive(_ records: [Transaction], name: String, pins: [String] = [], selection: [UUID] = []) {
+        cancelJSONSorting(); pendingFilters.removeAll()
         resetFilters()
         followLatest = false
         archive = records
@@ -770,9 +894,12 @@ final class TrafficStore: ObservableObject {
         case 201: return "Created"
         case 204: return "No Content"
         case 301: return "Moved Permanently"
+        case 403: return "Forbidden"
         case 404: return "Not Found"
         case 422: return "Unprocessable Entity"
+        case 429: return "Too Many Requests"
         case 500: return "Internal Server Error"
+        case 503: return "Service Unavailable"
         default: return "Status \(code)"
         }
     }
@@ -875,8 +1002,7 @@ private final class TrafficData {
     private enum SavedState { case loading, ready, unavailable }
     private var savedState = SavedState.loading
     private var queuedEdits: [(inout SavedRequestFolderArchive) throws -> Void] = []
-    private var writingSaved = false
-    private var nextWrite: SavedRequestFolderArchive?
+    private var savedWrites = SnapshotSaveState<SavedRequestFolderArchive>()
     private var saveWaiters: [(Bool) -> Void] = []
 
     init(sourceFolderFile: URL, savedFile: URL) {
@@ -1026,9 +1152,9 @@ private final class TrafficData {
     @discardableResult
     func removeOldestCompleted(count: Int) -> Int {
         guard count > 0 else { return 0 }
-        let ids = Set(live.filter { $0.state == .completed || $0.state == .failed }
-            .sorted { $0.startedAt == $1.startedAt ? $0.seq < $1.seq : $0.startedAt < $1.startedAt }
-            .prefix(count).map(\.id))
+        let candidates = live.map { TrafficRetention.Candidate(id: $0.id, startedAt: $0.startedAt,
+            sequence: $0.seq, completed: $0.state == .completed || $0.state == .failed) }
+        let ids = TrafficRetention.oldestCompleted(candidates, count: count)
         guard !ids.isEmpty else { return 0 }
         remove(ids)
         return ids.count
@@ -1134,14 +1260,12 @@ private final class TrafficData {
 
     func persistSaved() {
         guard savedState == .ready else { return }
-        nextWrite = savedLibrarySnapshot()
+        savedWrites.enqueue(savedLibrarySnapshot())
         writeNextSaved()
     }
 
     private func writeNextSaved() {
-        guard !writingSaved, let snapshot = nextWrite else { return }
-        nextWrite = nil
-        writingSaved = true
+        guard let snapshot = savedWrites.beginWrite() else { return }
         let destination = SavedRequestFolderArchive.fileURL(for: savedFile)
         savedQueue.async { [weak self] in
             let result = Result {
@@ -1154,8 +1278,12 @@ private final class TrafficData {
     }
 
     private func savedWriteFinished(_ result: Result<Void, Error>) {
-        writingSaved = false
-        if nextWrite != nil { writeNextSaved(); return }
+        let succeeded: Bool
+        if case .success = result { succeeded = true } else { succeeded = false }
+        if savedWrites.completeWrite(succeeded: succeeded) == .newerSnapshot {
+            writeNextSaved()
+            return
+        }
         switch result {
         case .success:
             savedIssue = nil
@@ -1168,8 +1296,11 @@ private final class TrafficData {
     }
 
     func finishSaving(_ completion: @escaping (Bool) -> Void) -> Bool {
-        guard writingSaved || !queuedEdits.isEmpty else { return false }
+        guard savedWrites.hasChanges || !queuedEdits.isEmpty else { return false }
         saveWaiters.append(completion)
+        // A completed failed write is still dirty. Each quit attempt retries it
+        // once; failure replies false instead of being mistaken for idle success.
+        writeNextSaved()
         return true
     }
 

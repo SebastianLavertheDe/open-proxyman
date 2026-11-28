@@ -231,10 +231,11 @@ def check_cancelled_client(binary, env, origin, proxy_port, origin_url):
         row = captured_row(binary, env, path, state="failed")
         har = json.loads(command(binary, env, "export-har", "--id", row["id"], "--output", "-"))
         error = har["log"]["entries"][0]["response"]["_error"]
+        failure = har["log"]["entries"][0]["response"].get("_proxyMirrorFailure", {})
         require(0 < row["responseBytes"] < len(LARGE_CHUNK) * LARGE_CHUNK_COUNT,
                 f"cancellation did not leave a partially captured response: {row!r}")
-        require("客户端" in error or "connection reset by peer" in error.lower(),
-                f"cancelled client was not recorded as a client failure: {error!r}")
+        require(failure.get("code") in {"network_client_closed", "network_client_write_failed", "network_connection_error"},
+                f"cancelled client was not recorded with a client failure identity: {failure!r}, diagnostic: {error!r}")
     finally:
         origin.response_gates[path].set()
     passed("client cancellation closes an incomplete response and records a client error")

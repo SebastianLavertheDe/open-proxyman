@@ -124,8 +124,14 @@ enum CertificateFormats {
             guard key.publicKey == leaf.publicKey else { throw FormatError(OperationIssue.certificateFormatsTheFirstCertificateInTheChainDoesNot) }
         }
         switch purpose {
-        case .rootCA, .upstreamCA:
-            for certificate in purpose == .rootCA ? [leaf] : chain {
+        case .rootCA:
+            guard let pem = material.privateKeyPEM else {
+                throw FormatError(OperationIssue.certificateFormatsThisPurposeRequiresAMatchingPrivateKeySelect)
+            }
+            let key = try Certificate.PrivateKey(pemEncoded: pem)
+            try validateRootCA(leaf, privateKey: key, now: now)
+        case .upstreamCA:
+            for certificate in chain {
                 guard case .isCertificateAuthority? = try certificate.extensions.basicConstraints else {
                     throw FormatError(OperationIssue.certificateFormatsACaCertificateMustDeclareCaBasicConstraints)
                 }
@@ -147,6 +153,21 @@ enum CertificateFormats {
             }
             guard ClientTLSIdentities.hostPattern(host) != nil else { throw FormatError(OperationIssue.certificateFormatsEnterAValidTargetHostOrExampleCom) }
             if purpose == .server { try validateServerHost(leaf, host: host) }
+        }
+    }
+
+    static func validateRootCA(_ certificate: Certificate, privateKey: Certificate.PrivateKey,
+                               now: Date = Date()) throws {
+        do { try RootCAValidation.validate(certificate, privateKey: privateKey, now: now) }
+        catch let failure as RootCAValidation.Failure {
+            let issue: OperationIssue
+            switch failure {
+            case .outsideValidity: issue = .certificateFormatsTheCertificateChainContainsACertificateThatIs
+            case .keyMismatch: issue = .certificateFormatsTheFirstCertificateInTheChainDoesNot
+            case .notCertificateAuthority: issue = .certificateFormatsACaCertificateMustDeclareCaBasicConstraints
+            case .signingNotPermitted: issue = .certificateFormatsTheCaCertificateKeyUsageDoesNotPermit
+            }
+            throw FormatError(issue)
         }
     }
 

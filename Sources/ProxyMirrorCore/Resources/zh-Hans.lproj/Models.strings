@@ -289,3 +289,5 @@
 "summary_bucket_unanswered" = "未完成 / 未响应";
 "summary_no_host" = "（无主机）";
 "validation_rule_context" = "%@：%@";
+
+"diff_output_limit" = "对比输出最多显示 1 MiB。";

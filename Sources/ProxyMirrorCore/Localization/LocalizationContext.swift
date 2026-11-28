@@ -30,10 +30,13 @@ struct LocalizationContext {
         if let value = selectedBundle?.localizedString(forKey: key, value: marker, table: table), value != marker {
             return Lookup(value: value, language: language, usedFallback: false)
         }
-        reportMissing(table, key)
         if let value = englishBundle?.localizedString(forKey: key, value: marker, table: table), value != marker {
+            // Missing entries in staged translations are expected. Preserve the
+            // diagnostic for complete locales without flooding the app log.
+            if language == .english || language == .simplifiedChinese { reportMissing(table, key) }
             return Lookup(value: value, language: .english, usedFallback: true)
         }
+        reportMissing(table, key)
         return Lookup(value: englishFallback, language: .english, usedFallback: true)
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import ProxyMirrorFoundation
 import zlib
 
 /// SSE（text/event-stream）增量解析：按 W3C 事件流规范逐字节切行，
@@ -135,10 +136,10 @@ struct SSEStreamState {
 struct SSEInspectionSnapshot: Codable, Sendable {
     var events: [SSEEvent]
     var truncated: Bool
-    var issue: String?
+    var issue: CapturedFailure?
     var deferred: Bool
 
-    init(events: [SSEEvent], truncated: Bool = false, issue: String? = nil, deferred: Bool = false) {
+    init(events: [SSEEvent], truncated: Bool = false, issue: CapturedFailure? = nil, deferred: Bool = false) {
         self.events = events
         self.truncated = truncated
         self.issue = issue
@@ -151,6 +152,48 @@ struct SSEInspectionSnapshot: Codable, Sendable {
         issue = transaction.sseParseIssue
         deferred = transaction.sseDecodingDeferred
     }
+
+    private enum CodingKeys: String, CodingKey { case events, truncated, issue, deferred }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        events = try container.decode([SSEEvent].self, forKey: .events)
+        truncated = try container.decode(Bool.self, forKey: .truncated)
+        deferred = try container.decode(Bool.self, forKey: .deferred)
+        if let legacy = try? container.decode(String.self, forKey: .issue) {
+            issue = Self.legacyIssue(legacy)
+        } else {
+            issue = try container.decodeIfPresent(CapturedFailure.self, forKey: .issue)
+        }
+    }
+
+    /// Previous sessions stored rendered Chinese text. Migrate only our exact
+    /// known messages; unrelated diagnostics must remain the original content.
+    private static func legacyIssue(_ diagnostic: String) -> CapturedFailure {
+        let known: [(String, OperationIssue)] = [
+            ("SSE 正文超过 32 MiB 解析上限，后续事件未解析。", .sseBodyOutputLimit),
+            ("连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。可在原文查看捕获字节。", .sseBodyIncomplete),
+            ("连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。", .sseBodyIncomplete),
+            ("SSE 压缩正文不完整，已显示可恢复的事件。", .sseCompressedBodyIncomplete),
+            ("无法初始化 SSE 压缩解码。", .sseDecoderInitializationFailed),
+            ("SSE 压缩正文包含多余数据。", .sseCompressedBodyExtraData),
+            ("SSE 压缩正文损坏，已显示可恢复的事件。", .sseCompressedBodyInvalid),
+            ("SSE 压缩正文已截断，无法完整解码。", .sseCompressedBodyTruncated),
+            ("SSE 解压正文超过 32 MiB。", .sseCompressedBodyOutputLimit),
+            ("无法解码 SSE 压缩正文。可在原文查看捕获字节。", .sseDecodeFailed),
+            ("没有可解码的 SSE 正文。", .sseNoDecodableBody),
+        ]
+        var matched = known.first { $0.0 == diagnostic }?.1
+        let deferredPrefix = "SSE 的 ", deferredSuffix = " 正文将在接收完成后解析。"
+        let unsupportedPrefix = "暂不支持 SSE Content-Encoding: ", unsupportedSuffix = "。可在原文查看捕获字节。"
+        if diagnostic.hasPrefix(deferredPrefix), diagnostic.hasSuffix(deferredSuffix) {
+            matched = .sseDecodingDeferred(String(diagnostic.dropFirst(deferredPrefix.count).dropLast(deferredSuffix.count)))
+        } else if diagnostic.hasPrefix(unsupportedPrefix), diagnostic.hasSuffix(unsupportedSuffix) {
+            matched = .sseEncodingUnsupported(String(diagnostic.dropFirst(unsupportedPrefix.count).dropLast(unsupportedSuffix.count)))
+        }
+        guard let matched else { return CapturedFailure(code: "external_detail", diagnostic: diagnostic) }
+        return CapturedFailure(code: matched.code, arguments: matched.arguments, diagnostic: diagnostic)
+    }
 }
 
 /// Only the owning capture loop mutates this parser. gzip/deflate emit events as
@@ -158,7 +201,7 @@ struct SSEInspectionSnapshot: Codable, Sendable {
 final class SSEBodyStream {
     private var parser = SSEStreamState()
     private let inflater: SSEIncrementalInflater?
-    private(set) var issue: String?
+    private(set) var issue: CapturedFailure?
     private(set) var deferred: Bool
     private var decodedBytes = 0
     private static let decodedLimit = ContentCoding.maxDecodedBytes
@@ -174,8 +217,8 @@ final class SSEBodyStream {
         } else {
             inflater = nil
             deferred = encodings.allSatisfy { ContentCoding.supported.contains($0) }
-            issue = deferred ? "SSE 的 \(encodings.joined(separator: ", ")) 正文将在接收完成后解析。"
-                : "暂不支持 SSE Content-Encoding: \(encodings.joined(separator: ", "))。可在原文查看捕获字节。"
+            issue = (deferred ? OperationIssue.sseDecodingDeferred(encodings.joined(separator: ", "))
+                : .sseEncodingUnsupported(encodings.joined(separator: ", "))).capturedFailure
         }
     }
 
@@ -201,14 +244,14 @@ final class SSEBodyStream {
                 try accept(Data(bytes), at: date)
             }
         } catch {
-            issue = error.localizedDescription
+            issue = NetworkFailure.capture(error)
         }
     }
 
     private func accept(_ bytes: Data, at date: Date?) throws {
         try Task.checkCancellation()
         guard bytes.count <= Self.decodedLimit - decodedBytes else {
-            throw QueryError("SSE 正文超过 32 MiB 解析上限，后续事件未解析。")
+            throw NetworkFailure(.sseBodyOutputLimit)
         }
         decodedBytes += bytes.count
         parser.append(bytes, at: date)
@@ -217,9 +260,9 @@ final class SSEBodyStream {
     func finish(complete: Bool = true) {
         if deferred, !complete {
             deferred = false
-            issue = "连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。可在原文查看捕获字节。"
+            issue = OperationIssue.sseBodyIncomplete.capturedFailure
         } else if issue == nil, !parser.truncated, let inflater, !inflater.finished {
-            issue = "SSE 压缩正文不完整，已显示可恢复的事件。"
+            issue = OperationIssue.sseCompressedBodyIncomplete.capturedFailure
         }
     }
 }
@@ -238,7 +281,7 @@ private final class SSEIncrementalInflater {
 
     private func initialize(window: Int32) throws {
         guard inflateInit2_(&stream, window, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
-            throw QueryError("无法初始化 SSE 压缩解码。")
+            throw NetworkFailure(.sseDecoderInitializationFailed)
         }
         initialized = true
     }
@@ -257,7 +300,7 @@ private final class SSEIncrementalInflater {
         }
         if finished {
             guard gzip, inflateReset2(&stream, MAX_WBITS + 16) == Z_OK else {
-                throw QueryError("SSE 压缩正文包含多余数据。")
+                throw NetworkFailure(.sseCompressedBodyExtraData)
             }
             finished = false
         }
@@ -306,14 +349,14 @@ private final class SSEIncrementalInflater {
                     finished = true
                     if stream.avail_in == 0 { return }
                     guard gzip, inflateReset2(&stream, MAX_WBITS + 16) == Z_OK else {
-                        throw QueryError("SSE 压缩正文包含多余数据。")
+                        throw NetworkFailure(.sseCompressedBodyExtraData)
                     }
                     finished = false
                 } else if status == Z_BUF_ERROR, stream.avail_in == 0, count == 0 {
                     return
                 } else {
                     guard status == Z_OK, count > 0 || stream.avail_in < before else {
-                        throw QueryError("SSE 压缩正文损坏，已显示可恢复的事件。")
+                        throw NetworkFailure(.sseCompressedBodyInvalid)
                     }
                     if stream.avail_in == 0, stream.avail_out > 0 { return }
                 }
@@ -329,8 +372,8 @@ enum SSEBodyRecovery {
         if stream.deferred {
             guard complete, !truncated else {
                 return SSEInspectionSnapshot(events: [], truncated: truncated,
-                    issue: truncated ? "SSE 压缩正文已截断，无法完整解码。" :
-                        failed ? "连接已结束，未完整接收 SSE 压缩正文，无法恢复事件。" : stream.issue,
+                    issue: truncated ? OperationIssue.sseCompressedBodyTruncated.capturedFailure :
+                        failed ? OperationIssue.sseBodyIncomplete.capturedFailure : stream.issue,
                     deferred: !truncated && !failed)
             }
             switch ContentCoding.decodeIfCompressed(data, encodings: SSEBodyStream.encodings(headers)) {
@@ -339,11 +382,11 @@ enum SSEBodyRecovery {
                 parser.append(decoded.0, at: nil)
                 return SSEInspectionSnapshot(events: parser.events, truncated: parser.truncated)
             case .failure(.outputLimit):
-                return SSEInspectionSnapshot(events: [], issue: "SSE 解压正文超过 32 MiB。")
+                return SSEInspectionSnapshot(events: [], issue: OperationIssue.sseCompressedBodyOutputLimit.capturedFailure)
             case .failure:
-                return SSEInspectionSnapshot(events: [], issue: "无法解码 SSE 压缩正文。可在原文查看捕获字节。")
+                return SSEInspectionSnapshot(events: [], issue: OperationIssue.sseDecodeFailed.capturedFailure)
             case nil:
-                return SSEInspectionSnapshot(events: [], issue: "没有可解码的 SSE 正文。")
+                return SSEInspectionSnapshot(events: [], issue: OperationIssue.sseNoDecodableBody.capturedFailure)
             }
         }
         stream.append(data, at: nil)

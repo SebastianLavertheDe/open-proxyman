@@ -7,6 +7,7 @@ struct TrafficDiffWorkspaceView: View {
     @ObservedObject var appState: AppState
     @State private var leftID: UUID?
     @State private var rightID: UUID?
+    @State private var poolSelection: UUID?
 
     private var pool: [Transaction] { appState.diffPool }
 
@@ -19,7 +20,7 @@ struct TrafficDiffWorkspaceView: View {
                     Button { addSelection() } label: { Image(systemName: "plus") }
                         .help(Strings.Detail.addRequestsSelectedInTheMainWindowToTheComparisonPool)
                 }.padding(.horizontal, 10)
-                List(pool) { transaction in
+                List(pool, selection: $poolSelection) { transaction in
                     VStack(alignment: .leading, spacing: 5) {
                         Text("#\(transaction.seq) \(transaction.method)").font(.caption).foregroundStyle(.secondary)
                         Text(transaction.fullURL).lineLimit(2).help(transaction.fullURL)
@@ -32,8 +33,12 @@ struct TrafficDiffWorkspaceView: View {
                                     .buttonStyle(.borderless).help(Strings.Detail.removeFromComparisonPool)
                             }
                         }
-                    }.padding(.vertical, 3)
+                    }.padding(.vertical, 3).tag(transaction.id)
                 }
+                HStack {
+                    Button(Strings.Detail.left) { leftID = poolSelection }.keyboardShortcut("[", modifiers: .command)
+                    Button(Strings.Detail.right) { rightID = poolSelection }.keyboardShortcut("]", modifiers: .command)
+                }.disabled(poolSelection == nil).padding(.horizontal, 10)
                 Button(Strings.Detail.clearComparisonPool) { appState.clearDiffPool() }.padding(.horizontal, 10)
             }.padding(.vertical, 10).frame(minWidth: 210, idealWidth: 250, maxWidth: 360)
             VStack(spacing: 0) {
@@ -103,12 +108,16 @@ struct TrafficDiffView: View {
     @State private var sortJSON = true
     @State private var sortHeaders = true
     @State private var wordChanges = true
-    @State private var comparison: TrafficDiffDocument.Result?
+    @State private var prepared: Prepared?
+    @State private var memoryEpoch: UInt64 = 0
     @State private var externalError: String?
 
-    private var leftLines: [String] { TrafficDiffDocument.lines(left, component: component, sortJSON: sortJSON, sortHeaders: sortHeaders) }
-    private var rightLines: [String] { TrafficDiffDocument.lines(right, component: component, sortJSON: sortJSON, sortHeaders: sortHeaders) }
-    private var input: DiffInput { DiffInput(before: leftLines, after: rightLines) }
+    private var input: DiffInput {
+        DiffInput(left: TrafficDiffDocument.identity(left, component: component),
+                  right: TrafficDiffDocument.identity(right, component: component),
+                  component: component, sortJSON: sortJSON, sortHeaders: sortHeaders, memoryEpoch: memoryEpoch)
+    }
+    private var comparison: TrafficDiffDocument.Result? { prepared?.input == input ? prepared?.comparison : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -125,6 +134,7 @@ struct TrafficDiffView: View {
                     Button("FileMerge") { openExternal("FileMerge") }
                     Button("Kaleidoscope") { openExternal("Kaleidoscope") }
                 }
+                .disabled(prepared?.input != input)
                 if showsClose { Button(Strings.Detail.close) { dismiss() }.keyboardShortcut(.cancelAction) }
             }
             HStack {
@@ -176,10 +186,26 @@ struct TrafficDiffView: View {
         .frame(minWidth: 700, minHeight: 440)
         .task(id: input) {
             let captured = input
-            let result = await Task.detached(priority: .userInitiated) {
-                TrafficDiffDocument.compare(captured.before, captured.after)
-            }.value
-            if !Task.isCancelled { comparison = result }
+            guard prepared?.input != captured else { return }
+            let before = TrafficDiffDocument.snapshot(left, component: component)
+            let after = TrafficDiffDocument.snapshot(right, component: component)
+            guard before.identity == captured.left, after.identity == captured.right else { return }
+            let worker = Task.detached(priority: .userInitiated) {
+                let leftLines = try TrafficDiffDocument.lines(before, sortJSON: captured.sortJSON, sortHeaders: captured.sortHeaders)
+                let rightLines = try TrafficDiffDocument.lines(after, sortJSON: captured.sortJSON, sortHeaders: captured.sortHeaders)
+                try Task.checkCancellation()
+                let comparison = TrafficDiffDocument.compare(leftLines, rightLines)
+                try Task.checkCancellation()
+                return Prepared(input: captured, left: leftLines, right: rightLines, comparison: comparison)
+            }
+            do {
+                let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+                guard !Task.isCancelled, input == captured else { return }
+                prepared = result
+            } catch is CancellationError {} catch { externalError = LocalizedErrorPresentation.message(for: error) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pmMemoryPressure)) { _ in
+            prepared = nil; memoryEpoch &+= 1
         }
         .alert(Strings.Detail.externalComparisonFailed, isPresented: Binding(get: { externalError != nil }, set: { if !$0 { externalError = nil } })) {
             Button(Strings.Detail.ok) { externalError = nil }
@@ -217,6 +243,7 @@ struct TrafficDiffView: View {
     }
 
     private func openExternal(_ application: String) {
+        guard let prepared, prepared.input == input else { return }
         do {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ProxyMirror-Diff", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -235,8 +262,8 @@ struct TrafficDiffView: View {
             let identifier = UUID().uuidString
             let before = directory.appendingPathComponent(identifier + "-left.txt")
             let after = directory.appendingPathComponent(identifier + "-right.txt")
-            try PrivateAppFile.write(Data(leftLines.joined(separator: "\n").utf8), to: before)
-            try PrivateAppFile.write(Data(rightLines.joined(separator: "\n").utf8), to: after)
+            try PrivateAppFile.write(Data(prepared.left.joined(separator: "\n").utf8), to: before)
+            try PrivateAppFile.write(Data(prepared.right.joined(separator: "\n").utf8), to: after)
             let process = Process()
             if application == "FileMerge" {
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/opendiff")
@@ -257,5 +284,18 @@ struct TrafficDiffView: View {
         } catch { externalError = LocalizedErrorPresentation.message(for: error) }
     }
 
-    private struct DiffInput: Hashable, Sendable { let before: [String]; let after: [String] }
+    private struct DiffInput: Hashable, Sendable {
+        let left: TrafficDiffDocument.Identity
+        let right: TrafficDiffDocument.Identity
+        let component: TrafficDiffDocument.Component
+        let sortJSON: Bool
+        let sortHeaders: Bool
+        let memoryEpoch: UInt64
+    }
+    private struct Prepared: Sendable {
+        let input: DiffInput
+        let left: [String]
+        let right: [String]
+        let comparison: TrafficDiffDocument.Result
+    }
 }

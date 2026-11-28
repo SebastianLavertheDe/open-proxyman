@@ -1,70 +1,72 @@
 # ProxyMirror
 
-仿 Proxyman 的 macOS 原生 HTTP/HTTPS 抓包调试工具。
+**English** | [简体中文](./README.zh-CN.md)
+
+A native macOS HTTP/HTTPS traffic capture and debugging tool inspired by Proxyman.
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 
-## 功能
+## Features
 
-- HTTP/1.x 和 HTTP/2 抓包，支持 HTTPS ALPN、HTTP/2 流级取消和 trailers、按域 SSL 解密及 WebSocket（含 RFC 8441 extended CONNECT）。
-- gRPC、gRPC-Web 二进制和 Base64 文本检查，可查看 Protobuf 消息、状态与 trailers，并导入 FileDescriptorSet。
-- Map Local、Map Remote、Block/Allow、No Caching、断点、脚本、DNS 映射和按主机模拟延迟、限速、抖动、断连和正文分块暂停。
-- 反向代理、HTTP CONNECT、HTTPS CONNECT、SOCKS5 和 PAC 路由、上游 CA、mTLS 客户端身份与 TLS 密钥日志。
-- 流量表格、自定义列、组合筛选、标签和分屏。详情提供 Query、Cookie、原文、耗时、JSONPath、jq 和二进制查看。
-- Compose 支持 JSON、Form、Multipart、QUERY、WebSocket、超时和重定向；21 种 Copy as Code，常规重发经过本机代理。
-- 独立 Diff 对比池、请求/响应/头/正文比较、JSON 排序、外部 Diff；19 字段高级过滤、嵌套 AND/OR、着色预设及详情历史导航。
-- 保存流量、版本化会话、HAR / CSV、Gist 脱敏发布、Charles 会话及规则导入、含 Protobuf 描述符的规则与设置备份。
-- 内置 HTTP / stdio MCP、完整 CLI、嵌套规则文件夹和工具总开关；Automation Dashboard 可启动带代理的终端、浏览器与 Electron。
-- CommonJS Addons、Lodash / Moment、环境变量、sharedState、Mock API、分级 Console；脚本继续在有超时限制的独立进程内执行。
-- HTTP 与 SOCKS5 共用监听端口，支持 zstd 解码、12 种多规则弱网预设、全局 Protobuf Schema 映射。
-- 局域网按多 IP / CIDR 白名单接入，默认只监听回环地址；macOS 系统代理旁路列表随接管恢复。
-- External Proxy 支持全部、排除列表和 Inclusive 包含列表；可按主机或 HTTP(S) URL 通配选择上游路由。
-- Saved 请求支持嵌套文件夹、移动和复制，旧 Saved 托盘自动迁移；流量汇总提供状态分桶、耗时直方图与 P50 / P95 / P99。
-- 偏好设置采用分类侧栏，支持搜索及前进后退；请求/响应可上下或左右排列。字号、等宽字体、Tab、字符 Minimap、末行外滚动、含时区的日期、主题和四款桌面图标均可设置。
-- MCP 可运行中启停，提供 Claude Code / Codex / Manual 的 HTTP 与 stdio 配置；默认脱敏 AI 返回数据。复制可保留原始内容头，规则处理消息可附带诊断头。
-- 支持独立启动录制、退出确认、中英界面、更新通知，以及按内存阈值和间隔清理较早已完成请求；帮助菜单保留故障排查和模拟内存警告。
-- 脚本支持 `fetch`、`@proxymirror/http` 及 Axios 的 HTTP 子集，可等待 HTTP(S)、取消请求并设置超时；脚本窗口可复制 MCP 生成脚本任务。
+- HTTP/1.x and HTTP/2 capture, with HTTPS ALPN, HTTP/2 stream cancellation and trailers, per-domain SSL decryption, and WebSocket support (including RFC 8441 extended CONNECT).
+- gRPC and gRPC-Web inspection in binary and Base64 text formats, with Protobuf messages, status, trailers, and FileDescriptorSet imports.
+- Map Local, Map Remote, Block/Allow, No Caching, breakpoints, scripts, DNS mapping, and per-host simulation of latency, bandwidth limits, jitter, disconnections, and pauses between body chunks.
+- Reverse proxy, HTTP CONNECT, HTTPS CONNECT, SOCKS5 and PAC routing, upstream CAs, mTLS client identities, and TLS key logging.
+- Traffic tables, custom columns, combined filters, tabs, and split views. Details include query parameters, cookies, raw content, timing, JSONPath, jq, and binary inspection.
+- Compose supports JSON, Form, Multipart, QUERY, WebSocket, timeouts, and redirects. Copy as Code offers 21 formats; standard replays use the local proxy.
+- A separate Diff comparison pool for requests, responses, headers, and bodies, with JSON sorting and external diff tools; advanced filtering across 19 fields, nested AND/OR groups, coloring presets, and detail history navigation.
+- Saved traffic, versioned sessions, HAR / CSV, redacted Gist publishing, Charles session and rule imports, and rule/settings backups including Protobuf descriptors.
+- Built-in HTTP / stdio MCP, a full CLI, nested rule folders, and tool switches. The Automation Dashboard launches terminals, browsers, and Electron with proxy settings.
+- CommonJS Addons, Lodash / Moment, environment variables, sharedState, Mock API, and console log levels. Scripts run in separate processes with time limits.
+- HTTP and SOCKS5 share a listening port, with zstd decoding, 12 network simulation presets supporting multiple rules, and global Protobuf schema mapping.
+- LAN access through multi-IP / CIDR allowlists, with loopback-only listening by default. macOS system proxy bypass lists are preserved and restored.
+- External Proxy supports all hosts, exclusion lists, and Inclusive lists; upstream routing can match hosts or HTTP(S) URL wildcards.
+- Saved requests support nested folders, moving, and copying, with automatic migration of the old Saved tray. Traffic summaries include status buckets, duration histograms, and P50 / P95 / P99.
+- Settings use a categorized sidebar with search and back/forward navigation. Requests and responses can be stacked or placed side by side. Configure font size, monospaced fonts, tabs, character minimaps, scrolling beyond the last line, dates with time zones, themes, and four desktop icons.
+- MCP can be started and stopped at runtime, with HTTP and stdio configuration for Claude Code, Codex, and manual setup. AI responses are redacted by default. Copying can preserve original content headers, and rule processing can add diagnostic headers.
+- Independent recording controls, quit confirmation, Chinese and English interfaces, update notifications, and cleanup of older completed requests by memory threshold and interval. The Help menu includes troubleshooting and simulated memory warnings.
+- Scripts support `fetch`, `@proxymirror/http`, and an HTTP subset of Axios, including awaiting HTTP(S) calls, cancellation, and timeouts. The script window can copy a task for generating scripts through MCP.
 
-常用快捷键为 ⌘F 过滤当前流量、⇧⌘F 查找来源、⌥⌘N 构建请求、⌘K 编辑请求、⇧⌘R 编辑并重发，以及 ⇧⌘C 复制 cURL。
+Common shortcuts: ⌘F filters current traffic, ⇧⌘F finds sources, ⌥⌘N composes a request, ⌘K edits a request, ⇧⌘R edits and replays, and ⇧⌘C copies cURL.
 
-高级过滤面板内，⌘N 新增条件，⇧⌘N 新增子组，⌘↑ / ⌘↓ 导航，⌘B 切换预设着色；列表 ⌘C 使用所选默认复制格式。
+In the advanced filter panel, ⌘N adds a condition, ⇧⌘N adds a subgroup, ⌘↑ / ⌘↓ navigates, and ⌘B toggles preset coloring. In the list, ⌘C uses the selected default copy format.
 
-## 界面语言
+## Interface language
 
-支持简体中文和英文，在设置中选择跟随系统、简体中文或 English，修改后下次启动生效。菜单、工具、帮助和自有错误反馈使用原生语言资源；用户名称、网络正文和脚本保持原文。
+Simplified Chinese and English are supported. Choose System, Simplified Chinese, or English in Settings; changes take effect on the next launch. Menus, tools, help, and application error messages use native localization resources. User names, network bodies, and scripts retain their original content.
 
-本版本首次正常启动会一次性清空旧版本的应用设置、规则、Saved 等本地数据，并改用稳定英文存储 ID；旧专有会话及规则备份不提供兼容读取。CA、钥匙串和系统代理恢复记录不在这次通用重置范围。
+On its first normal launch, this version performs a one-time reset of local data from earlier versions, including application settings, rules, and Saved items, and switches to stable English storage IDs. Older proprietary sessions and rule backups cannot be read. CAs, Keychain items, and system proxy recovery records are outside this general reset.
 
-开发和验证方式见 [本地化实施记录](Docs/localization-implementation.md)。
+See the [localization implementation notes](Docs/localization-implementation.md) for development and validation details.
 
-## 构建 / 运行
+## Build and run
 
 ```zsh
 swift build --skip-update -j 2
 .build/debug/ProxyMirrorSelfTest
 python3 Scripts/test_loopback.py --full
-python3 Scripts/test_http2.py  # Go 1.19+ 构建本机测试服务，可用 PM_FIXTURE_GO 指定 Go
+python3 Scripts/test_http2.py  # Go 1.19+ builds the local fixture server; set PM_FIXTURE_GO to choose Go
 
 Scripts/make_app.sh debug
 open build_app/ProxyMirror.app
 ```
 
-从工具栏启动监听或录制。手动代理默认指向 `127.0.0.1:9090`。需要解密 HTTPS 时，可从「证书」菜单安装并信任本机 CA。
+Start listening or recording from the toolbar. The default manual proxy address is `127.0.0.1:9090`. To decrypt HTTPS, install and trust the local CA from the Certificates menu.
 
-抓包列表默认保留当前选中项和滚动位置。需要跟随新请求时，点击列表下方的「自动选择」。
+The traffic list preserves the current selection and scroll position by default. To follow new requests, click Auto Select below the list.
 
-开始监听后，ProxyMirror 默认自动接管 macOS 系统代理。首次接管时，ProxyMirror 会通过 macOS 授权界面申请安装后台服务。同一份签名构建再次启动时会复用授权，重新签名的构建需要重新批准。可在「设置 → General」关闭「监听启动后自动接管系统代理」，也可在顶部状态弹窗里切换本次的录制、macOS 代理和网络扩展。
+When listening starts, ProxyMirror automatically takes over the macOS system proxy by default. The first takeover requests permission to install a background service through the macOS authorization dialog. Subsequent launches of the same signed build reuse that authorization; a newly signed build requires approval again. Disable automatic takeover in Settings → General, or use the top status popover to change recording, the macOS proxy, and the network extension for the current session.
 
-每次接管都会保存当时的 HTTP / HTTPS 代理设置。退出应用、停止监听或点击「恢复系统代理」时自动还原；App 意外退出时，后台服务也会根据连接断开尝试还原。恢复会保留接管期间由其他应用改写的代理项。恢复系统代理后，可在「设置 → General」中点「移除系统代理授权」卸载后台服务。
+Each takeover saves the current HTTP / HTTPS proxy settings. They are restored when the app quits, listening stops, or Restore System Proxy is clicked. If the app exits unexpectedly, the background service also attempts restoration when the connection closes. Restoration preserves proxy entries changed by other apps during takeover. After restoring the system proxy, use Remove System Proxy Authorization in Settings → General to uninstall the background service.
 
-### macOS 透明抓包
+### Transparent capture on macOS
 
-带网络扩展的签名版本可从「工具 → 启动透明抓包」或「偏好设置 → 网络扩展」接入未设置 HTTP 代理的 Mac 应用。首次启动需按 macOS 提示批准网络扩展。当前覆盖 IPv4 / IPv6 的 TCP 80（HTTP）和 443（HTTPS）；HTTPS 沿用现有 CA 和按域、按应用 SSL 规则。UDP / QUIC / HTTP/3、其他端口和回环连接继续直连。开启透明抓包会先恢复系统代理；切回系统代理前需停止透明抓包。
+A signed build with the network extension can capture traffic from Mac apps without an HTTP proxy configured, through Tools → Start Transparent Capture or Preferences → Network Extension. Approve the extension when macOS prompts on first use. Coverage currently includes IPv4 / IPv6 TCP ports 80 (HTTP) and 443 (HTTPS). HTTPS uses the existing CA and per-domain/per-app SSL rules. UDP / QUIC / HTTP/3, other ports, and loopback connections remain direct. Starting transparent capture first restores the system proxy; stop transparent capture before switching back to the system proxy.
 
-默认 ad hoc 构建不附带扩展。准备匹配的 Developer ID Application 签名身份，以及主应用 `com.sebastianLavertheDe.proxymirror` 和系统扩展 `com.sebastianLavertheDe.proxymirror.transparent-proxy` 各自的 Network Extension 配置文件后构建：
+The default ad hoc build does not include the extension. Build with a matching Developer ID Application signing identity and Network Extension provisioning profiles for both the main app, `com.sebastianLavertheDe.proxymirror`, and the system extension, `com.sebastianLavertheDe.proxymirror.transparent-proxy`:
 
 ```zsh
-PM_DEVELOPER_ID='<Developer ID Application 的 SHA-1 或完整名称>' \
+PM_DEVELOPER_ID='<Developer ID Application SHA-1 or full name>' \
 PM_APP_PROVISION_PROFILE='/path/to/app.provisionprofile' \
 PM_EXTENSION_PROVISION_PROFILE='/path/to/extension.provisionprofile' \
 PM_APP_PATH='build_app/transparent/ProxyMirror.app' \
@@ -72,53 +74,53 @@ PM_APP_PATH='build_app/transparent/ProxyMirror.app' \
 python3 Scripts/test_app_bundle.py --app build_app/transparent/ProxyMirror.app --expect-transparent
 ```
 
-正式分发或在保留 macOS 默认安全设置的测试机上激活扩展时，请先将签名应用提交 Apple 公证。若已在本机钥匙串配置 `notarytool` 凭据，可执行：
+Before distribution or extension activation on a test Mac with default security settings, submit the signed app for Apple notarization. If `notarytool` credentials are already configured in the local Keychain:
 
 ```zsh
 ditto -c -k --keepParent build_app/transparent/ProxyMirror.app build_app/transparent/ProxyMirror-notary.zip
-xcrun notarytool submit build_app/transparent/ProxyMirror-notary.zip --keychain-profile '<钥匙串中的公证凭据名称>' --wait
-# 公证结果为 Accepted 时执行以下两条。
+xcrun notarytool submit build_app/transparent/ProxyMirror-notary.zip --keychain-profile '<Keychain notarization profile name>' --wait
+# Run the following two commands after the notarization result is Accepted.
 xcrun stapler staple build_app/transparent/ProxyMirror.app
 xcrun stapler validate build_app/transparent/ProxyMirror.app
 ```
 
-将公证后的应用放到测试 Mac 的「应用程序」目录再启动。使用自己的测试应用和非回环 HTTP / HTTPS 服务，确认未设置显式代理，再分别验证抓包、停止后直连、退出后直连。强制退出时，扩展在宿主握手失败后将新连接转向原始目标；已接管的连接需要客户端重连，ProxyMirror 下次启动时清理残留配置。真实激活、网络切换、休眠和 VPN 并存仍需在签名环境验收。 [Apple 系统扩展要求](https://developer.apple.com/documentation/systemextensions) · [Apple 公证流程](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution)
+Move the notarized app into Applications on the test Mac before launching it. Use your own test app and non-loopback HTTP / HTTPS services, confirm that no explicit proxy is configured, and verify capture, direct connections after stopping, and direct connections after quitting. After a force quit, the extension routes new connections to their original destinations once the host handshake fails; existing intercepted connections require the client to reconnect. ProxyMirror cleans up residual configuration on its next launch. Actual activation, network switching, sleep, and coexistence with VPNs still require acceptance testing in a signed environment. [Apple system extension requirements](https://developer.apple.com/documentation/systemextensions) · [Apple notarization workflow](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution)
 
-### 按应用配置 SSL
+### Per-app SSL configuration
 
-打开「工具 → 按应用配置 SSL」，选择本机 `.app` 或填写 Bundle ID，为它选择「解密」或「透传」。也可以从已识别来源的 HTTPS 流量右键进入编辑器。保存后规则用于新建的 CONNECT 连接，正在复用连接的客户端需要重新连接。
+Open Tools → Configure SSL by Application, select a local `.app` or enter a Bundle ID, and choose decryption or passthrough. You can also open the editor from the context menu of HTTPS traffic with an identified source. Saved rules apply to new CONNECT connections; clients reusing existing connections must reconnect.
 
-全局 SSL 开关和排除主机优先。接下来使用启用的应用规则，未匹配应用、无法归因的进程和局域网设备沿用现有域名规则。应用归因使用本机回环 TCP 连接的进程和 Bundle ID，包内的网络辅助进程归到所属应用。透传时只记录 CONNECT，客户端直接验证服务端证书。
+The global SSL switch and excluded hosts take priority. Enabled app rules apply next. Unmatched apps, processes without attribution, and LAN devices follow the existing domain rules. App attribution uses the process and Bundle ID of local loopback TCP connections; network helper processes inside an app bundle are attributed to that app. Passthrough records only CONNECT, and the client validates the server certificate directly.
 
-### HTTP/2 与 gRPC
+### HTTP/2 and gRPC
 
-在设置的 SSL 页可切换新建 HTTPS 连接的 HTTP/2 协商。HTTP/2 客户端转发到已配置的 HTTP 目标时可选用 h2c。流量详情的连接日志显示上游协议、ALPN 与流 ID。
+The SSL settings page controls HTTP/2 negotiation for new HTTPS connections. HTTP/2 clients can use h2c when forwarding to configured HTTP targets. Connection logs in traffic details show the upstream protocol, ALPN, and stream ID.
 
-选中 gRPC 流量后，从请求或响应的 gRPC 页检查消息。使用 `protoc --descriptor_set_out=echo.pb --include_imports echo.proto` 生成描述符，在该页导入 `echo.pb`。
+Select gRPC traffic and inspect messages in the request or response gRPC tab. Generate a descriptor with `protoc --descriptor_set_out=echo.pb --include_imports echo.proto`, then import `echo.pb` in that tab.
 
-### 设备与运行时接入
+### Connecting devices and runtimes
 
-- 真机与 Mac 位于同一测试网络时，在 General 设置启用局域网代理，选择本机 IPv4、填写设备 IPv4 并应用。设备 Wi-Fi 代理填 Mac 的 IP 与监听端口。iOS 安装导出的 CA 后，在「设置 → 通用 → 关于本机 → 证书信任设置」打开对该 CA 的完全信任。联调结束后恢复设备原代理设置。 [Apple 证书信任说明](https://support.apple.com/en-us/102390)
-- iOS 模拟器可从 Mac 的系统代理开始验证，并在模拟器中安装测试 CA。Android Emulator 的应用流量走 Android System Proxy 时，可使用 `10.0.2.2` 访问 Mac 回环监听。使用自己的 Android 调试构建时，在应用的调试网络安全配置中信任测试 CA。 [Android Emulator 代理](https://developer.android.com/studio/run/emulator-networking-proxy) · [Android Emulator 地址](https://developer.android.com/studio/run/emulator-networking-address)
-- 终端可用 `curl --proxy http://127.0.0.1:9090 --cacert ./proxymirror-ca.pem <测试URL>` 验证。支持环境代理的 Node.js 版本可为单次进程设置 `NODE_USE_ENV_PROXY=1`、`HTTP_PROXY`、`HTTPS_PROXY` 和 `NODE_EXTRA_CA_CERTS`。 [Node.js 代理与 CA](https://nodejs.org/api/cli.html#node_use_env_proxy1)
+- When a physical device and the Mac share a test network, enable the LAN proxy in General settings, select the Mac's IPv4 address, enter the device's IPv4 address, and apply. Set the device's Wi-Fi proxy to the Mac's IP and listening port. On iOS, after installing the exported CA, enable full trust under Settings → General → About → Certificate Trust Settings. Restore the device's original proxy settings after testing. [Apple certificate trust guide](https://support.apple.com/en-us/102390)
+- For the iOS Simulator, start with the Mac's system proxy and install the test CA in the simulator. When Android Emulator app traffic uses the Android System Proxy, `10.0.2.2` reaches the Mac's loopback listener. For your own Android debug builds, trust the test CA in the app's debug network security configuration. [Android Emulator proxy](https://developer.android.com/studio/run/emulator-networking-proxy) · [Android Emulator addresses](https://developer.android.com/studio/run/emulator-networking-address)
+- From a terminal, verify with `curl --proxy http://127.0.0.1:9090 --cacert ./proxymirror-ca.pem <test-URL>`. Node.js versions supporting environment proxies can use `NODE_USE_ENV_PROXY=1`, `HTTP_PROXY`, `HTTPS_PROXY`, and `NODE_EXTRA_CA_CERTS` for a single process. [Node.js proxy and CA options](https://nodejs.org/api/cli.html#node_use_env_proxy1)
 
-- 「证书 → 在 iOS 上安装证书 → 一键配置 iOS 模拟器」通过 simctl 给已启动的模拟器安装 CA，然后使用已有的 macOS 授权流程接管系统代理。Android 用户证书可通过同一菜单的 adb 入口复制到设备，再在设备「设置」中确认安装。
-- Android 13 或更早的可写测试镜像可用 `Scripts/install_certificate_android_emulator.sh <ca.pem> [serial]`。已配置 Magisk 且从系统目录读取 CA 的测试镜像可用 `Scripts/make_android_ca_magisk_module.sh <ca.pem> <module.zip>` 生成离线模块。 [Android 可写系统镜像](https://developer.android.com/studio/run/emulator-commandline) · [Magisk 模块格式](https://topjohnwu.github.io/Magisk/guides.html)
-- 自研 iOS 调试应用可使用 [ProxyMirrorBridgeKit](./ProxyMirrorBridgeKit/README.md)，配对后直接把记录发送到 Mac。
+- Certificates → Install Certificate on iOS → One-click iOS Simulator Setup installs the CA into booted simulators through simctl, then takes over the system proxy through the existing macOS authorization flow. The adb entry in the same menu copies an Android user certificate to the device; confirm installation in the device's Settings.
+- Writable test images running Android 13 or earlier can use `Scripts/install_certificate_android_emulator.sh <ca.pem> [serial]`. Test images configured with Magisk and reading CAs from system directories can use `Scripts/make_android_ca_magisk_module.sh <ca.pem> <module.zip>` to generate an offline module. [Android writable system images](https://developer.android.com/studio/run/emulator-commandline) · [Magisk module format](https://topjohnwu.github.io/Magisk/guides.html)
+- Your own iOS debug apps can use [ProxyMirrorBridgeKit](./ProxyMirrorBridgeKit/README.md) to send records directly to the Mac after pairing.
 
-### Charles 迁移
+### Migrating from Charles
 
-从「文件 → 导入 Charles 会话」选择 Charles 导出的 XML 或 JSON Session。原生 `.chls` / `.chlz` 可调用本机 Charles 的 `convert` 命令转为 HAR；未安装 Charles 时先导出 XML / JSON / HAR。打开「工具 → 从 Charles 导入规则」可预览兼容的规则和跳过项，再确认应用。 [Charles 转换命令](https://www.charlesproxy.com/documentation/tools/command-line-tools/)
+Use File → Import Charles Session to select an XML or JSON session exported by Charles. Native `.chls` / `.chlz` files can be converted to HAR with the locally installed Charles `convert` command. If Charles is not installed, export XML / JSON / HAR first. Tools → Import Rules from Charles previews compatible rules and skipped items before applying them. [Charles conversion command](https://www.charlesproxy.com/documentation/tools/command-line-tools/)
 
-### 来源文件夹与设置搜索
+### Source folders and settings search
 
-在侧栏「来源文件夹」旁点击加号，选择已捕获的应用或域名。右键应用、域名或文件夹可以调整归属和名称。文件夹匹配任意已选来源，可和当前视图的其他筛选条件组合。每个标签和分屏各自选择来源，文件夹名称和成员会在重启后恢复。
+Click the plus button beside Source Folders in the sidebar and choose captured apps or domains. Right-click an app, domain, or folder to change its assignment or name. Folders match any selected source and combine with other filters in the current view. Each tab and split view has its own source selection; folder names and members persist across launches.
 
-在设置窗口搜索 `HTTP/2`、`TLS MITM`、`正文 截断` 等关键词，选择结果可跳转并标出对应控件。回车打开第一个结果。
+Search Settings for terms such as `HTTP/2`, `TLS MITM`, or body truncation, then select a result to navigate to and highlight the corresponding control. Press Return to open the first result.
 
-## 本机命令行
+## Local command line
 
-启动 ProxyMirror 后，从终端调用应用包内的二进制。状态和查询结果以 JSON 输出，错误写到标准错误。
+After launching ProxyMirror, invoke the binary inside the app bundle from a terminal. Status and query results are JSON; errors go to standard error.
 
 ```zsh
 pm=./build_app/ProxyMirror.app/Contents/MacOS/ProxyMirror
@@ -129,46 +131,46 @@ pm=./build_app/ProxyMirror.app/Contents/MacOS/ProxyMirror
 "$pm" export-har --id 8233BD29-7982-4534-9FF3-B70EE20F5AFB --output -
 ```
 
-`status` 分别报告代理监听、录制和系统代理状态。`traffic` 和 `export-har` 默认查询实时捕获。`--selected` 改为当前视图选中的记录，也可同时使用其他筛选条件。查询按捕获顺序返回最近匹配的记录，默认 100 条，最多 1000 条。
+`status` reports proxy listening, recording, and system proxy status separately. `traffic` and `export-har` query live captures by default. `--selected` queries records selected in the current view and can be combined with other filters. Queries return the most recent matching records in capture order: 100 by default, up to 1000.
 
-HAR 包含已捕获的请求头、响应头和正文。单次导出的正文上限为 24 MiB，超过时可缩小筛选范围。指定文件路径时，应用以当前用户可读写的权限写入文件。`--output -` 将 HAR 写到标准输出。
+HAR includes captured request headers, response headers, and bodies. The body limit per export is 24 MiB; narrow the filters if needed. When a file path is specified, the app writes it with read/write permissions for the current user. `--output -` writes HAR to standard output.
 
-`export logs` 导出当前保留的完整原生会话，不采用流量查询默认的 100 条上限。`domains` 按域名分组，导出的日志包也可直接作为会话重新打开；可以用域名和带时区的 ISO 8601 时间拆分。`export flows` 继续提供增量查询和分页。
+`export logs` exports the entire retained native session without the traffic query's default 100-record limit. `domains` groups records by domain, and exported log bundles can be reopened as sessions. Split exports by domain and ISO 8601 timestamps with time zones. `export flows` continues to support incremental queries and pagination.
 
 ```zsh
 "$pm" export logs all --output ./traffic.proxymirror
 "$pm" export logs domains --domains '*.example.com' --output ./domains.proxymirror
-"$pm" rules dns rename --id "$rule_id" --name '测试 DNS'
-"$pm" rules dns duplicate --id "$rule_id" --name '测试 DNS 副本'
+"$pm" rules dns rename --id "$rule_id" --name 'Test DNS'
+"$pm" rules dns duplicate --id "$rule_id" --name 'Test DNS Copy'
 ```
 
-### 规则与设置迁移
+### Migrating rules and settings
 
 ```zsh
 "$pm" rules export --output ./backup.json
 "$pm" rules export --tool dns --output ./dns.json
 "$pm" rules export --tool sslApplications --output ./ssl-apps.json
 "$pm" rules preview --input ./backup.json --mode merge
-# 核对预览后，将返回的 previewToken 赋给 preview_token
+# Review the preview, then assign the returned previewToken to preview_token.
 "$pm" rules apply --input ./backup.json --mode merge --preview-token "$preview_token"
 ```
 
-规则预览报告新增、覆盖、移除、相同和顺序变化。默认 `merge` 按规则 ID 合并，按应用 SSL 使用 Bundle ID 合并。`replace` 只替换备份中包含的工具。输入文件、导入方式或当前配置变化后需重新预览。支持 ProxyMirror JSON 备份和旧版 `rules.json`，备份涵盖基础规则、DNS、断点规则、延迟模拟与应用常用设置。Map Local 保留文件路径，文件内容需在目标 Mac 准备。应用设置在下次启动时生效，也可前往设置手动应用。
+The rule preview reports additions, replacements, removals, unchanged entries, and order changes. The default `merge` mode merges by rule ID; per-app SSL rules merge by Bundle ID. `replace` replaces only the tools included in the backup. Preview again if the input file, import mode, or current configuration changes. ProxyMirror JSON backups and legacy `rules.json` files are supported. Backups include basic rules, DNS, breakpoint rules, latency simulation, and common app settings. Map Local preserves file paths; prepare the file contents on the destination Mac. App settings take effect on the next launch or can be applied manually in Settings.
 
-| 退出码 | 含义 |
+| Exit code | Meaning |
 | --- | --- |
-| 0 | 成功 |
-| 2 | 命令或筛选参数无效 |
-| 3 | 无法连接本机应用 |
-| 4 | 通信、导出或应用规则失败 |
-| 5 | 当前视图无选中记录，或导出条件无匹配 |
-| 6 | 规则预览已失效 |
+| 0 | Success |
+| 2 | Invalid command or filter arguments |
+| 3 | Cannot connect to the local app |
+| 4 | Communication, export, or rule application failed |
+| 5 | No records selected in the current view, or no matching records for export |
+| 6 | Rule preview has expired |
 
-## 架构
+## Architecture
 
-### MCP、规则工具与开发工作台
+### MCP, rule tools, and development workbench
 
-从「帮助 → 安装 proxymirror-cli 到 PATH」安装 CLI，重新打开终端后可运行：
+Install the CLI from Help → Install proxymirror-cli to PATH, then reopen the terminal:
 
 ```zsh
 proxymirror-cli proxy-address
@@ -180,39 +182,39 @@ proxymirror-cli code --id <UUID> --language swift
 proxymirror-cli mcp config
 ```
 
-应用启动时在随机回环端口开启 MCP。`mcp config` 输出本次端点及令牌；令牌文件权限为 0600，应用退出后清理。可从「帮助 → 查看 MCP 连接配置」复制 HTTP 配置，或将 AI 客户端配置为启动 `proxymirror-cli mcp stdio`。`--after-id` 每页返回游标之后最早的一批记录，继续用该页最后一条 ID 翻页，避免新增流量超过页大小时遗漏。
+The app starts MCP on a random loopback port at launch. `mcp config` prints the current endpoint and token; the token file has permissions of 0600 and is removed when the app quits. Copy the HTTP configuration from Help → View MCP Connection Configuration, or configure an AI client to launch `proxymirror-cli mcp stdio`. With `--after-id`, each page returns the earliest records after the cursor. Continue with the last ID on that page to avoid missing new traffic that exceeds a page's size.
 
-「工具」菜单提供 Diff、Protobuf、规则文件夹、自定义预览器、汇总和 Automation 独立窗口；脚本窗口支持 ⌘B 格式化、⌘S 保存启用。自定义预览器接收 `preview(input)`，在独立 worker 内返回文本或 JSON。执行结果以纯文本显示。
+The Tools menu provides separate windows for Diff, Protobuf, rule folders, custom previewers, summaries, and Automation. In the script window, ⌘B formats and ⌘S saves and enables the script. Custom previewers receive `preview(input)` and return text or JSON from a separate worker. Results are displayed as plain text.
 
-规则、文件夹、工具总开关和 Protobuf 描述符统一保存到 `rules.json`；单份备份上限 16 MiB。证书菜单提供 PEM / DER / P12 导入向导与加密私钥导出。Gist 发布需填写具备 Gists 写权限的 GitHub Token，可保存到钥匙串；发布前可检查已脱敏的 HAR 预览。
+Rules, folders, tool switches, and Protobuf descriptors are stored together in `rules.json`; a single backup is limited to 16 MiB. The Certificates menu offers a PEM / DER / P12 import wizard and encrypted private key export. Gist publishing requires a GitHub token with Gists write permission, which can be saved in Keychain. Review the redacted HAR preview before publishing.
 
-实现范围、验证命令和仍需外部配套的能力见 [差距开发验收记录](Docs/gap-implementation.md)。
+See the [gap implementation and acceptance notes](Docs/gap-implementation.md) for scope, validation commands, and capabilities that still require external setup.
 
 ```
 Sources/
-  ProxyMirrorCore/        # 核心库
-    Proxy/                # nio 代理引擎 + HTTP 解析 + MITM 证书 + SNI 嗅探
+  ProxyMirrorCore/        # Core library
+    Proxy/                # NIO proxy engine, HTTP parsing, MITM certificates, SNI sniffing
     Model/                # Transaction / TrafficStore / AppSettings
-    UI/                   # 侧栏 / 列表 / 详情 / 设置（SwiftUI）
+    UI/                   # Sidebar, list, details, and settings (SwiftUI)
     Export/               # HAR + cURL + Repeat
-    System/               # SystemConfiguration 系统代理 + 证书与信任配置
-  ProxyMirror/            # @main 应用壳（菜单命令 / 独立窗口）
-  ProxyMirrorSelfTest/    # CLT 单测入口、回环、并发及基准
-Tests/                    # 核心断言、XCTest 与性能测试
-Scripts/                  # 测试夹具、打包与构建
+    System/               # SystemConfiguration proxy settings, certificates, and trust
+  ProxyMirror/            # @main app shell (menu commands and separate windows)
+  ProxyMirrorSelfTest/    # CLT unit test entry point, loopback, concurrency, and benchmarks
+Tests/                    # Core assertions, XCTest, and performance tests
+Scripts/                  # Test fixtures, packaging, and builds
 ```
 
-## 本机构建注意事项
+## Local build notes
 
-仅需 macOS Command Line Tools，项目通过 SelfTest 可执行文件运行回归。如果本机环境终止并行编译，可改用 `swift build -j 1`。首次拉取依赖后遇到明确的 UTF-8 解码错误时，可检查依赖 checkout 的文件内容。
+Only macOS Command Line Tools are required. The project runs regressions through the SelfTest executable. If the local environment terminates parallel compilation, use `swift build -j 1`. If an explicit UTF-8 decoding error occurs after fetching dependencies for the first time, inspect the files in the dependency checkout.
 
-## 测试
+## Testing
 
-### 偏好设置界面验收
+### Preferences UI acceptance
 
-设置窗口按参考布局提供常规、外观、隐私、MCP、GitHub、工具、网络扩展、高级、Workspace 和产品页面。旧 SSL、局域网、mTLS、旁路和外部代理设置位于「高级代理设置…」，也可直接搜索定位。
+The settings window follows the reference layout with General, Appearance, Privacy, MCP, GitHub, Tools, Network Extension, Advanced, Workspace, and Products pages. The previous SSL, LAN, mTLS, bypass, and external proxy settings are under Advanced Proxy Settings… and can also be located through search.
 
-在 Mac 上构建后可导出真实原生窗口截图。截图模式使用临时数据目录，跳过代理、MCP 和更新服务启动，不修改用户偏好，也不需要屏幕录制权限：
+After building on a Mac, export screenshots of real native windows. Screenshot mode uses a temporary data directory and skips proxy, MCP, and update service startup. It does not change user preferences or require Screen Recording permission:
 
 ```zsh
 Scripts/make_app.sh debug
@@ -220,13 +222,13 @@ python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --appeara
 python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --pages general appearance tools --language en
 ```
 
-PNG、窗口尺寸和每页的 `.layout.json` 默认保存在 `build_app/preferences-review/`。截图时会测量实际 header，要求其完整处于窗口未遮挡的 `contentLayoutRect` 和父视图可见范围内；标题栏覆盖、父级裁切或 header 高度被压缩都会让验收失败。PNG 捕获包含系统标题栏，像素与交互仍需对照参考图检查。网络扩展激活另需前述签名构建。
+PNGs, window dimensions, and each page's `.layout.json` are saved to `build_app/preferences-review/` by default. Capture measures the actual header and requires it to be fully inside the window's unobscured `contentLayoutRect` and its parent view's visible area. Title bar overlap, parent clipping, or compressed header height causes acceptance to fail. PNGs include the system title bar; pixels and interactions still need comparison with the reference images. Network extension activation requires the signed build described above.
 
-复测设置标题栏裁切可运行 `python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --pages mcp workspace --language both --appearance dark`。当前的几何判定负例可跨平台运行 `python3 Scripts/test_preferences_layout.py`，它不代替真实 macOS 界面检查。[Apple 内容布局区域说明](https://developer.apple.com/documentation/appkit/nswindow/contentlayoutrect)
+To retest settings title bar clipping, run `python3 Scripts/test_preferences_ui.py --app build_app/ProxyMirror.app --pages mcp workspace --language both --appearance dark`. Negative cases for the current geometry checks can run across platforms with `python3 Scripts/test_preferences_layout.py`; they do not replace real macOS UI checks. [Apple content layout rectangle documentation](https://developer.apple.com/documentation/appkit/nswindow/contentlayoutrect)
 
-### 核心与代理回归
+### Core and proxy regressions
 
-核心单测由 XCTest 和 CLT 自测入口共用。HTTP 回环、CLI 和并发套件使用本地夹具及独立数据目录。打包检查核对签名、架构、脚本 worker 和 CLI 入口。
+Core unit tests are shared by XCTest and the CLT self-test entry point. HTTP loopback, CLI, and concurrency suites use local fixtures and isolated data directories. Bundle checks verify signing, architecture, the script worker, and the CLI entry point.
 
 ```zsh
 swift build --skip-update -j 2
@@ -240,7 +242,7 @@ python3 Scripts/test_app_bundle.py --app .build/test-app/ProxyMirror.app
 python3 Scripts/test_cli.py --app .build/test-app/ProxyMirror.app
 ```
 
-HTTP/2 可用 `PM_FIXTURE_GO` 指定 Go，也可用 `PM_HTTP2_FIXTURE_BIN` 传入由同一夹具源码构建的可执行文件。在完整 Xcode 环境用 `swift test --filter ProxyMirrorCoreTests --enable-code-coverage` 运行 XCTest 并生成覆盖率。
+For HTTP/2, set `PM_FIXTURE_GO` to choose Go, or pass an executable built from the same fixture source through `PM_HTTP2_FIXTURE_BIN`. With full Xcode installed, run `swift test --filter ProxyMirrorCoreTests --enable-code-coverage` for XCTest and coverage.
 
 ### Thread Sanitizer
 
@@ -254,16 +256,16 @@ TSAN_OPTIONS=halt_on_error=1 PM_SELFTEST_BIN="$tsan_bin/ProxyMirrorSelfTest" \
   python3 Scripts/test_loopback.py --timeout 180
 ```
 
-如果经 Python 启动的 TSan 进程在初始化时退出，可以从 shell 直接运行自带本地源站的并发套件。
+If a TSan process launched through Python exits during initialization, run the concurrency suite with its built-in local origin server directly from the shell.
 
 ```zsh
 tsan_support="$(mktemp -d -t proxymirror-tsan)"
 TSAN_OPTIONS=halt_on_error=1 PM_SUPPORT_DIR="$tsan_support" "$tsan_bin/ProxyMirrorSelfTest" --concurrency
 ```
 
-### 性能回归
+### Performance regressions
 
-Release 自测测量实际的流量筛选排序和正文追加。回环压测测量直连、暂停录制和开启录制的 HTTP/1.1 代理链路，核对每条响应及录制计数。用相同机器和负载参数复跑，可通过 `--baseline` 对照上一份回环报告。完整 Xcode 可运行 `swift test -c release --filter ProxyMirrorPerformanceTests`，在 XCTest 中记录耗时和内存基线。
+Release self-tests measure actual traffic filtering, sorting, and body appends. Loopback load tests measure direct connections and the HTTP/1.1 proxy path with recording paused and enabled, checking every response and capture count. Rerun on the same machine with the same load parameters and use `--baseline` to compare against a previous loopback report. Full Xcode can run `swift test -c release --filter ProxyMirrorPerformanceTests` to record timing and memory baselines in XCTest.
 
 ```zsh
 swift build -c release --product ProxyMirrorSelfTest -Xswiftc -enable-testing --skip-update -j 2
@@ -272,14 +274,13 @@ mkdir -p .build/performance
 python3 Scripts/bench_proxy.py --output .build/performance/small-requests.json
 ```
 
-UI 和 macOS 系统验收环境见 [测试实施方案](./outputs/ProxyMirror%20测试实施方案.md)。
+See the [test implementation plan](./outputs/ProxyMirror%20测试实施方案.md) for UI and macOS system acceptance environments.
 
-## 对齐范围
+## Alignment scope
 
-对比基准见 [实施清单](./outputs/ProxyMirror%20对齐%20Proxyman%20实施清单.md)，当前实现、验证结果及未完成项见 [开发交付与验收](./outputs/ProxyMirror%20对齐开发交付与验收.md)。
+See the [implementation checklist](./outputs/ProxyMirror%20对齐%20Proxyman%20实施清单.md) for the comparison baseline, and [development delivery and acceptance](./outputs/ProxyMirror%20对齐开发交付与验收.md) for current implementation, validation results, and remaining work.
 
-## 调试技巧
+## Debugging tips
 
-- `PM_SNAPSHOT=/tmp/x.pdf PM_SNAPSHOT_DELAY=15 PM_SNAPSHOT_SELECT=1` 环境变量可让 App
-  延时离屏渲染主窗口（无需屏幕录制权限），用于无头 UI 验证。
-- 引擎日志（代理启停/上游拨号/根证书数量）输出到 stdout。
+- Set `PM_SNAPSHOT=/tmp/x.pdf PM_SNAPSHOT_DELAY=15 PM_SNAPSHOT_SELECT=1` to render the main window offscreen after a delay, without Screen Recording permission, for headless UI validation.
+- Engine logs (proxy start/stop, upstream connections, and root certificate counts) are written to stdout.
